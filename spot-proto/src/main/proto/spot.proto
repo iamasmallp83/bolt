@@ -1,0 +1,24 @@
+syntax = "proto3";
+option java_package = "com.cmex.bolt.spot.grpc";
+option java_outer_classname = "SpotServiceProto";
+
+import "generic_response.proto";
+
+message DepositRequest {
+  string  requestId = 1;
+  sint32  accountId = 2;
+  sint32  currencyId = 3;
+  sint64  amount = 4;
+}
+
+message WithdrawRequest {
+  string  requestId = 1;
+  sint32  accountId = 2;
+  sint32  currencyId = 3;
+  sint64  amount = 4;
+}
+
+service SpotService {
+  rpc deposit (DepositRequest) returns (GenericResponse) {}
+  rpc withdraw (WithdrawRequest) returns (GenericResponse) {}
+}
