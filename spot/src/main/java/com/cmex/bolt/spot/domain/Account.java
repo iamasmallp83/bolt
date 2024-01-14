@@ -18,6 +18,15 @@ public class Account {
         balance.deposit(value);
     }
 
+    public void withdraw(short currencyId, long value) {
+        Balance balance = balances.get(currencyId);
+        if (balance == null) {
+            balance = new Balance();
+            balances.put(currencyId, balance);
+        }
+        balance.deposit(value);
+    }
+
     public void freeze(short currencyId, long value) {
         Balance balance = balances.get(currencyId);
         if (balance == null) {

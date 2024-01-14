@@ -4,11 +4,16 @@ import javolution.io.Struct;
 
 public enum EventType {
     PLACE_ORDER(new PlaceOrder()),
+
+    PLACE_ORDER_REJECTED(new PlaceOrderRejected()),
     CANCEL_ORDER(new CancelOrder()),
     WITHDRAW(new Withdraw()),
+    WITHDRAWN(new Withdrawn()),
+    WITHDRAW_REJECTED(new WithdrawRejected()),
     DEPOSIT(new Deposit()),
     FREEZE(new Freeze()),
     UNFREEZE(new Unfreeze());
+
     private Struct struct;
 
     private EventType(Struct struct) {

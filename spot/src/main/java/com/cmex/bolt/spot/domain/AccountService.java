@@ -9,6 +9,7 @@ public class AccountService {
 
     private Int2ObjectMap<Account> accounts = new Int2ObjectOpenHashMap<>();
 
+    private RingBuffer<Message> responseRingBuffer;
     private RingBuffer<Message> orderRingBuffer;
 
     public AccountService() {
@@ -47,6 +48,14 @@ public class AccountService {
     }
 
     public void on(Withdraw withdraw) {
+        int accountId = withdraw.accountId.get();
+        Account account = accounts.get(accountId);
+        if (account == null) {
+            account = new Account();
+            account.setId(accountId);
+            accounts.put(accountId, account);
+        }
+        account.deposit(withdraw.currencyId.get(), withdraw.amount.get());
     }
 
     public void on(Unfreeze unfreeze) {
@@ -55,5 +64,9 @@ public class AccountService {
 
     public void setOrderRingBuffer(RingBuffer<Message> orderRingBuffer) {
         this.orderRingBuffer = orderRingBuffer;
+    }
+
+    public void setResponseRingBuffer(RingBuffer<Message> responseRingBuffer) {
+        this.responseRingBuffer = responseRingBuffer;
     }
 }

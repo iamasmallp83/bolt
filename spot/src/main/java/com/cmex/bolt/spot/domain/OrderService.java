@@ -11,6 +11,8 @@ public class OrderService {
 
     private RingBuffer<Message> accountRingBuffer;
 
+    private RingBuffer<Message> responseRingBuffer;
+
     public OrderService() {
     }
 
@@ -32,5 +34,9 @@ public class OrderService {
 
     public void setAccountRingBuffer(RingBuffer<Message> accountRingBuffer) {
         this.accountRingBuffer = accountRingBuffer;
+    }
+
+    public void setResponseRingBuffer(RingBuffer<Message> responseRingBuffer) {
+        this.responseRingBuffer = responseRingBuffer;
     }
 }
