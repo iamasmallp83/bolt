@@ -47,10 +47,13 @@ public class AccountService {
             account.setId(accountId);
             accounts.put(accountId, account);
         }
-        BooleanObjectPair<RejectionReason> response = account.deposit(deposit.currencyId.get(), deposit.amount.get());
+        account.deposit(deposit.currencyId.get(), deposit.amount.get());
+        Balance balance = account.getBalance(deposit.currencyId.get());
         responseRingBuffer.publishEvent((message, sequence) -> {
             message.id.set(messageId);
             message.type.set(EventType.DEPOSITED);
+            message.payload.asDeposited.value.set(balance.getValue());
+            message.payload.asDeposited.frozen.set(balance.getFrozen());
         });
     }
 
@@ -63,10 +66,13 @@ public class AccountService {
         } else {
             response = account.withdraw(withdraw.currencyId.get(), withdraw.amount.get());
         }
+        Balance balance = account.getBalance(withdraw.currencyId.get());
         responseRingBuffer.publishEvent((message, sequence) -> {
             if (response.leftBoolean()) {
                 message.id.set(messageId);
                 message.type.set(EventType.WITHDRAWN);
+                message.payload.asWithdrawn.value.set(balance.getValue());
+                message.payload.asWithdrawn.frozen.set(balance.getFrozen());
             } else {
                 message.id.set(messageId);
                 message.type.set(EventType.WITHDRAW_REJECTED);

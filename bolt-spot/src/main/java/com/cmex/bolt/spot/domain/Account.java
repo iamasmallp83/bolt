@@ -12,6 +12,10 @@ public class Account {
     private int id;
     private Short2ObjectMap<Balance> balances = new Short2ObjectOpenHashMap<>();
 
+    public Balance getBalance(short currencyId){
+       return balances.get(currencyId);
+    }
+
     public BooleanObjectPair<RejectionReason> deposit(short currencyId, long value) {
         Balance balance = balances.get(currencyId);
         if (balance == null) {
@@ -24,7 +28,7 @@ public class Account {
     public BooleanObjectImmutablePair<RejectionReason> withdraw(short currencyId, long value) {
         Balance balance = balances.get(currencyId);
         if (balance == null) {
-            return BooleanObjectImmutablePair.of(true, null);
+            return BooleanObjectImmutablePair.of(false, RejectionReason.BALANCE_NOT_EXIST);
         }
         return balance.withdraw(value);
     }

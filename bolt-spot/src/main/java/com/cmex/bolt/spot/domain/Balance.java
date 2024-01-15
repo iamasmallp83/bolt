@@ -3,36 +3,42 @@ package com.cmex.bolt.spot.domain;
 import com.cmex.bolt.spot.api.RejectionReason;
 import it.unimi.dsi.fastutil.booleans.BooleanObjectImmutablePair;
 import it.unimi.dsi.fastutil.booleans.BooleanObjectPair;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class Balance {
-    private long balance;
+    private long value;
 
     private long frozen;
 
-    public BooleanObjectPair<RejectionReason> deposit(long value) {
-        this.balance += value;
+    public BooleanObjectPair<RejectionReason> deposit(long amount) {
+        this.value += amount;
         return BooleanObjectPair.of(true, null);
     }
 
-    public BooleanObjectImmutablePair<RejectionReason> withdraw(long value) {
-        if (this.balance < value) {
+    public BooleanObjectImmutablePair<RejectionReason> withdraw(long amount) {
+        if (this.value < amount) {
             return BooleanObjectImmutablePair.of(false, RejectionReason.BALANCE_NOT_ENOUGH);
         }
-        this.balance -= value;
+        this.value -= amount;
         return BooleanObjectImmutablePair.of(true, null);
     }
 
-    public BooleanObjectImmutablePair<RejectionReason> freeze(long value) {
-        if (this.balance < value) {
+    public BooleanObjectImmutablePair<RejectionReason> freeze(long amount) {
+        if (this.value < amount) {
             return BooleanObjectImmutablePair.of(false, RejectionReason.BALANCE_NOT_ENOUGH);
         }
-        this.frozen += value;
+        this.frozen += amount;
         return BooleanObjectImmutablePair.of(true, null);
     }
 
     public long available() {
-        return balance - frozen;
+        return value - frozen;
     }
 }

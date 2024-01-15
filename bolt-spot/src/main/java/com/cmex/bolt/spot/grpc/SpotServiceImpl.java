@@ -15,6 +15,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class SpotServiceImpl extends SpotServiceGrpc.SpotServiceImplBase {
+
+    private final GenericResponseProto.GenericResponse success = GenericResponseProto.GenericResponse.newBuilder()
+            .setCode(1).setMessage("success").build();
+    private final GenericResponseProto.GenericResponse systemError = GenericResponseProto.GenericResponse.newBuilder()
+            .setCode(0).setMessage("system error").build();
     private final RingBuffer<Message> accountRingBuffer;
     private final RingBuffer<Message> orderRingBuffer;
     private final RingBuffer<Message> responseRingBuffer;
@@ -89,6 +94,9 @@ public class SpotServiceImpl extends SpotServiceGrpc.SpotServiceImplBase {
                 case PLACE_ORDER_REJECTED:
                     response = message.payload.asPlaceOrderRejected.get();
                     break;
+                case DEPOSITED:
+                    response = message.payload.asDeposited.get();
+                    break;
                 case WITHDRAWN:
                     response = message.payload.asWithdrawn.get();
                     break;
@@ -96,7 +104,7 @@ public class SpotServiceImpl extends SpotServiceGrpc.SpotServiceImplBase {
                     response = message.payload.asWithdrawRejected.get();
                     break;
                 default:
-                    response = GenericResponseProto.GenericResponse.newBuilder().setCode(0).build();
+                    response = systemError;
             }
             observer.onNext(response);
             observer.onCompleted();

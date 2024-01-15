@@ -18,7 +18,27 @@ message WithdrawRequest {
   sint64  amount = 4;
 }
 
+message FreezeRequest {
+  sint64  requestId = 1;
+  sint32  accountId = 2;
+  sint32  currencyId = 3;
+  sint64  amount = 4;
+}
+
+message UnfreezeRequest {
+  sint64  requestId = 1;
+  sint32  freezeId = 2;
+  sint64  amount = 3;
+}
+
+message Balance{
+  sint64 value = 1;
+  sint64 frozen = 2;
+}
+
 service SpotService {
   rpc deposit (DepositRequest) returns (GenericResponse) {}
   rpc withdraw (WithdrawRequest) returns (GenericResponse) {}
+  rpc freeze (FreezeRequest) returns (GenericResponse) {}
+  rpc unfreeze (UnfreezeRequest) returns (GenericResponse) {}
 }
