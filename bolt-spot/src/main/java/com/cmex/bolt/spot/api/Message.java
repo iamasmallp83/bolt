@@ -8,7 +8,7 @@ import com.lmax.disruptor.EventFactory;
 
 public class Message extends Struct {
     public final Enum32<EventType> type = new Enum32<EventType>(EventType.values());
-    public final Signed64 observerId = new Signed64();
+    public final Signed64 id = new Struct.Signed64();
     public final SpotEvent payload = inner(new SpotEvent());
 
 

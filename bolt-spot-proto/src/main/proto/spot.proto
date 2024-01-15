@@ -5,14 +5,14 @@ option java_outer_classname = "SpotServiceProto";
 import "generic_response.proto";
 
 message DepositRequest {
-  string  requestId = 1;
+  sint64  requestId = 1;
   sint32  accountId = 2;
   sint32  currencyId = 3;
   sint64  amount = 4;
 }
 
 message WithdrawRequest {
-  string  requestId = 1;
+  sint64  requestId = 1;
   sint32  accountId = 2;
   sint32  currencyId = 3;
   sint64  amount = 4;

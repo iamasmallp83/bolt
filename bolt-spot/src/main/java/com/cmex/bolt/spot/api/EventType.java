@@ -4,13 +4,14 @@ import javolution.io.Struct;
 
 public enum EventType {
     PLACE_ORDER(new PlaceOrder()),
-
+    ORDER_CREATE(new OrderCreated()),
     PLACE_ORDER_REJECTED(new PlaceOrderRejected()),
     CANCEL_ORDER(new CancelOrder()),
     WITHDRAW(new Withdraw()),
     WITHDRAWN(new Withdrawn()),
     WITHDRAW_REJECTED(new WithdrawRejected()),
     DEPOSIT(new Deposit()),
+    DEPOSITED(new Deposited()),
     FREEZE(new Freeze()),
     UNFREEZE(new Unfreeze());
 

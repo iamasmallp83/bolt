@@ -19,7 +19,7 @@ public class AccountDispatcher implements EventHandler<Message> {
         return partition;
     }
 
-    public AccountService getAccountService(){
+    public AccountService getAccountService() {
         return accountService;
     }
 
@@ -27,23 +27,23 @@ public class AccountDispatcher implements EventHandler<Message> {
         EventType type = message.type.get();
         switch (type) {
             case DEPOSIT:
-                if(partition == message.payload.asDeposit.accountId.get() % 4) {
-                    accountService.on(message.payload.asDeposit);
+                if (partition == message.payload.asDeposit.accountId.get() % 4) {
+                    accountService.on(message.id.get(), message.payload.asDeposit);
                 }
                 break;
             case WITHDRAW:
-                if(partition == message.payload.asWithdraw.accountId.get() % 4) {
-                    accountService.on(message.payload.asWithdraw);
+                if (partition == message.payload.asWithdraw.accountId.get() % 4) {
+                    accountService.on(message.id.get(), message.payload.asWithdraw);
                 }
                 break;
             case UNFREEZE:
-                if(partition == message.payload.asUnfreeze.accountId.get() % 4) {
-                    accountService.on(message.payload.asUnfreeze);
+                if (partition == message.payload.asUnfreeze.accountId.get() % 4) {
+                    accountService.on(message.id.get(), message.payload.asUnfreeze);
                 }
                 break;
             case PLACE_ORDER:
-                if(partition == message.payload.asPlaceOrder.accountId.get() % 4) {
-                    accountService.on(message.payload.asPlaceOrder);
+                if (partition == message.payload.asPlaceOrder.accountId.get() % 4) {
+                    accountService.on(message.id.get(), message.payload.asPlaceOrder);
                 }
                 break;
         }

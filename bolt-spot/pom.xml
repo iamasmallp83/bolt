@@ -10,11 +10,11 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>spot</artifactId>
+    <artifactId>bolt-spot</artifactId>
     <dependencies>
         <dependency>
             <groupId>com.cmex</groupId>
-            <artifactId>spot-proto</artifactId>
+            <artifactId>bolt-spot-proto</artifactId>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
