@@ -2,14 +2,19 @@ package com.cmex.bolt.spot.service;
 
 import com.cmex.bolt.spot.api.EventType;
 import com.cmex.bolt.spot.api.Message;
+import com.cmex.bolt.spot.repository.impl.AccountRepository;
+import com.cmex.bolt.spot.repository.impl.OrderBookRepository;
+import com.cmex.bolt.spot.util.OrderIdGenerator;
 import com.lmax.disruptor.EventHandler;
 
 public class OrderDispatcher implements EventHandler<Message> {
 
+    private int amount;
     private int partition;
     private final OrderService orderService;
 
-    public OrderDispatcher(int partition) {
+    public OrderDispatcher(int amount, int partition) {
+        this.amount = amount;
         this.partition = partition;
         this.orderService = new OrderService();
     }
@@ -27,12 +32,12 @@ public class OrderDispatcher implements EventHandler<Message> {
 
         switch (type) {
             case CANCEL_ORDER:
-                if (partition == message.payload.asCancelOrder.orderId.get() % 4) {
+                if (partition == OrderIdGenerator.getSymbolId(message.payload.asCancelOrder.orderId.get()) % amount) {
                     orderService.on(message.id.get(), message.payload.asCancelOrder);
                 }
                 break;
             case PLACE_ORDER:
-                if (partition == message.payload.asPlaceOrder.symbolId.get() % 4) {
+                if (partition == message.payload.asPlaceOrder.symbolId.get() % amount) {
                     orderService.on(message.id.get(), message.payload.asPlaceOrder);
                 }
                 break;

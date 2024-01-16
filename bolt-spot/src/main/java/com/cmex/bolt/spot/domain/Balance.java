@@ -1,7 +1,7 @@
 package com.cmex.bolt.spot.domain;
 
 import com.cmex.bolt.spot.api.RejectionReason;
-import it.unimi.dsi.fastutil.booleans.BooleanObjectImmutablePair;
+import com.cmex.bolt.spot.util.Result;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -16,25 +16,25 @@ public class Balance {
 
     private long frozen;
 
-    public BooleanObjectImmutablePair<RejectionReason> deposit(long amount) {
+    public Result<Balance> deposit(long amount) {
         this.value += amount;
-        return BooleanObjectImmutablePair.of(true, null);
+        return Result.success(this);
     }
 
-    public BooleanObjectImmutablePair<RejectionReason> withdraw(long amount) {
+    public Result<Balance> withdraw(long amount) {
         if (this.value < amount) {
-            return BooleanObjectImmutablePair.of(false, RejectionReason.BALANCE_NOT_ENOUGH);
+            return Result.fail(RejectionReason.BALANCE_NOT_ENOUGH);
         }
         this.value -= amount;
-        return BooleanObjectImmutablePair.of(true, null);
+        return Result.success(this);
     }
 
-    public BooleanObjectImmutablePair<RejectionReason> freeze(long amount) {
+    public Result<Balance> freeze(long amount) {
         if (this.value < amount) {
-            return BooleanObjectImmutablePair.of(false, RejectionReason.BALANCE_NOT_ENOUGH);
+            return Result.fail(RejectionReason.BALANCE_NOT_ENOUGH);
         }
         this.frozen += amount;
-        return BooleanObjectImmutablePair.of(true, null);
+        return Result.success(this);
     }
 
     public long available() {

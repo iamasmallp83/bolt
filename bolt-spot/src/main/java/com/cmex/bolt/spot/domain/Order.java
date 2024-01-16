@@ -3,6 +3,8 @@ package com.cmex.bolt.spot.domain;
 import lombok.Builder;
 import lombok.Data;
 
+import java.math.BigDecimal;
+
 @Data
 @Builder
 public class Order {
@@ -11,10 +13,13 @@ public class Order {
 
     private int accountId;
 
-    private boolean buy;
+    private OrderSide side;
 
-    private long price;
+    private BigDecimal price;
 
-    private long size;
+    private BigDecimal size;
 
+    public enum OrderSide {
+        BID, ASK;
+    }
 }

@@ -1,10 +1,8 @@
 package com.cmex.bolt.spot.util;
 
-import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 
-@Component
 public class OrderIdGenerator {
     private static final int UNUSED_BITS = 1; // Sign bit, Unused (always set to 0)
     private static final int EPOCH_BITS = 39;
@@ -77,7 +75,7 @@ public class OrderIdGenerator {
         return new long[]{timestamp, symbolId, sequence};
     }
 
-    public long getSymbolId(long id) {
+    public static long getSymbolId(long id) {
         long maskSymbolId = ((1L << SYMBOL_BITS) - 1) << SEQUENCE_BITS;
         return (id & maskSymbolId) >> SEQUENCE_BITS;
     }

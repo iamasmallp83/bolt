@@ -8,7 +8,6 @@ import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.util.DaemonThreadFactory;
 import io.grpc.stub.StreamObserver;
-import net.devh.boot.grpc.server.service.GrpcService;
 
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -17,7 +16,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import static com.cmex.bolt.spot.grpc.SpotServiceGrpc.SpotServiceImplBase;
 import static com.cmex.bolt.spot.grpc.SpotServiceProto.*;
 
-@GrpcService
 public class SpotServiceImpl extends SpotServiceImplBase {
 
     private final RingBuffer<Message> accountRingBuffer;
