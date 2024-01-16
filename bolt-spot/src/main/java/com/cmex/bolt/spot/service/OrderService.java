@@ -1,4 +1,4 @@
-package com.cmex.bolt.spot.domain;
+package com.cmex.bolt.spot.service;
 
 
 import com.cmex.bolt.spot.api.CancelOrder;
@@ -6,7 +6,6 @@ import com.cmex.bolt.spot.api.EventType;
 import com.cmex.bolt.spot.api.Message;
 import com.cmex.bolt.spot.api.PlaceOrder;
 import com.cmex.bolt.spot.util.OrderIdGenerator;
-import com.lmax.disruptor.EventTranslator;
 import com.lmax.disruptor.RingBuffer;
 
 public class OrderService {

@@ -1,16 +1,20 @@
-package com.cmex.bolt.spot.domain;
+package com.cmex.bolt.spot.service;
 
 import com.cmex.bolt.spot.api.*;
-import com.lmax.disruptor.EventTranslator;
+import com.cmex.bolt.spot.domain.Account;
+import com.cmex.bolt.spot.domain.Balance;
+import com.cmex.bolt.spot.domain.Symbol;
 import com.lmax.disruptor.RingBuffer;
 import it.unimi.dsi.fastutil.booleans.BooleanObjectImmutablePair;
 import it.unimi.dsi.fastutil.booleans.BooleanObjectPair;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import org.springframework.stereotype.Service;
 
+@Service
 public class AccountService {
 
-    private Int2ObjectMap<Account> accounts = new Int2ObjectOpenHashMap<>();
+    private final Int2ObjectMap<Account> accounts = new Int2ObjectOpenHashMap<>();
 
     private RingBuffer<Message> responseRingBuffer;
     private RingBuffer<Message> orderRingBuffer;
@@ -108,5 +112,9 @@ public class AccountService {
 
     public void setResponseRingBuffer(RingBuffer<Message> responseRingBuffer) {
         this.responseRingBuffer = responseRingBuffer;
+    }
+
+    public Account getAccount(int accountId) {
+        return accounts.get(accountId);
     }
 }

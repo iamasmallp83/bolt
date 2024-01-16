@@ -1,20 +1,23 @@
 package com.cmex.bolt.spot.grpc;
 
 import com.cmex.bolt.spot.api.*;
-import com.cmex.bolt.spot.domain.AccountDispatcher;
-import com.cmex.bolt.spot.domain.OrderDispatcher;
+import com.cmex.bolt.spot.service.AccountDispatcher;
+import com.cmex.bolt.spot.service.OrderDispatcher;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.util.DaemonThreadFactory;
 import io.grpc.stub.StreamObserver;
+import net.devh.boot.grpc.server.service.GrpcService;
 
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
-import static com.cmex.bolt.spot.grpc.SpotServiceGrpc.*;
+import static com.cmex.bolt.spot.grpc.SpotServiceGrpc.SpotServiceImplBase;
 import static com.cmex.bolt.spot.grpc.SpotServiceProto.*;
 
+@GrpcService
 public class SpotServiceImpl extends SpotServiceImplBase {
 
     private final RingBuffer<Message> accountRingBuffer;
@@ -22,7 +25,7 @@ public class SpotServiceImpl extends SpotServiceImplBase {
     private final AtomicLong requestId = new AtomicLong();
     private final ConcurrentHashMap<Long, StreamObserver<?>> observers = new ConcurrentHashMap<>();
 
-    public SpotServiceImpl() {
+    public SpotServiceImpl(List<AccountDispatcher> accountDispatchers, List<OrderDispatcher> orderDispatchers) {
         int bufferSize = 1024;
         Disruptor<Message> accountDisruptor =
                 new Disruptor<>(Message.FACTORY, bufferSize, DaemonThreadFactory.INSTANCE);
@@ -30,23 +33,19 @@ public class SpotServiceImpl extends SpotServiceImplBase {
                 new Disruptor<>(Message.FACTORY, bufferSize, DaemonThreadFactory.INSTANCE);
         Disruptor<Message> responseDisruptor =
                 new Disruptor<>(Message.FACTORY, bufferSize, DaemonThreadFactory.INSTANCE);
-        AccountDispatcher[] accountDispatchers = new AccountDispatcher[4];
-        OrderDispatcher[] orderDispatchers = new OrderDispatcher[4];
-        for (int i = 0; i < 4; i++) {
-            accountDispatchers[i] = new AccountDispatcher(i);
-            orderDispatchers[i] = new OrderDispatcher(i);
-        }
-        accountDisruptor.handleEventsWith(accountDispatchers);
-        orderDisruptor.handleEventsWith(orderDispatchers);
+        accountDisruptor.handleEventsWith(accountDispatchers.toArray(new AccountDispatcher[0]));
+        orderDisruptor.handleEventsWith(orderDispatchers.toArray(new OrderDispatcher[0]));
         responseDisruptor.handleEventsWith(new ResponseEventHandler());
         accountRingBuffer = accountDisruptor.start();
         RingBuffer<Message> orderRingBuffer = orderDisruptor.start();
         RingBuffer<Message> responseRingBuffer = responseDisruptor.start();
-        for (int i = 0; i < 4; i++) {
-            accountDispatchers[i].getAccountService().setOrderRingBuffer(orderRingBuffer);
-            orderDispatchers[i].getOrderService().setAccountRingBuffer(accountRingBuffer);
-            accountDispatchers[i].getAccountService().setResponseRingBuffer(responseRingBuffer);
-            orderDispatchers[i].getOrderService().setResponseRingBuffer(responseRingBuffer);
+        for (AccountDispatcher dispatcher : accountDispatchers) {
+            dispatcher.getAccountService().setOrderRingBuffer(orderRingBuffer);
+            dispatcher.getAccountService().setResponseRingBuffer(responseRingBuffer);
+        }
+        for (OrderDispatcher dispatcher : orderDispatchers) {
+            dispatcher.getOrderService().setAccountRingBuffer(accountRingBuffer);
+            dispatcher.getOrderService().setResponseRingBuffer(responseRingBuffer);
         }
     }
 

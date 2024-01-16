@@ -1,4 +1,4 @@
-package com.cmex.bolt.spot.domain;
+package com.cmex.bolt.spot.service;
 
 import com.lmax.disruptor.EventHandler;
 import com.cmex.bolt.spot.api.EventType;

@@ -2,7 +2,6 @@ package com.cmex.bolt.spot.domain;
 
 import com.cmex.bolt.spot.api.RejectionReason;
 import it.unimi.dsi.fastutil.booleans.BooleanObjectImmutablePair;
-import it.unimi.dsi.fastutil.booleans.BooleanObjectPair;
 import it.unimi.dsi.fastutil.shorts.Short2ObjectMap;
 import it.unimi.dsi.fastutil.shorts.Short2ObjectOpenHashMap;
 import lombok.Data;

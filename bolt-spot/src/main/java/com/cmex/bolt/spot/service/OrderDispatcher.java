@@ -1,4 +1,4 @@
-package com.cmex.bolt.spot.domain;
+package com.cmex.bolt.spot.service;
 
 import com.cmex.bolt.spot.api.EventType;
 import com.cmex.bolt.spot.api.Message;

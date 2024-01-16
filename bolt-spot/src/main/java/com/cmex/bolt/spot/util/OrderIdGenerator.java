@@ -1,7 +1,10 @@
 package com.cmex.bolt.spot.util;
 
+import org.springframework.stereotype.Component;
+
 import java.time.Instant;
 
+@Component
 public class OrderIdGenerator {
     private static final int UNUSED_BITS = 1; // Sign bit, Unused (always set to 0)
     private static final int EPOCH_BITS = 39;
