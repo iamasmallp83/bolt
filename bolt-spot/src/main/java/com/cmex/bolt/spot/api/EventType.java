@@ -4,7 +4,7 @@ import javolution.io.Struct;
 
 public enum EventType {
     PLACE_ORDER(new PlaceOrder()),
-    ORDER_CREATE(new OrderCreated()),
+    ORDER_CREATED(new OrderCreated()),
     PLACE_ORDER_REJECTED(new PlaceOrderRejected()),
     CANCEL_ORDER(new CancelOrder()),
     WITHDRAW(new Withdraw()),

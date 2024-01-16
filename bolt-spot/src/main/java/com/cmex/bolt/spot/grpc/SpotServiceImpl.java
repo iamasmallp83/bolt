@@ -1,8 +1,6 @@
 package com.cmex.bolt.spot.grpc;
 
-
-import com.cmex.bolt.spot.api.EventType;
-import com.cmex.bolt.spot.api.Message;
+import com.cmex.bolt.spot.api.*;
 import com.cmex.bolt.spot.domain.AccountDispatcher;
 import com.cmex.bolt.spot.domain.OrderDispatcher;
 import com.lmax.disruptor.EventHandler;
@@ -14,18 +12,15 @@ import io.grpc.stub.StreamObserver;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class SpotServiceImpl extends SpotServiceGrpc.SpotServiceImplBase {
+import static com.cmex.bolt.spot.grpc.SpotServiceGrpc.*;
+import static com.cmex.bolt.spot.grpc.SpotServiceProto.*;
 
-    private final GenericResponseProto.GenericResponse success = GenericResponseProto.GenericResponse.newBuilder()
-            .setCode(1).setMessage("success").build();
-    private final GenericResponseProto.GenericResponse systemError = GenericResponseProto.GenericResponse.newBuilder()
-            .setCode(0).setMessage("system error").build();
+public class SpotServiceImpl extends SpotServiceImplBase {
+
     private final RingBuffer<Message> accountRingBuffer;
-    private final RingBuffer<Message> orderRingBuffer;
-    private final RingBuffer<Message> responseRingBuffer;
 
     private final AtomicLong requestId = new AtomicLong();
-    private final ConcurrentHashMap<Long, StreamObserver<GenericResponseProto.GenericResponse>> observers = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, StreamObserver<?>> observers = new ConcurrentHashMap<>();
 
     public SpotServiceImpl() {
         int bufferSize = 1024;
@@ -45,8 +40,8 @@ public class SpotServiceImpl extends SpotServiceGrpc.SpotServiceImplBase {
         orderDisruptor.handleEventsWith(orderDispatchers);
         responseDisruptor.handleEventsWith(new ResponseEventHandler());
         accountRingBuffer = accountDisruptor.start();
-        orderRingBuffer = orderDisruptor.start();
-        responseRingBuffer = responseDisruptor.start();
+        RingBuffer<Message> orderRingBuffer = orderDisruptor.start();
+        RingBuffer<Message> responseRingBuffer = responseDisruptor.start();
         for (int i = 0; i < 4; i++) {
             accountDispatchers[i].getAccountService().setOrderRingBuffer(orderRingBuffer);
             orderDispatchers[i].getOrderService().setAccountRingBuffer(accountRingBuffer);
@@ -55,57 +50,67 @@ public class SpotServiceImpl extends SpotServiceGrpc.SpotServiceImplBase {
         }
     }
 
-    public void deposit(SpotServiceProto.DepositRequest request, StreamObserver<GenericResponseProto.GenericResponse> responseObserver) {
+    public void deposit(DepositRequest request, StreamObserver<DepositResponse> responseObserver) {
         long id = requestId.incrementAndGet();
         observers.put(id, responseObserver);
         accountRingBuffer.publishEvent((message, sequence) -> {
             message.id.set(id);
             message.type.set(EventType.DEPOSIT);
-            message.payload.asDeposit.accountId.set(request.getAccountId());
-            message.payload.asDeposit.currencyId.set((short) request.getCurrencyId());
-            message.payload.asDeposit.amount.set(request.getAmount());
+            Deposit deposit = message.payload.asDeposit;
+            deposit.accountId.set(request.getAccountId());
+            deposit.currencyId.set((short) request.getCurrencyId());
+            deposit.amount.set(request.getAmount());
         });
     }
 
-    public void withdraw(SpotServiceProto.WithdrawRequest request, StreamObserver<GenericResponseProto.GenericResponse> responseObserver) {
+    public void withdraw(WithdrawRequest request, StreamObserver<WithdrawResponse> responseObserver) {
         long id = requestId.incrementAndGet();
         observers.put(id, responseObserver);
         accountRingBuffer.publishEvent((message, sequence) -> {
             message.id.set(id);
             message.type.set(EventType.WITHDRAW);
-            message.payload.asWithdraw.accountId.set(request.getAccountId());
-            message.payload.asWithdraw.currencyId.set((short) request.getCurrencyId());
-            message.payload.asWithdraw.amount.set(request.getAmount());
+            Withdraw withdraw = message.payload.asWithdraw;
+            withdraw.accountId.set(request.getAccountId());
+            withdraw.currencyId.set((short) request.getCurrencyId());
+            withdraw.amount.set(request.getAmount());
+        });
+    }
+
+    public void placeOrder(PlaceOrderRequest request, StreamObserver<PlaceOrderResponse> responseObserver) {
+        long id = requestId.incrementAndGet();
+        observers.put(id, responseObserver);
+        accountRingBuffer.publishEvent((message, sequence) -> {
+            message.id.set(id);
+            message.type.set(EventType.PLACE_ORDER);
+            PlaceOrder placeOrder = message.payload.asPlaceOrder;
+            placeOrder.symbolId.set((short) request.getSymbolId());
+            placeOrder.accountId.set(request.getAccountId());
+            placeOrder.type.set(request.getType() == PlaceOrderRequest.Type.LIMIT ?
+                    OrderType.LIMIT : OrderType.MARKET);
+            placeOrder.side.set(request.getSide() == PlaceOrderRequest.Side.BID ?
+                    OrderSide.BID : OrderSide.ASK);
+            placeOrder.price.set(request.getPrice());
+            placeOrder.size.set(request.getSize());
+            placeOrder.funds.set(request.getFunds());
         });
     }
 
     private class ResponseEventHandler implements EventHandler<Message> {
 
+        @SuppressWarnings("unchecked")
         @Override
-        public void onEvent(Message message, long sequence, boolean endOfBatch) throws Exception {
+        public void onEvent(Message message, long sequence, boolean endOfBatch) {
             long id = message.id.get();
-            StreamObserver<GenericResponseProto.GenericResponse> observer = observers.get(id);
+            StreamObserver<Object> observer = (StreamObserver<Object>) observers.get(id);
             EventType type = message.type.get();
-            GenericResponseProto.GenericResponse response;
-            switch (type) {
-                case ORDER_CREATE:
-                    response = message.payload.asOrderCreated.get();
-                    break;
-                case PLACE_ORDER_REJECTED:
-                    response = message.payload.asPlaceOrderRejected.get();
-                    break;
-                case DEPOSITED:
-                    response = message.payload.asDeposited.get();
-                    break;
-                case WITHDRAWN:
-                    response = message.payload.asWithdrawn.get();
-                    break;
-                case WITHDRAW_REJECTED:
-                    response = message.payload.asWithdrawRejected.get();
-                    break;
-                default:
-                    response = systemError;
-            }
+            Object response = switch (type) {
+                case ORDER_CREATED -> message.payload.asOrderCreated.get();
+                case PLACE_ORDER_REJECTED -> message.payload.asPlaceOrderRejected.get();
+                case DEPOSITED -> message.payload.asDeposited.get();
+                case WITHDRAWN -> message.payload.asWithdrawn.get();
+                case WITHDRAW_REJECTED -> message.payload.asWithdrawRejected.get();
+                default -> throw new RuntimeException();
+            };
             observer.onNext(response);
             observer.onCompleted();
         }

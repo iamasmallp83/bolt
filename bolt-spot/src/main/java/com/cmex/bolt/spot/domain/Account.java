@@ -16,7 +16,7 @@ public class Account {
        return balances.get(currencyId);
     }
 
-    public BooleanObjectPair<RejectionReason> deposit(short currencyId, long value) {
+    public BooleanObjectImmutablePair<RejectionReason> deposit(short currencyId, long value) {
         Balance balance = balances.get(currencyId);
         if (balance == null) {
             balance = new Balance();
@@ -33,10 +33,10 @@ public class Account {
         return balance.withdraw(value);
     }
 
-    public BooleanObjectPair<RejectionReason> freeze(short currencyId, long value) {
+    public BooleanObjectImmutablePair<RejectionReason> freeze(short currencyId, long value) {
         Balance balance = balances.get(currencyId);
         if (balance == null) {
-            return BooleanObjectPair.of(false, RejectionReason.ACCOUNT_NOT_EXIST);
+            return BooleanObjectImmutablePair.of(false, RejectionReason.ACCOUNT_NOT_EXIST);
         }
         return balance.freeze(value);
     }

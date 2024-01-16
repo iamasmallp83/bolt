@@ -1,8 +1,8 @@
 package com.cmex.bolt.spot.domain;
 
-import com.lmax.disruptor.EventHandler;
 import com.cmex.bolt.spot.api.EventType;
 import com.cmex.bolt.spot.api.Message;
+import com.lmax.disruptor.EventHandler;
 
 public class OrderDispatcher implements EventHandler<Message> {
 
@@ -27,13 +27,13 @@ public class OrderDispatcher implements EventHandler<Message> {
 
         switch (type) {
             case CANCEL_ORDER:
-                if(partition == message.payload.asCancelOrder.orderId.get() % 4) {
-                    orderService.on(message.payload.asCancelOrder);
+                if (partition == message.payload.asCancelOrder.orderId.get() % 4) {
+                    orderService.on(message.id.get(), message.payload.asCancelOrder);
                 }
                 break;
             case PLACE_ORDER:
-                if(partition == message.payload.asPlaceOrder.symbolId.get() % 4) {
-                    orderService.on(message.payload.asPlaceOrder);
+                if (partition == message.payload.asPlaceOrder.symbolId.get() % 4) {
+                    orderService.on(message.id.get(), message.payload.asPlaceOrder);
                 }
                 break;
         }

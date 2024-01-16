@@ -21,22 +21,38 @@ public class AccountService {
     public void on(long messageId, PlaceOrder placeOrder) {
         //锁定金额
         int accountId = placeOrder.accountId.get();
-        Account account = accounts.get(accountId);
         Symbol symbol = Symbol.getSymbol(placeOrder.symbolId.get());
-        if (placeOrder.buy.get()) {
-            long volume = placeOrder.price.get() * placeOrder.size.get();
-            account.freeze(symbol.getQuote().getId(), volume);
-        } else {
-            account.freeze(symbol.getBase().getId(), placeOrder.size.get());
+        BooleanObjectImmutablePair<RejectionReason> response;
+        Account account = accounts.get(accountId);
+        if (account == null) {
+            responseRingBuffer.publishEvent((message, sequence) -> {
+                message.id.set(messageId);
+                message.type.set(EventType.PLACE_ORDER_REJECTED);
+                message.payload.asPlaceOrderRejected.reason.set(RejectionReason.ACCOUNT_NOT_EXIST);
+            });
+            return;
         }
-        orderRingBuffer.publishEvent((message, sequence) -> {
-            message.type.set(EventType.PLACE_ORDER);
-            message.payload.asPlaceOrder.symbolId.set(placeOrder.symbolId.get());
-            message.payload.asPlaceOrder.accountId.set(placeOrder.accountId.get());
-            message.payload.asPlaceOrder.buy.set(placeOrder.buy.get());
-            message.payload.asPlaceOrder.price.set(placeOrder.price.get());
-            message.payload.asPlaceOrder.size.set(placeOrder.size.get());
-        });
+        if (placeOrder.side.get() == OrderSide.BID) {
+            long volume = placeOrder.price.get() * placeOrder.size.get();
+            response = account.freeze(symbol.getQuote().getId(), volume);
+        } else {
+            response = account.freeze(symbol.getBase().getId(), placeOrder.size.get());
+        }
+        if (response.leftBoolean()) {
+            orderRingBuffer.publishEvent((message, sequence) -> {
+                message.id.set(messageId);
+                message.type.set(EventType.PLACE_ORDER);
+                PlaceOrder payload = message.payload.asPlaceOrder;
+                payload.copy(payload);
+            });
+        } else {
+            responseRingBuffer.publishEvent((message, sequence) -> {
+                message.id.set(messageId);
+                message.type.set(EventType.PLACE_ORDER_REJECTED);
+                message.payload.asPlaceOrderRejected.reason.set(response.right());
+            });
+        }
+
     }
 
     public void on(long messageId, Deposit deposit) {
@@ -61,12 +77,13 @@ public class AccountService {
         int accountId = withdraw.accountId.get();
         Account account = accounts.get(accountId);
         BooleanObjectPair<RejectionReason> response;
+        final Balance balance;
         if (account == null) {
             response = BooleanObjectImmutablePair.of(false, RejectionReason.ACCOUNT_NOT_EXIST);
         } else {
             response = account.withdraw(withdraw.currencyId.get(), withdraw.amount.get());
         }
-        Balance balance = account.getBalance(withdraw.currencyId.get());
+        balance = account.getBalance(withdraw.currencyId.get());
         responseRingBuffer.publishEvent((message, sequence) -> {
             if (response.leftBoolean()) {
                 message.id.set(messageId);

@@ -2,13 +2,27 @@ syntax = "proto3";
 option java_package = "com.cmex.bolt.spot.grpc";
 option java_outer_classname = "SpotServiceProto";
 
-import "generic_response.proto";
+message Balance{
+  sint64 value = 1;
+  sint64 frozen = 2;
+  sint64 available = 3;
+}
+
+message Order{
+  sint64 id = 1;
+}
 
 message DepositRequest {
   sint64  requestId = 1;
   sint32  accountId = 2;
   sint32  currencyId = 3;
   sint64  amount = 4;
+}
+
+message DepositResponse{
+  sint32  code = 1;
+  optional string  message = 2;
+  optional Balance data = 3;
 }
 
 message WithdrawRequest {
@@ -18,11 +32,23 @@ message WithdrawRequest {
   sint64  amount = 4;
 }
 
+message WithdrawResponse{
+  sint32  code = 1;
+  optional string  message = 2;
+  optional Balance data = 3;
+}
+
 message FreezeRequest {
   sint64  requestId = 1;
   sint32  accountId = 2;
   sint32  currencyId = 3;
   sint64  amount = 4;
+}
+
+message FreezeResponse{
+  sint32  code = 1;
+  optional string  message = 2;
+  optional Balance data = 3;
 }
 
 message UnfreezeRequest {
@@ -31,14 +57,52 @@ message UnfreezeRequest {
   sint64  amount = 3;
 }
 
-message Balance{
-  sint64 value = 1;
-  sint64 frozen = 2;
+message PlaceOrderRequest{
+  sint64  requestId = 1;
+  sint32 symbolId = 2;
+  sint32 accountId = 3;
+  enum Type{
+    LIMIT = 0;
+    MARKET = 1;
+  }
+  Type type = 4;
+  enum Side{
+    BID = 0;
+    ASK = 1;
+  }
+  Side side = 5;
+  optional sint64 price = 6;
+  optional sint64 size = 7;
+  optional sint64 funds = 8;
 }
 
+message PlaceOrderResponse{
+  sint32  code = 1;
+  optional string  message = 2;
+  optional Order data = 3;
+}
+
+message CancelOrderRequest{
+
+}
+
+message CancelOrderResponse{
+
+}
+
+
+message UnfreezeResponse {
+  sint32  code = 1;
+  optional string  message = 2;
+  optional Balance data = 3;
+}
+
+
 service SpotService {
-  rpc deposit (DepositRequest) returns (GenericResponse) {}
-  rpc withdraw (WithdrawRequest) returns (GenericResponse) {}
-  rpc freeze (FreezeRequest) returns (GenericResponse) {}
-  rpc unfreeze (UnfreezeRequest) returns (GenericResponse) {}
+  rpc deposit (DepositRequest) returns (DepositResponse) {}
+  rpc withdraw (WithdrawRequest) returns (WithdrawResponse) {}
+  rpc freeze (FreezeRequest) returns (FreezeResponse) {}
+  rpc unfreeze (UnfreezeRequest) returns (UnfreezeResponse) {}
+  rpc placeOrder (PlaceOrderRequest) returns (PlaceOrderResponse) {}
+  rpc cancelOrder (CancelOrderRequest) returns (CancelOrderResponse) {}
 }

@@ -5,6 +5,8 @@ import com.cmex.bolt.spot.api.CancelOrder;
 import com.cmex.bolt.spot.api.EventType;
 import com.cmex.bolt.spot.api.Message;
 import com.cmex.bolt.spot.api.PlaceOrder;
+import com.cmex.bolt.spot.util.OrderIdGenerator;
+import com.lmax.disruptor.EventTranslator;
 import com.lmax.disruptor.RingBuffer;
 
 public class OrderService {
@@ -13,23 +15,22 @@ public class OrderService {
 
     private RingBuffer<Message> responseRingBuffer;
 
+    private OrderIdGenerator generator;
+
     public OrderService() {
+        generator = new OrderIdGenerator();
     }
 
-    public void on(PlaceOrder placeOrder) {
+    public void on(long messageId, PlaceOrder placeOrder) {
         //start to match
-        accountRingBuffer.publishEvent((event, sequence) -> {
-            event.type.set(EventType.UNFREEZE);
-            event.payload.asUnfreeze.accountId.set(placeOrder.accountId.get());
-            if (placeOrder.buy.get()) {
-                event.payload.asUnfreeze.amount.set(placeOrder.price.get() * placeOrder.size.get());
-            } else {
-                event.payload.asUnfreeze.amount.set(placeOrder.size.get());
-            }
+        responseRingBuffer.publishEvent((message, sequence) -> {
+            message.id.set(messageId);
+            message.type.set(EventType.ORDER_CREATED);
+            message.payload.asOrderCreated.orderId.set(generator.nextId(placeOrder.symbolId.get()));
         });
     }
 
-    public void on(CancelOrder cancelOrder) {
+    public void on(long messageId, CancelOrder cancelOrder) {
     }
 
     public void setAccountRingBuffer(RingBuffer<Message> accountRingBuffer) {
