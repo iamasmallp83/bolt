@@ -29,10 +29,10 @@ public class AccountService {
             //account 存在
             Result<Balance> result;
             if (placeOrder.side.get() == OrderSide.BID) {
-                long volume = placeOrder.price.get() * placeOrder.size.get();
+                long volume = placeOrder.price.get() * placeOrder.quantity.get();
                 result = account.freeze(symbol.getQuote().getId(), volume);
             } else {
-                result = account.freeze(symbol.getBase().getId(), placeOrder.size.get());
+                result = account.freeze(symbol.getBase().getId(), placeOrder.quantity.get());
             }
             if (result.isSuccess()) {
                 orderRingBuffer.publishEvent((message, sequence) -> {

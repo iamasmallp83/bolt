@@ -35,4 +35,11 @@ public class BigDecimalUtil {
     public static boolean eqZero(BigDecimal one) {
         return one.compareTo(BigDecimal.ZERO) == 0;
     }
+
+    public static BigDecimal max(BigDecimal one, BigDecimal two) {
+        return gte(one, two) ? one : two;
+    }
+    public static BigDecimal min(BigDecimal one, BigDecimal two) {
+        return gte(one, two) ? two : one;
+    }
 }

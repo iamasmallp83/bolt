@@ -4,14 +4,14 @@ package com.cmex.bolt.spot.service;
 import com.cmex.bolt.spot.api.*;
 import com.cmex.bolt.spot.domain.Order;
 import com.cmex.bolt.spot.domain.OrderBook;
+import com.cmex.bolt.spot.domain.Ticket;
 import com.cmex.bolt.spot.repository.impl.OrderBookRepository;
 import com.cmex.bolt.spot.util.OrderIdGenerator;
 import com.lmax.disruptor.RingBuffer;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
-
-import static javax.swing.UIManager.get;
 
 public class OrderService {
 
@@ -25,7 +25,7 @@ public class OrderService {
 
     public OrderService() {
         generator = new OrderIdGenerator();
-        this.repository = new OrderBookRepository();
+        repository = new OrderBookRepository();
     }
 
     public void on(long messageId, PlaceOrder placeOrder) {
@@ -33,7 +33,7 @@ public class OrderService {
         Optional<OrderBook> optional = repository.get(placeOrder.symbolId.get());
         optional.ifPresentOrElse(orderBook -> {
             Order order = getOrder(placeOrder);
-            orderBook.match(order);
+            List<Ticket> tickets = orderBook.match(order);
             responseRingBuffer.publishEvent((message, sequence) -> {
                 message.id.set(messageId);
                 message.type.set(EventType.ORDER_CREATED);
@@ -65,7 +65,7 @@ public class OrderService {
                 .accountId(placeOrder.accountId.get())
                 .side(placeOrder.side.get() == OrderSide.BID ? Order.OrderSide.BID : Order.OrderSide.ASK)
                 .price(new BigDecimal(placeOrder.price.get()))
-                .size(new BigDecimal(placeOrder.size.get()))
+                .quantity(new BigDecimal(placeOrder.quantity.get()))
                 .build();
     }
 }

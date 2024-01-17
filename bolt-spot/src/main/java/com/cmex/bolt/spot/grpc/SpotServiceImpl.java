@@ -87,8 +87,8 @@ public class SpotServiceImpl extends SpotServiceImplBase {
             placeOrder.side.set(request.getSide() == PlaceOrderRequest.Side.BID ?
                     OrderSide.BID : OrderSide.ASK);
             placeOrder.price.set(request.getPrice());
-            placeOrder.size.set(request.getSize());
-            placeOrder.funds.set(request.getFunds());
+            placeOrder.quantity.set(request.getQuantity());
+            placeOrder.volume.set(request.getVolume());
         });
     }
 

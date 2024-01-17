@@ -72,8 +72,8 @@ message PlaceOrderRequest{
   }
   Side side = 5;
   optional sint64 price = 6;
-  optional sint64 size = 7;
-  optional sint64 funds = 8;
+  optional sint64 quantity = 7;
+  optional sint64 volume = 8;
 }
 
 message PlaceOrderResponse{
