@@ -34,18 +34,21 @@ public class MatchService {
         optional.ifPresentOrElse(orderBook -> {
             Order order = getOrder(placeOrder);
             List<Ticket> tickets = orderBook.match(order);
-            responseRingBuffer.publishEvent((message, sequence) -> {
-                message.id.set(messageId);
-                message.type.set(EventType.ORDER_CREATED);
-                message.payload.asOrderCreated.orderId.set(order.getId());
-            });
-        }, () -> {
-            responseRingBuffer.publishEvent((message, sequence) -> {
-                message.id.set(messageId);
-                message.type.set(EventType.PLACE_ORDER_REJECTED);
-                message.payload.asPlaceOrderRejected.reason.set(RejectionReason.SYMBOL_NOT_EXIST);
-            });
-        });
+            if (tickets.isEmpty()) {
+                //未成交
+                responseRingBuffer.publishEvent((message, sequence) -> {
+                    message.id.set(messageId);
+                    message.type.set(EventType.ORDER_CREATED);
+                    message.payload.asOrderCreated.orderId.set(order.getId());
+                });
+            } else {
+
+            }
+        }, () -> responseRingBuffer.publishEvent((message, sequence) -> {
+            message.id.set(messageId);
+           message.type.set(EventType.PLACE_ORDER_REJECTED);
+            message.payload.asPlaceOrderRejected.reason.set(RejectionReason.SYMBOL_NOT_EXIST);
+        }));
     }
 
     public void on(long messageId, CancelOrder cancelOrder) {
