@@ -13,17 +13,17 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
-public class OrderService {
+public class MatchService {
 
-    private RingBuffer<Message> accountRingBuffer;
+    private RingBuffer<Message> sequencerRingBuffer;
 
     private RingBuffer<Message> responseRingBuffer;
 
-    private OrderIdGenerator generator;
+    private final OrderIdGenerator generator;
 
-    private OrderBookRepository repository;
+    private final OrderBookRepository repository;
 
-    public OrderService() {
+    public MatchService() {
         generator = new OrderIdGenerator();
         repository = new OrderBookRepository();
     }
@@ -51,8 +51,8 @@ public class OrderService {
     public void on(long messageId, CancelOrder cancelOrder) {
     }
 
-    public void setAccountRingBuffer(RingBuffer<Message> accountRingBuffer) {
-        this.accountRingBuffer = accountRingBuffer;
+    public void setSequencerRingBuffer(RingBuffer<Message> sequencerRingBuffer) {
+        this.sequencerRingBuffer = sequencerRingBuffer;
     }
 
     public void setResponseRingBuffer(RingBuffer<Message> responseRingBuffer) {

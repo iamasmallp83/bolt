@@ -15,7 +15,7 @@ public class AccountService {
     private final AccountRepository repository = new AccountRepository();
 
     private RingBuffer<Message> responseRingBuffer;
-    private RingBuffer<Message> orderRingBuffer;
+    private RingBuffer<Message> matchRingBuffer;
 
     public AccountService() {
     }
@@ -35,7 +35,7 @@ public class AccountService {
                 result = account.freeze(symbol.getBase().getId(), placeOrder.quantity.get());
             }
             if (result.isSuccess()) {
-                orderRingBuffer.publishEvent((message, sequence) -> {
+                matchRingBuffer.publishEvent((message, sequence) -> {
                     message.id.set(messageId);
                     message.type.set(EventType.PLACE_ORDER);
                     PlaceOrder payload = message.payload.asPlaceOrder;
@@ -94,8 +94,8 @@ public class AccountService {
         System.out.println("unfreeze " + unfreeze.accountId.get() + " : " + unfreeze.amount.get());
     }
 
-    public void setOrderRingBuffer(RingBuffer<Message> orderRingBuffer) {
-        this.orderRingBuffer = orderRingBuffer;
+    public void setMatchRingBuffer(RingBuffer<Message> matchRingBuffer) {
+        this.matchRingBuffer = matchRingBuffer;
     }
 
     public void setResponseRingBuffer(RingBuffer<Message> responseRingBuffer) {

@@ -2,29 +2,27 @@ package com.cmex.bolt.spot.service;
 
 import com.cmex.bolt.spot.api.EventType;
 import com.cmex.bolt.spot.api.Message;
-import com.cmex.bolt.spot.repository.impl.AccountRepository;
-import com.cmex.bolt.spot.repository.impl.OrderBookRepository;
 import com.cmex.bolt.spot.util.OrderIdGenerator;
 import com.lmax.disruptor.EventHandler;
 
-public class OrderDispatcher implements EventHandler<Message> {
+public class MatchDispatcher implements EventHandler<Message> {
 
     private int amount;
     private int partition;
-    private final OrderService orderService;
+    private final MatchService matchService;
 
-    public OrderDispatcher(int amount, int partition) {
+    public MatchDispatcher(int amount, int partition) {
         this.amount = amount;
         this.partition = partition;
-        this.orderService = new OrderService();
+        this.matchService = new MatchService();
     }
 
     public int getPartition() {
         return partition;
     }
 
-    public OrderService getOrderService() {
-        return orderService;
+    public MatchService getOrderService() {
+        return matchService;
     }
 
     public void onEvent(Message message, long sequence, boolean endOfBatch) {
@@ -33,12 +31,12 @@ public class OrderDispatcher implements EventHandler<Message> {
         switch (type) {
             case CANCEL_ORDER:
                 if (partition == OrderIdGenerator.getSymbolId(message.payload.asCancelOrder.orderId.get()) % amount) {
-                    orderService.on(message.id.get(), message.payload.asCancelOrder);
+                    matchService.on(message.id.get(), message.payload.asCancelOrder);
                 }
                 break;
             case PLACE_ORDER:
                 if (partition == message.payload.asPlaceOrder.symbolId.get() % amount) {
-                    orderService.on(message.id.get(), message.payload.asPlaceOrder);
+                    matchService.on(message.id.get(), message.payload.asPlaceOrder);
                 }
                 break;
         }

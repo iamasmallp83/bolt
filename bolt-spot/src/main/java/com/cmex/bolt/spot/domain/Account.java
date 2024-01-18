@@ -21,7 +21,7 @@ public class Account {
         return Optional.of(balances.get(currencyId));
     }
 
-    public Result<Balance> deposit(short currencyId, long value) {
+    public synchronized Result<Balance> deposit(short currencyId, long value) {
         Balance balance = balances.get(currencyId);
         if (balance == null) {
             balance = new Balance();
@@ -30,7 +30,7 @@ public class Account {
         return balance.deposit(value);
     }
 
-    public Result<Balance> withdraw(short currencyId, long value) {
+    public synchronized Result<Balance> withdraw(short currencyId, long value) {
         Balance balance = balances.get(currencyId);
         if (balance == null) {
             return Result.fail(RejectionReason.BALANCE_NOT_EXIST);
@@ -38,7 +38,7 @@ public class Account {
         return balance.withdraw(value);
     }
 
-    public Result<Balance> freeze(short currencyId, long value) {
+    public synchronized Result<Balance> freeze(short currencyId, long value) {
         Balance balance = balances.get(currencyId);
         if (balance == null) {
             return Result.fail(RejectionReason.ACCOUNT_NOT_EXIST);

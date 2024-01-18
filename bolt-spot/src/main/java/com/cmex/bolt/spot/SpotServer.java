@@ -1,8 +1,6 @@
 package com.cmex.bolt.spot;
 
 import com.cmex.bolt.spot.grpc.SpotServiceImpl;
-import com.cmex.bolt.spot.service.AccountDispatcher;
-import com.cmex.bolt.spot.service.OrderDispatcher;
 import com.google.common.util.concurrent.UncaughtExceptionHandlers;
 import io.grpc.Server;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
@@ -14,8 +12,6 @@ import io.grpc.netty.shaded.io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.grpc.netty.shaded.io.netty.util.concurrent.DefaultThreadFactory;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinWorkerThread;
@@ -48,7 +44,7 @@ public class SpotServer {
                 .bossEventLoopGroup(boss)
                 .workerEventLoopGroup(worker)
                 .channelType(channelType)
-                .addService(new SpotServiceImpl(getAccountDispatchers(), getOrderDispatchers()))
+                .addService(new SpotServiceImpl())
                 .flowControlWindow(NettyChannelBuilder.DEFAULT_FLOW_CONTROL_WINDOW);
         builder.executor(getAsyncExecutor());
         return builder.build();
@@ -83,19 +79,4 @@ public class SpotServer {
         server.awaitTermination();
     }
 
-    public static List<AccountDispatcher> getAccountDispatchers() {
-        List<AccountDispatcher> dispatchers = new ArrayList<>();
-        for (int i = 0; i < 10; i++) {
-            dispatchers.add(new AccountDispatcher(10, i));
-        }
-        return dispatchers;
-    }
-
-    public static List<OrderDispatcher> getOrderDispatchers() {
-        List<OrderDispatcher> dispatchers = new ArrayList<>();
-        for (int i = 0; i < 10; i++) {
-            dispatchers.add(new OrderDispatcher(10, i));
-        }
-        return dispatchers;
-    }
 }
