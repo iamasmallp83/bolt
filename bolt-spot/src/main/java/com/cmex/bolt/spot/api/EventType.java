@@ -7,13 +7,14 @@ public enum EventType {
     ORDER_CREATED(new OrderCreated()),
     PLACE_ORDER_REJECTED(new PlaceOrderRejected()),
     CANCEL_ORDER(new CancelOrder()),
-    WITHDRAW(new Withdraw()),
-    WITHDRAWN(new Withdrawn()),
-    WITHDRAW_REJECTED(new WithdrawRejected()),
-    DEPOSIT(new Deposit()),
-    DEPOSITED(new Deposited()),
+    DECREASE(new Decrease()),
+    DECREASED(new Decreased()),
+    DECREASE_REJECTED(new DecreaseRejected()),
+    INCREASE(new Increase()),
+    INCREASED(new Increased()),
     FREEZE(new Freeze()),
-    UNFREEZE(new Unfreeze());
+    UNFREEZE(new Unfreeze()),
+    CLEARED(new Cleared());
 
     private Struct struct;
 

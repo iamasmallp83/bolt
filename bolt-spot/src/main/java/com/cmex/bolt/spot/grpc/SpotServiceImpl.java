@@ -60,29 +60,29 @@ public class SpotServiceImpl extends SpotServiceImplBase {
         return dispatchers;
     }
 
-    public void deposit(DepositRequest request, StreamObserver<DepositResponse> responseObserver) {
+    public void increase(IncreaseRequest request, StreamObserver<IncreaseResponse> responseObserver) {
         long id = requestId.incrementAndGet();
         observers.put(id, responseObserver);
         sequencerRingBuffer.publishEvent((message, sequence) -> {
             message.id.set(id);
-            message.type.set(EventType.DEPOSIT);
-            Deposit deposit = message.payload.asDeposit;
-            deposit.accountId.set(request.getAccountId());
-            deposit.currencyId.set((short) request.getCurrencyId());
-            deposit.amount.set(request.getAmount());
+            message.type.set(EventType.INCREASE);
+            Increase increase = message.payload.asIncrease;
+            increase.accountId.set(request.getAccountId());
+            increase.currencyId.set((short) request.getCurrencyId());
+            increase.amount.set(request.getAmount());
         });
     }
 
-    public void withdraw(WithdrawRequest request, StreamObserver<WithdrawResponse> responseObserver) {
+    public void decrease(DecreaseRequest request, StreamObserver<DecreaseResponse> responseObserver) {
         long id = requestId.incrementAndGet();
         observers.put(id, responseObserver);
         sequencerRingBuffer.publishEvent((message, sequence) -> {
             message.id.set(id);
-            message.type.set(EventType.WITHDRAW);
-            Withdraw withdraw = message.payload.asWithdraw;
-            withdraw.accountId.set(request.getAccountId());
-            withdraw.currencyId.set((short) request.getCurrencyId());
-            withdraw.amount.set(request.getAmount());
+            message.type.set(EventType.DECREASE);
+            Decrease decrease = message.payload.asDecrease;
+            decrease.accountId.set(request.getAccountId());
+            decrease.currencyId.set((short) request.getCurrencyId());
+            decrease.amount.set(request.getAmount());
         });
     }
 
@@ -116,9 +116,9 @@ public class SpotServiceImpl extends SpotServiceImplBase {
             Object response = switch (type) {
                 case ORDER_CREATED -> message.payload.asOrderCreated.get();
                 case PLACE_ORDER_REJECTED -> message.payload.asPlaceOrderRejected.get();
-                case DEPOSITED -> message.payload.asDeposited.get();
-                case WITHDRAWN -> message.payload.asWithdrawn.get();
-                case WITHDRAW_REJECTED -> message.payload.asWithdrawRejected.get();
+                case INCREASED -> message.payload.asIncreased.get();
+                case DECREASED -> message.payload.asDecreased.get();
+                case DECREASE_REJECTED -> message.payload.asDecreaseRejected.get();
                 default -> throw new RuntimeException();
             };
             observer.onNext(response);

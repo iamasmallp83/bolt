@@ -7,9 +7,11 @@ import com.cmex.bolt.spot.domain.OrderBook;
 import com.cmex.bolt.spot.domain.Ticket;
 import com.cmex.bolt.spot.repository.impl.OrderBookRepository;
 import com.cmex.bolt.spot.util.OrderIdGenerator;
+import com.google.common.collect.MapMaker;
 import com.lmax.disruptor.RingBuffer;
 
 import java.math.BigDecimal;
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Optional;
 
@@ -34,19 +36,19 @@ public class MatchService {
         optional.ifPresentOrElse(orderBook -> {
             Order order = getOrder(placeOrder);
             List<Ticket> tickets = orderBook.match(order);
-            if (tickets.isEmpty()) {
-                //未成交
-                responseRingBuffer.publishEvent((message, sequence) -> {
-                    message.id.set(messageId);
-                    message.type.set(EventType.ORDER_CREATED);
-                    message.payload.asOrderCreated.orderId.set(order.getId());
-                });
-            } else {
+            if (!tickets.isEmpty()) {
+                sequencerRingBuffer.publishEvent((message, sequence) -> {
 
+                });
             }
+            responseRingBuffer.publishEvent((message, sequence) -> {
+                message.id.set(messageId);
+                message.type.set(EventType.ORDER_CREATED);
+                message.payload.asOrderCreated.orderId.set(order.getId());
+            });
         }, () -> responseRingBuffer.publishEvent((message, sequence) -> {
             message.id.set(messageId);
-           message.type.set(EventType.PLACE_ORDER_REJECTED);
+            message.type.set(EventType.PLACE_ORDER_REJECTED);
             message.payload.asPlaceOrderRejected.reason.set(RejectionReason.SYMBOL_NOT_EXIST);
         }));
     }
@@ -70,5 +72,16 @@ public class MatchService {
                 .price(new BigDecimal(placeOrder.price.get()))
                 .quantity(new BigDecimal(placeOrder.quantity.get()))
                 .build();
+    }
+
+    private void setMakerMessage(Ticket ticket, Message message) {
+        Order maker = ticket.getMaker();
+        message.type.set(EventType.CLEARED);
+        //解冻支付
+//        message.payload.asCleared.unfreezeCurrencyId(maker.getSymbol().)
+//        message.payload.asCleared.unfreezeAmount(maker.get);
+        //得到
+//        message.payload.asCleared.currencyId(maker.get);
+//        message.payload.asCleared.amount(maker.get);
     }
 }

@@ -19,6 +19,8 @@ public class Ticket {
 
     private BigDecimal quantity;
 
+    private BigDecimal volume;
+
     private Order.OrderSide takerSide;
 
 }

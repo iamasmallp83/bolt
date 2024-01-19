@@ -26,4 +26,11 @@ public class Symbol {
         return null;
     }
 
+    public Currency getPayCurrency(Order.OrderSide side) {
+        return side == Order.OrderSide.BID ? quote : base;
+    }
+
+    public Currency getIncomeCurrency(Order.OrderSide side) {
+        return side == Order.OrderSide.BID ? base : quote;
+    }
 }

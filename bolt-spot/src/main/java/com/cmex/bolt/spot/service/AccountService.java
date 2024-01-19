@@ -58,40 +58,40 @@ public class AccountService {
         });
     }
 
-    public void on(long messageId, Deposit deposit) {
-        int accountId = deposit.accountId.get();
+    public void on(long messageId, Increase increase) {
+        int accountId = increase.accountId.get();
         Account account = repository.putIfAbsent(accountId, new Account(accountId));
-        Result<Balance> result = account.deposit(deposit.currencyId.get(), deposit.amount.get());
+        Result<Balance> result = account.deposit(increase.currencyId.get(), increase.amount.get());
         responseRingBuffer.publishEvent((message, sequence) -> {
             message.id.set(messageId);
-            message.type.set(EventType.DEPOSITED);
-            message.payload.asDeposited.value.set(result.value().getValue());
-            message.payload.asDeposited.frozen.set(result.value().getFrozen());
+            message.type.set(EventType.INCREASED);
+            message.payload.asIncreased.value.set(result.value().getValue());
+            message.payload.asIncreased.frozen.set(result.value().getFrozen());
         });
     }
 
-    public void on(long messageId, Withdraw withdraw) {
-        int accountId = withdraw.accountId.get();
+    public void on(long messageId, Decrease decrease) {
+        int accountId = decrease.accountId.get();
         Optional<Account> optional = repository.get(accountId);
         Result<Balance> result =
-                optional.map(account -> account.withdraw(withdraw.currencyId.get(), withdraw.amount.get()))
+                optional.map(account -> account.withdraw(decrease.currencyId.get(), decrease.amount.get()))
                         .orElse(Result.fail(RejectionReason.ACCOUNT_NOT_EXIST));
         responseRingBuffer.publishEvent((message, sequence) -> {
             if (result.isSuccess()) {
                 message.id.set(messageId);
-                message.type.set(EventType.WITHDRAWN);
-                message.payload.asWithdrawn.value.set(result.value().getValue());
-                message.payload.asWithdrawn.frozen.set(result.value().getFrozen());
+                message.type.set(EventType.DECREASED);
+                message.payload.asDecreased.value.set(result.value().getValue());
+                message.payload.asDecreased.frozen.set(result.value().getFrozen());
             } else {
                 message.id.set(messageId);
-                message.type.set(EventType.WITHDRAW_REJECTED);
-                message.payload.asWithdrawRejected.reason.set(result.reason());
+                message.type.set(EventType.DECREASE_REJECTED);
+                message.payload.asDecreaseRejected.reason.set(result.reason());
             }
         });
     }
 
     public void on(long messageId, Unfreeze unfreeze) {
-        System.out.println("unfreeze " + unfreeze.accountId.get() + " : " + unfreeze.amount.get());
+        System.out.println(unfreeze);
     }
 
     public void setMatchRingBuffer(RingBuffer<Message> matchRingBuffer) {

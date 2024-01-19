@@ -11,6 +11,8 @@ import java.util.Objects;
 @Builder
 public class Order {
 
+    private Symbol symbol;
+
     private long id;
 
     private int accountId;
@@ -64,6 +66,7 @@ public class Order {
                 .maker(maker)
                 .price(maker.price)
                 .quantity(amount)
+                .volume(maker.price.multiply(amount))
                 .takerSide(this.side)
                 .build();
     }

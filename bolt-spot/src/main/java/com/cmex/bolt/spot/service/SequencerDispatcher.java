@@ -21,10 +21,10 @@ public class SequencerDispatcher implements EventHandler<Message> {
         EventType type = message.type.get();
         switch (type) {
             case DEPOSIT:
-                accountService.on(message.id.get(), message.payload.asDeposit);
+                accountService.on(message.id.get(), message.payload.asIncrease);
                 break;
             case WITHDRAW:
-                accountService.on(message.id.get(), message.payload.asWithdraw);
+                accountService.on(message.id.get(), message.payload.asDecrease);
                 break;
             case UNFREEZE:
                 accountService.on(message.id.get(), message.payload.asUnfreeze);
