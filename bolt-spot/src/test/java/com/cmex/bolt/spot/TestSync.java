@@ -25,6 +25,14 @@ public class TestSync {
         //1042ms
         //无锁&串行
         //2ms
+        //MacBook Pro 2.8GHz i7 16GB
+        //并发&锁
+        //391
+        //404
+        //404
+        //405
+        //无锁&串行
+        //9
         executor.execute(new TestSyncRunner(account, latch));
         executor.execute(new TestSyncRunner(account, latch));
         executor.execute(new TestSyncRunner(account, latch));
@@ -55,6 +63,14 @@ public class TestSync {
         //288ms
         //无锁&串行
         //12ms
+        //MacBook Pro 2.8GHz i7 16GB
+        //并发&锁
+        //123
+        //123
+        //125
+        //126
+        //无锁&串行
+        //34
         executor.execute(new TestSyncMultiAccountsRunner(accounts, latch));
         executor.execute(new TestSyncMultiAccountsRunner(accounts, latch));
         executor.execute(new TestSyncMultiAccountsRunner(accounts, latch));

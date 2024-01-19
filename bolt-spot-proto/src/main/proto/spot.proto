@@ -99,8 +99,8 @@ message UnfreezeResponse {
 
 
 service SpotService {
-  rpc deposit (IncreaseRequest) returns (IncreaseResponse) {}
-  rpc withdraw (DecreaseRequest) returns (DecreaseResponse) {}
+  rpc increase (IncreaseRequest) returns (IncreaseResponse) {}
+  rpc decrease (DecreaseRequest) returns (DecreaseResponse) {}
   rpc freeze (FreezeRequest) returns (FreezeResponse) {}
   rpc unfreeze (UnfreezeRequest) returns (UnfreezeResponse) {}
   rpc placeOrder (PlaceOrderRequest) returns (PlaceOrderResponse) {}

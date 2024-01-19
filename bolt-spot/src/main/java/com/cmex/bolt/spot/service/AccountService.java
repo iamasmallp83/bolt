@@ -61,7 +61,7 @@ public class AccountService {
     public void on(long messageId, Increase increase) {
         int accountId = increase.accountId.get();
         Account account = repository.putIfAbsent(accountId, new Account(accountId));
-        Result<Balance> result = account.deposit(increase.currencyId.get(), increase.amount.get());
+        Result<Balance> result = account.increase(increase.currencyId.get(), increase.amount.get());
         responseRingBuffer.publishEvent((message, sequence) -> {
             message.id.set(messageId);
             message.type.set(EventType.INCREASED);
@@ -74,7 +74,7 @@ public class AccountService {
         int accountId = decrease.accountId.get();
         Optional<Account> optional = repository.get(accountId);
         Result<Balance> result =
-                optional.map(account -> account.withdraw(decrease.currencyId.get(), decrease.amount.get()))
+                optional.map(account -> account.decrease(decrease.currencyId.get(), decrease.amount.get()))
                         .orElse(Result.fail(RejectionReason.ACCOUNT_NOT_EXIST));
         responseRingBuffer.publishEvent((message, sequence) -> {
             if (result.isSuccess()) {
@@ -92,6 +92,14 @@ public class AccountService {
 
     public void on(long messageId, Unfreeze unfreeze) {
         System.out.println(unfreeze);
+    }
+
+    public void on(long messageId, Cleared cleared) {
+        int accountId = cleared.accountId.get();
+        Optional<Account> optional = repository.get(accountId);
+        Account account = optional.get();
+        account.unfreezeAndDecrease(cleared.payCurrencyId.get(), cleared.payAmount.get());
+        account.increase(cleared.incomeCurrencyId.get(), cleared.incomeAmount.get());
     }
 
     public void setMatchRingBuffer(RingBuffer<Message> matchRingBuffer) {

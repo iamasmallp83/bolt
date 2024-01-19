@@ -1,10 +1,8 @@
 package com.cmex.bolt.spot.domain;
 
-import com.cmex.bolt.spot.util.BigDecimalUtil;
 import lombok.Builder;
 import lombok.Data;
 
-import java.math.BigDecimal;
 import java.util.Objects;
 
 @Data
@@ -21,15 +19,15 @@ public class Order {
 
     private OrderSide side;
 
-    private BigDecimal price;
+    private long price;
 
-    private BigDecimal quantity;
+    private long quantity;
 
-    private BigDecimal volume;
+    private long volume;
 
-    private BigDecimal availableQuantity;
+    private long availableQuantity;
 
-    private BigDecimal availableVolume;
+    private long availableVolume;
 
     public enum OrderSide {
         BID, ASK;
@@ -40,33 +38,34 @@ public class Order {
     }
 
     public boolean isDone() {
-        if (quantity != null) {
-            return BigDecimalUtil.eqZero(availableQuantity);
-        } else {
-            return BigDecimalUtil.eqZero(availableVolume);
-        }
+//        if (quantity != null) {
+//            return BigDecimalUtil.eqZero(availableQuantity);
+//        } else {
+//            return BigDecimalUtil.eqZero(availableVolume);
+//        }
+        return quantity == 0;
     }
 
     public Ticket match(Order maker) {
-        BigDecimal amount;
+        long amount;
         if (type == OrderType.MARKET) {
             amount = maker.availableQuantity;
-            if (quantity != null) {
-                availableQuantity = availableQuantity.subtract(amount);
+            if (quantity > 0) {
+                availableQuantity = availableQuantity - (amount);
             } else {
-                availableVolume = availableVolume.subtract(maker.price.multiply(amount));
+                availableVolume = availableVolume - (maker.price * amount);
             }
         } else {
-            amount = BigDecimalUtil.min(availableQuantity, maker.availableQuantity);
-            availableQuantity = availableQuantity.subtract(amount);
+            amount = Math.min(availableQuantity, maker.availableQuantity);
+            availableQuantity = availableQuantity - amount;
         }
-        maker.availableQuantity = maker.availableQuantity.subtract(amount);
+        maker.availableQuantity = maker.availableQuantity - amount;
         return Ticket.builder()
                 .taker(this)
                 .maker(maker)
                 .price(maker.price)
                 .quantity(amount)
-                .volume(maker.price.multiply(amount))
+                .volume(maker.price * amount)
                 .takerSide(this.side)
                 .build();
     }

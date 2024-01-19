@@ -1,10 +1,8 @@
 package com.cmex.bolt.spot.domain;
 
 import com.cmex.bolt.spot.dto.Depth;
-import com.cmex.bolt.spot.util.BigDecimalUtil;
 import lombok.Getter;
 
-import java.math.BigDecimal;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -13,8 +11,8 @@ public class OrderBook {
 
     private Symbol symbol;
 
-    protected TreeMap<BigDecimal, PriceNode> bids;
-    protected TreeMap<BigDecimal, PriceNode> asks;
+    protected TreeMap<Long, PriceNode> bids;
+    protected TreeMap<Long, PriceNode> asks;
 
     public OrderBook(Symbol symbol) {
         this.symbol = symbol;
@@ -24,11 +22,11 @@ public class OrderBook {
 
     public List<Ticket> match(Order taker) {
         List<Ticket> tickets = new LinkedList<>();
-        TreeMap<BigDecimal, PriceNode> counter = getCounter(taker.getSide());
+        TreeMap<Long, PriceNode> counter = getCounter(taker.getSide());
         while (tryMatch(counter, taker)) {
             //价格匹配
             boolean takerDone = false;
-            Map.Entry<BigDecimal, PriceNode> entry = counter.firstEntry();
+            Map.Entry<Long, PriceNode> entry = counter.firstEntry();
             PriceNode priceNode = entry.getValue();
             Iterator<Order> it = priceNode.iterator();
             while (it.hasNext()) {
@@ -51,7 +49,7 @@ public class OrderBook {
         }
         //价格不匹配
         if (!taker.isDone()) {
-            TreeMap<BigDecimal, PriceNode> own = getOwn(taker.getSide());
+            TreeMap<Long, PriceNode> own = getOwn(taker.getSide());
             own.compute(taker.getPrice(), (key, existingValue) -> {
                 if (existingValue != null) {
                     existingValue.add(taker);
@@ -64,22 +62,22 @@ public class OrderBook {
         return tickets;
     }
 
-    private TreeMap<BigDecimal, PriceNode> getCounter(Order.OrderSide side) {
+    private TreeMap<Long, PriceNode> getCounter(Order.OrderSide side) {
         return side == Order.OrderSide.BID ? asks : bids;
     }
 
-    private TreeMap<BigDecimal, PriceNode> getOwn(Order.OrderSide side) {
+    private TreeMap<Long, PriceNode> getOwn(Order.OrderSide side) {
         return side == Order.OrderSide.BID ? bids : asks;
     }
 
-    private boolean tryMatch(TreeMap<BigDecimal, PriceNode> counter, Order taker) {
+    private boolean tryMatch(TreeMap<Long, PriceNode> counter, Order taker) {
         if (counter.isEmpty()) {
             return false;
         }
         if (taker.getSide() == Order.OrderSide.BID) {
-            return BigDecimalUtil.gte(taker.getPrice(), counter.firstKey());
+            return taker.getPrice() > counter.firstKey();
         } else {
-            return BigDecimalUtil.lte(taker.getPrice(), counter.firstKey());
+            return taker.getPrice() < counter.firstKey();
         }
     }
 
@@ -91,10 +89,10 @@ public class OrderBook {
                 .build();
     }
 
-    private TreeMap<String, String> convert(TreeMap<BigDecimal, PriceNode> target) {
+    private TreeMap<String, String> convert(TreeMap<Long, PriceNode> target) {
         return target.entrySet().stream().collect(Collectors.toMap(
-                entry -> entry.getKey().toPlainString(),
-                entry -> entry.getValue().getQuantity().toPlainString(),
+                entry -> String.valueOf(entry.getKey()),
+                entry -> String.valueOf(entry.getValue().getQuantity()),
                 (o1, o2) -> o1,
                 TreeMap::new
         ));

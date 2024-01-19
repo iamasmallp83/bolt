@@ -16,12 +16,12 @@ public class Balance {
 
     private long frozen;
 
-    public Result<Balance> deposit(long amount) {
+    public Result<Balance> increase(long amount) {
         this.value += amount;
         return Result.success(this);
     }
 
-    public Result<Balance> withdraw(long amount) {
+    public Result<Balance> decrease(long amount) {
         if (this.value < amount) {
             return Result.fail(RejectionReason.BALANCE_NOT_ENOUGH);
         }
@@ -34,6 +34,12 @@ public class Balance {
             return Result.fail(RejectionReason.BALANCE_NOT_ENOUGH);
         }
         this.frozen += amount;
+        return Result.success(this);
+    }
+
+    public Result<Balance> unfreezeAndDecrease(long amount) {
+        frozen -= amount;
+        value -= amount;
         return Result.success(this);
     }
 

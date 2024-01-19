@@ -15,11 +15,11 @@ public class Ticket {
 
     private Order maker;
 
-    private BigDecimal price;
+    private long price;
 
-    private BigDecimal quantity;
+    private long quantity;
 
-    private BigDecimal volume;
+    private long volume;
 
     private Order.OrderSide takerSide;
 

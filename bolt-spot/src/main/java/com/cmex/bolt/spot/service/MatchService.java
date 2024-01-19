@@ -4,14 +4,12 @@ package com.cmex.bolt.spot.service;
 import com.cmex.bolt.spot.api.*;
 import com.cmex.bolt.spot.domain.Order;
 import com.cmex.bolt.spot.domain.OrderBook;
+import com.cmex.bolt.spot.domain.Symbol;
 import com.cmex.bolt.spot.domain.Ticket;
 import com.cmex.bolt.spot.repository.impl.OrderBookRepository;
 import com.cmex.bolt.spot.util.OrderIdGenerator;
-import com.google.common.collect.MapMaker;
 import com.lmax.disruptor.RingBuffer;
 
-import java.math.BigDecimal;
-import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Optional;
 
@@ -37,9 +35,21 @@ public class MatchService {
             Order order = getOrder(placeOrder);
             List<Ticket> tickets = orderBook.match(order);
             if (!tickets.isEmpty()) {
+                long totalQuantity = 0;
+                long totalVolume = 0;
+                for (Ticket ticket : tickets) {
+                    sequencerRingBuffer.publishEvent((message, sequence) -> {
+                        setMessage(ticket.getMaker(), ticket.getQuantity(), ticket.getVolume(), message);
+                    });
+                    totalQuantity += ticket.getQuantity();
+                    totalVolume += ticket.getVolume();
+                }
+                long finalTotalQuantity = totalQuantity;
+                long finalTotalVolume = totalVolume;
                 sequencerRingBuffer.publishEvent((message, sequence) -> {
-
+                    setMessage(order, finalTotalQuantity, finalTotalVolume, message);
                 });
+
             }
             responseRingBuffer.publishEvent((message, sequence) -> {
                 message.id.set(messageId);
@@ -69,19 +79,26 @@ public class MatchService {
                 .id(generator.nextId(placeOrder.symbolId.get()))
                 .accountId(placeOrder.accountId.get())
                 .side(placeOrder.side.get() == OrderSide.BID ? Order.OrderSide.BID : Order.OrderSide.ASK)
-                .price(new BigDecimal(placeOrder.price.get()))
-                .quantity(new BigDecimal(placeOrder.quantity.get()))
+                .price(placeOrder.price.get())
+                .quantity(placeOrder.quantity.get())
                 .build();
     }
 
-    private void setMakerMessage(Ticket ticket, Message message) {
-        Order maker = ticket.getMaker();
+    private void setMessage(Order order, long quantity, long volume, Message message) {
+        Symbol symbol = order.getSymbol();
         message.type.set(EventType.CLEARED);
-        //解冻支付
-//        message.payload.asCleared.unfreezeCurrencyId(maker.getSymbol().)
-//        message.payload.asCleared.unfreezeAmount(maker.get);
+        Order.OrderSide side = order.getSide();
+        //支付
+        message.payload.asCleared.payCurrencyId.set(symbol.getPayCurrency(side).getId());
         //得到
-//        message.payload.asCleared.currencyId(maker.get);
-//        message.payload.asCleared.amount(maker.get);
+        message.payload.asCleared.incomeCurrencyId.set(symbol.getIncomeCurrency(side).getId());
+        if (side == Order.OrderSide.BID) {
+            message.payload.asCleared.payAmount.set(volume);
+            message.payload.asCleared.incomeAmount.set(quantity);
+        } else {
+            message.payload.asCleared.payAmount.set(quantity);
+            message.payload.asCleared.incomeAmount.set(volume);
+        }
     }
+
 }

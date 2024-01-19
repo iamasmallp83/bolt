@@ -12,9 +12,9 @@ public class TestOrderBook {
             Order order = Order.builder()
                     .type(Order.OrderType.LIMIT)
                     .side(Order.OrderSide.BID)
-                    .price(new BigDecimal(100 - i))
-                    .quantity(new BigDecimal("1"))
-                    .availableQuantity(new BigDecimal("1"))
+                    .price(100 - i)
+                    .quantity(1)
+                    .availableQuantity(1)
                     .build();
             System.out.println(orderBook.match(order));
         }
@@ -22,9 +22,9 @@ public class TestOrderBook {
             Order order = Order.builder()
                     .type(Order.OrderType.LIMIT)
                     .side(Order.OrderSide.ASK)
-                    .price(new BigDecimal(100 + i))
-                    .quantity(new BigDecimal("2"))
-                    .availableQuantity(new BigDecimal("2"))
+                    .price(100)
+                    .quantity(2)
+                    .availableQuantity(2)
                     .build();
             System.out.println(orderBook.match(order));
         }

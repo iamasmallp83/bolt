@@ -1,20 +1,18 @@
 package com.cmex.bolt.spot.domain;
 
-import com.cmex.bolt.spot.util.BigDecimalUtil;
 import lombok.Getter;
 
-import java.math.BigDecimal;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 
 @Getter
 public class PriceNode {
 
-    private final BigDecimal price;
+    private final long price;
 
     private final LinkedHashSet<Order> orders;
 
-    public PriceNode(BigDecimal price, Order order) {
+    public PriceNode(long price, Order order) {
         this.price = price;
         this.orders = new LinkedHashSet<>();
         this.orders.add(order);
@@ -36,8 +34,8 @@ public class PriceNode {
         return orders.isEmpty();
     }
 
-    public BigDecimal getQuantity() {
-        return orders.parallelStream().map(Order::getAvailableQuantity).reduce(BigDecimal.ZERO, BigDecimal::add);
+    public long getQuantity() {
+        return orders.parallelStream().map(Order::getAvailableQuantity).reduce(0L, Long::sum);
     }
 
     @Override

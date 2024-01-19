@@ -21,21 +21,21 @@ public class Account {
         return Optional.of(balances.get(currencyId));
     }
 
-    public Result<Balance> deposit(short currencyId, long value) {
+    public Result<Balance> increase(short currencyId, long value) {
         Balance balance = balances.get(currencyId);
         if (balance == null) {
             balance = new Balance();
             balances.put(currencyId, balance);
         }
-        return balance.deposit(value);
+        return balance.increase(value);
     }
 
-    public Result<Balance> withdraw(short currencyId, long value) {
+    public Result<Balance> decrease(short currencyId, long value) {
         Balance balance = balances.get(currencyId);
         if (balance == null) {
             return Result.fail(RejectionReason.BALANCE_NOT_EXIST);
         }
-        return balance.withdraw(value);
+        return balance.decrease(value);
     }
 
     public Result<Balance> freeze(short currencyId, long value) {
@@ -44,6 +44,11 @@ public class Account {
             return Result.fail(RejectionReason.ACCOUNT_NOT_EXIST);
         }
         return balance.freeze(value);
+    }
+
+    public Result<Balance> unfreezeAndDecrease(short currencyId, long value) {
+        Balance balance = balances.get(currencyId);
+        return balance.unfreezeAndDecrease(value);
     }
 
 }
