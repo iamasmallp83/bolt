@@ -4,7 +4,7 @@ import java.util.Optional;
 
 public interface Repository<K, V> {
 
-    V putIfAbsent(K id, V value);
+    V getOrCreate(K id, V value);
 
     boolean exists(K id);
 

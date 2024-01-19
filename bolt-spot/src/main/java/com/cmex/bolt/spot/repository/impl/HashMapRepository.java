@@ -5,6 +5,7 @@ import com.cmex.bolt.spot.repository.Repository;
 
 import java.util.HashMap;
 import java.util.Optional;
+import java.util.function.Function;
 
 /**
  * 业务串行执行、无并发场景
@@ -17,7 +18,8 @@ public abstract class HashMapRepository<K, V> implements Repository<K, V> {
         holder = new HashMap<>();
     }
 
-    public V putIfAbsent(K id, V value) {
+    public V getOrCreate(K id, V value) {
+        holder.computeIfAbsent(id, k -> value);
         return holder.putIfAbsent(id, value);
     }
 

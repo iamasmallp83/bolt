@@ -60,7 +60,7 @@ public class AccountService {
 
     public void on(long messageId, Increase increase) {
         int accountId = increase.accountId.get();
-        Account account = repository.putIfAbsent(accountId, new Account(accountId));
+        Account account = repository.getOrCreate(accountId, new Account(accountId));
         Result<Balance> result = account.increase(increase.currencyId.get(), increase.amount.get());
         responseRingBuffer.publishEvent((message, sequence) -> {
             message.id.set(messageId);
