@@ -6,6 +6,7 @@ import com.cmex.bolt.spot.domain.Order;
 import com.cmex.bolt.spot.domain.OrderBook;
 import com.cmex.bolt.spot.domain.Symbol;
 import com.cmex.bolt.spot.domain.Ticket;
+import com.cmex.bolt.spot.dto.DepthDto;
 import com.cmex.bolt.spot.repository.impl.OrderBookRepository;
 import com.cmex.bolt.spot.util.OrderIdGenerator;
 import com.lmax.disruptor.RingBuffer;
@@ -80,6 +81,10 @@ public class MatchService {
                     message.payload.asUnfreeze.currencyId.set(order.getPayCurrency().getId());
                     message.payload.asUnfreeze.amount.set(order.getUnfreezeAmount());
                 });
+                responseRingBuffer.publishEvent((message, sequence) -> {
+                    message.id.set(messageId);
+                    message.type.set(EventType.ORDER_CANCELED);
+                });
             } else {
                 responseRingBuffer.publishEvent((message, sequence) -> {
                     message.id.set(messageId);
@@ -101,6 +106,10 @@ public class MatchService {
 
     public void setResponseRingBuffer(RingBuffer<Message> responseRingBuffer) {
         this.responseRingBuffer = responseRingBuffer;
+    }
+
+    public DepthDto getDepth(int symbolId) {
+        return repository.get(symbolId).map(OrderBook::getDepth).orElse(DepthDto.builder().build());
     }
 
     private Order getOrder(Symbol symbol, PlaceOrder placeOrder) {

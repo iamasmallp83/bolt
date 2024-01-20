@@ -38,6 +38,10 @@ public class PriceNode {
         return orders.parallelStream().map(Order::getAvailableQuantity).reduce(0L, Long::sum);
     }
 
+    public boolean done() {
+        return orders.isEmpty();
+    }
+
     @Override
     public String toString() {
         return "PriceNode{" +

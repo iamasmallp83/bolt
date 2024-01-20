@@ -1,6 +1,6 @@
 package com.cmex.bolt.spot.domain;
 
-import com.cmex.bolt.spot.dto.Depth;
+import com.cmex.bolt.spot.dto.DepthDto;
 import lombok.Getter;
 
 import java.util.*;
@@ -94,11 +94,14 @@ public class OrderBook {
         TreeMap<Long, PriceNode> own = getOwn(order.getSide());
         PriceNode priceNode = own.get(order.getPrice());
         priceNode.remove(order);
+        if (priceNode.isDone()) {
+            own.remove(priceNode.getPrice());
+        }
         return order;
     }
 
-    public Depth getDepth() {
-        return Depth.builder()
+    public DepthDto getDepth() {
+        return DepthDto.builder()
                 .symbol(symbol.getName())
                 .bids(convert(bids))
                 .asks(convert(asks))

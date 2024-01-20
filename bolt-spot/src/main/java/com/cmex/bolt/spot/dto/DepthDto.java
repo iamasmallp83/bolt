@@ -7,12 +7,12 @@ import java.util.TreeMap;
 
 @Data
 @Builder
-public class Depth {
+public class DepthDto {
 
     private String symbol;
 
-    private TreeMap<String, String> bids;
-
     private TreeMap<String, String> asks;
+
+    private TreeMap<String, String> bids;
 
 }

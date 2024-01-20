@@ -106,12 +106,28 @@ message CancelOrderResponse{
   optional string  message = 2;
 }
 
+message GetDepthRequest{
+  sint32 symbolId = 1;
+}
+
+message GetDepthResponse{
+  sint32 code = 1;
+  optional string  message = 2;
+  Depth data = 3;
+}
+
+message Depth{
+  map<string, string> asks = 1;
+  map<string, string> bids = 2;
+}
+
 service SpotService {
   rpc getAccount (GetAccountRequest) returns (GetAccountResponse) {}
   rpc increase (IncreaseRequest) returns (IncreaseResponse) {}
   rpc decrease (DecreaseRequest) returns (DecreaseResponse) {}
-//  rpc freeze (FreezeRequest) returns (FreezeResponse) {}
-//  rpc unfreeze (UnfreezeRequest) returns (UnfreezeResponse) {}
+  //  rpc freeze (FreezeRequest) returns (FreezeResponse) {}
+  //  rpc unfreeze (UnfreezeRequest) returns (UnfreezeResponse) {}
   rpc placeOrder (PlaceOrderRequest) returns (PlaceOrderResponse) {}
   rpc cancelOrder (CancelOrderRequest) returns (CancelOrderResponse) {}
+  rpc getDepth (GetDepthRequest) returns (GetDepthResponse) {}
 }

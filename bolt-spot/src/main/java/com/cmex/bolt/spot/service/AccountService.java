@@ -104,10 +104,6 @@ public class AccountService {
         Optional<Account> optional = repository.get(accountId);
         Account account = optional.get();
         account.unfreeze(unfreeze.currencyId.get(), unfreeze.amount.get());
-        responseRingBuffer.publishEvent((message, sequence) -> {
-            message.id.set(messageId);
-            message.type.set(EventType.ORDER_CANCELED);
-        });
     }
 
     public void on(long messageId, Cleared cleared) {

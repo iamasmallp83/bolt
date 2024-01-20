@@ -4,8 +4,9 @@ import com.cmex.bolt.spot.api.EventType;
 import com.cmex.bolt.spot.api.Message;
 import com.cmex.bolt.spot.util.OrderIdGenerator;
 import com.lmax.disruptor.EventHandler;
+import com.lmax.disruptor.LifecycleAware;
 
-public class SequencerDispatcher implements EventHandler<Message> {
+public class SequencerDispatcher implements EventHandler<Message>, LifecycleAware {
 
     private final AccountService accountService;
     private MatchService[] matchServices;
@@ -18,8 +19,12 @@ public class SequencerDispatcher implements EventHandler<Message> {
         return accountService;
     }
 
-    public void setMatchServices(MatchService[] matchServices){
+    public void setMatchServices(MatchService[] matchServices) {
         this.matchServices = matchServices;
+    }
+
+    public MatchService[] getMatchServices() {
+        return matchServices;
     }
 
     public void onEvent(Message message, long sequence, boolean endOfBatch) {
@@ -45,5 +50,16 @@ public class SequencerDispatcher implements EventHandler<Message> {
                 matchServices[symbolId % 10].on(message.id.get(), message.payload.asCancelOrder);
                 break;
         }
+    }
+
+    @Override
+    public void onStart() {
+        final Thread currentThread = Thread.currentThread();
+        currentThread.setName(SequencerDispatcher.class.getSimpleName() + "-thread");
+    }
+
+    @Override
+    public void onShutdown() {
+
     }
 }

@@ -1,11 +1,13 @@
 package com.cmex.bolt.spot.grpc;
 
 import com.cmex.bolt.spot.api.*;
+import com.cmex.bolt.spot.dto.DepthDto;
 import com.cmex.bolt.spot.service.AccountService;
 import com.cmex.bolt.spot.service.MatchDispatcher;
 import com.cmex.bolt.spot.service.MatchService;
 import com.cmex.bolt.spot.service.SequencerDispatcher;
 import com.lmax.disruptor.EventHandler;
+import com.lmax.disruptor.LifecycleAware;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.util.DaemonThreadFactory;
@@ -147,7 +149,21 @@ public class SpotServiceImpl extends SpotServiceImplBase {
         });
     }
 
-    private class ResponseEventHandler implements EventHandler<Message> {
+    @Override
+    public void getDepth(GetDepthRequest request, StreamObserver<GetDepthResponse> responseObserver) {
+        MatchService[] matchServices = sequencerDispatcher.getMatchServices();
+        int symbolId = request.getSymbolId();
+        MatchService matchService = matchServices[symbolId % 10];
+        DepthDto dto = matchService.getDepth(symbolId);
+        GetDepthResponse response = GetDepthResponse.newBuilder()
+                .setCode(1)
+                .setData(Depth.newBuilder().putAllAsks(dto.getAsks()).putAllBids(dto.getBids()))
+                .build();
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
+
+    private class ResponseEventHandler implements EventHandler<Message>, LifecycleAware {
 
         @SuppressWarnings("unchecked")
         @Override
@@ -168,6 +184,17 @@ public class SpotServiceImpl extends SpotServiceImplBase {
                 observer.onNext(response);
                 observer.onCompleted();
             }
+        }
+
+        @Override
+        public void onStart() {
+            final Thread currentThread = Thread.currentThread();
+            currentThread.setName(ResponseEventHandler.class.getSimpleName() + "-thread");
+        }
+
+        @Override
+        public void onShutdown() {
+
         }
     }
 }

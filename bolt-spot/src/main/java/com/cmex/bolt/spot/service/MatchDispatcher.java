@@ -4,11 +4,12 @@ import com.cmex.bolt.spot.api.EventType;
 import com.cmex.bolt.spot.api.Message;
 import com.cmex.bolt.spot.util.OrderIdGenerator;
 import com.lmax.disruptor.EventHandler;
+import com.lmax.disruptor.LifecycleAware;
 
-public class MatchDispatcher implements EventHandler<Message> {
+public class MatchDispatcher implements EventHandler<Message>, LifecycleAware {
 
-    private int amount;
-    private int partition;
+    private final int amount;
+    private final int partition;
     private final MatchService matchService;
 
     public MatchDispatcher(int amount, int partition) {
@@ -40,5 +41,16 @@ public class MatchDispatcher implements EventHandler<Message> {
                 }
                 break;
         }
+    }
+
+    @Override
+    public void onStart() {
+        final Thread currentThread = Thread.currentThread();
+        currentThread.setName(MatchDispatcher.class.getSimpleName() + "-" + partition + "-thread");
+    }
+
+    @Override
+    public void onShutdown() {
+
     }
 }
