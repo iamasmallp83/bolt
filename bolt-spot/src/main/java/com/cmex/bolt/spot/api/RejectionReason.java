@@ -4,7 +4,8 @@ public enum RejectionReason {
     ACCOUNT_NOT_EXIST(1000),
     BALANCE_NOT_EXIST(1001),
     BALANCE_NOT_ENOUGH(1002),
-    SYMBOL_NOT_EXIST(2000);
+    SYMBOL_NOT_EXIST(2000),
+    ORDER_NOT_EXIST(2001);
 
     private int code;
 

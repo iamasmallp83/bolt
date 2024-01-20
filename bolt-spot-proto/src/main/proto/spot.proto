@@ -12,6 +12,16 @@ message Order{
   sint64 id = 1;
 }
 
+message GetAccountRequest {
+  sint32  accountId = 1;
+  sint32  currencyId = 2;
+}
+message GetAccountResponse {
+  sint32  code = 1;
+  optional string  message = 2;
+  map<sint32, Balance> data = 3;
+}
+
 message IncreaseRequest {
   sint64  requestId = 1;
   sint32  accountId = 2;
@@ -38,27 +48,32 @@ message DecreaseResponse{
   optional Balance data = 3;
 }
 
-message FreezeRequest {
-  sint64  requestId = 1;
-  sint32  accountId = 2;
-  sint32  currencyId = 3;
-  sint64  amount = 4;
-}
-
-message FreezeResponse{
-  sint32  code = 1;
-  optional string  message = 2;
-  optional Balance data = 3;
-}
-
-message UnfreezeRequest {
-  sint64  requestId = 1;
-  sint32  freezeId = 2;
-  sint64  amount = 3;
-}
+//message FreezeRequest {
+//  sint64  requestId = 1;
+//  sint32  accountId = 2;
+//  sint32  currencyId = 3;
+//  sint64  amount = 4;
+//}
+//
+//message FreezeResponse{
+//  sint32  code = 1;
+//  optional string  message = 2;
+//  optional Balance data = 3;
+//}
+//
+//message UnfreezeRequest {
+//  sint64  requestId = 1;
+//  sint32  freezeId = 2;
+//  sint64  amount = 3;
+//}
+//message UnfreezeResponse {
+//  sint32  code = 1;
+//  optional string  message = 2;
+//  optional Balance data = 3;
+//}
 
 message PlaceOrderRequest{
-  sint64  requestId = 1;
+  sint64 requestId = 1;
   sint32 symbolId = 2;
   sint32 accountId = 3;
   enum Type{
@@ -83,26 +98,20 @@ message PlaceOrderResponse{
 }
 
 message CancelOrderRequest{
-
+  sint64 orderId = 1;
 }
 
 message CancelOrderResponse{
-
-}
-
-
-message UnfreezeResponse {
-  sint32  code = 1;
+  sint32 code = 1;
   optional string  message = 2;
-  optional Balance data = 3;
 }
-
 
 service SpotService {
+  rpc getAccount (GetAccountRequest) returns (GetAccountResponse) {}
   rpc increase (IncreaseRequest) returns (IncreaseResponse) {}
   rpc decrease (DecreaseRequest) returns (DecreaseResponse) {}
-  rpc freeze (FreezeRequest) returns (FreezeResponse) {}
-  rpc unfreeze (UnfreezeRequest) returns (UnfreezeResponse) {}
+//  rpc freeze (FreezeRequest) returns (FreezeResponse) {}
+//  rpc unfreeze (UnfreezeRequest) returns (UnfreezeResponse) {}
   rpc placeOrder (PlaceOrderRequest) returns (PlaceOrderResponse) {}
   rpc cancelOrder (CancelOrderRequest) returns (CancelOrderResponse) {}
 }

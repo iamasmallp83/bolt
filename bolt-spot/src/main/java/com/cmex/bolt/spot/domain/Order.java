@@ -6,7 +6,6 @@ import lombok.Data;
 import java.util.Objects;
 
 @Data
-@Builder
 public class Order {
 
     private Symbol symbol;
@@ -29,6 +28,25 @@ public class Order {
 
     private long availableVolume;
 
+    @Builder
+    public Order(Symbol symbol, long id, int accountId, OrderType type, OrderSide side, long price, long quantity, long volume) {
+        this.symbol = symbol;
+        this.id = id;
+        this.accountId = accountId;
+        this.type = type;
+        this.side = side;
+        this.price = price;
+        this.quantity = quantity;
+        this.availableQuantity = this.quantity;
+        if (volume > 0) {
+            this.volume = volume;
+            this.availableVolume = volume;
+        } else {
+            this.volume = price * quantity;
+            this.availableVolume = this.volume;
+        }
+    }
+
     public enum OrderSide {
         BID, ASK;
     }
@@ -38,12 +56,11 @@ public class Order {
     }
 
     public boolean isDone() {
-//        if (quantity != null) {
-//            return BigDecimalUtil.eqZero(availableQuantity);
-//        } else {
-//            return BigDecimalUtil.eqZero(availableVolume);
-//        }
-        return quantity == 0;
+        if (quantity > 0) {
+            return availableQuantity == 0;
+        } else {
+            return availableVolume == 0;
+        }
     }
 
     public Ticket match(Order maker) {
@@ -68,6 +85,22 @@ public class Order {
                 .volume(maker.price * amount)
                 .takerSide(this.side)
                 .build();
+    }
+
+    public Currency getPayCurrency() {
+        return symbol.getPayCurrency(side);
+    }
+
+    public Currency getIncomeCurrency() {
+        return symbol.getIncomeCurrency(side);
+    }
+
+    public long getUnfreezeAmount() {
+        if (side == OrderSide.BID) {
+            return availableVolume;
+        } else {
+            return availableQuantity;
+        }
     }
 
     @Override

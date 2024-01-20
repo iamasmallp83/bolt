@@ -23,7 +23,7 @@ public class OrderIdGenerator {
     public OrderIdGenerator() {
     }
 
-    public synchronized long nextId(long symbolId) {
+    public synchronized long nextId(int symbolId) {
         long currentTimestamp = timestamp();
 
         if (currentTimestamp < lastTimestamp) {
@@ -75,9 +75,9 @@ public class OrderIdGenerator {
         return new long[]{timestamp, symbolId, sequence};
     }
 
-    public static long getSymbolId(long id) {
+    public static int getSymbolId(long id) {
         long maskSymbolId = ((1L << SYMBOL_BITS) - 1) << SEQUENCE_BITS;
-        return (id & maskSymbolId) >> SEQUENCE_BITS;
+        return (int) ((id & maskSymbolId) >> SEQUENCE_BITS);
     }
 
     @Override

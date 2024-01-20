@@ -9,15 +9,18 @@ import java.util.stream.Collectors;
 @Getter
 public class OrderBook {
 
-    private Symbol symbol;
+    private final Symbol symbol;
 
-    protected TreeMap<Long, PriceNode> bids;
-    protected TreeMap<Long, PriceNode> asks;
+    private final TreeMap<Long, PriceNode> bids;
+    private final TreeMap<Long, PriceNode> asks;
+    private final Map<Long, Order> orders;
+
 
     public OrderBook(Symbol symbol) {
         this.symbol = symbol;
         asks = new TreeMap<>();
         bids = new TreeMap<>(Comparator.reverseOrder());
+        orders = new HashMap<>();
     }
 
     public List<Ticket> match(Order taker) {
@@ -34,6 +37,7 @@ public class OrderBook {
                 tickets.add(taker.match(maker));
                 if (maker.isDone()) {
                     priceNode.remove(maker);
+                    orders.remove(maker.getId());
                 }
                 if (taker.isDone()) {
                     takerDone = true;
@@ -58,6 +62,7 @@ public class OrderBook {
                     return new PriceNode(taker.getPrice(), taker);
                 }
             });
+            orders.put(taker.getId(), taker);
         }
         return tickets;
     }
@@ -75,10 +80,21 @@ public class OrderBook {
             return false;
         }
         if (taker.getSide() == Order.OrderSide.BID) {
-            return taker.getPrice() > counter.firstKey();
+            return taker.getPrice() >= counter.firstKey();
         } else {
-            return taker.getPrice() < counter.firstKey();
+            return taker.getPrice() <= counter.firstKey();
         }
+    }
+
+    public Order cancel(long orderId) {
+        Order order = orders.get(orderId);
+        if (order == null) {
+            return null;
+        }
+        TreeMap<Long, PriceNode> own = getOwn(order.getSide());
+        PriceNode priceNode = own.get(order.getPrice());
+        priceNode.remove(order);
+        return order;
     }
 
     public Depth getDepth() {

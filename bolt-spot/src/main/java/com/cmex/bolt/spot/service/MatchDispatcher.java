@@ -21,7 +21,7 @@ public class MatchDispatcher implements EventHandler<Message> {
         return partition;
     }
 
-    public MatchService getOrderService() {
+    public MatchService getMatchService() {
         return matchService;
     }
 

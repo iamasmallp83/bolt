@@ -11,17 +11,17 @@ import java.util.Optional;
 @Data
 public class Account {
     private int id;
-    private Map<Short, Balance> balances = new HashMap<>();
+    private Map<Integer, Balance> balances = new HashMap<>();
 
     public Account(int id) {
         this.id = id;
     }
 
-    public Optional<Balance> getBalance(short currencyId) {
-        return Optional.of(balances.get(currencyId));
+    public Optional<Balance> getBalance(int currencyId) {
+        return Optional.ofNullable(balances.get(currencyId));
     }
 
-    public Result<Balance> increase(short currencyId, long value) {
+    public Result<Balance> increase(int currencyId, long value) {
         Balance balance = balances.get(currencyId);
         if (balance == null) {
             balance = new Balance();
@@ -30,7 +30,7 @@ public class Account {
         return balance.increase(value);
     }
 
-    public Result<Balance> decrease(short currencyId, long value) {
+    public Result<Balance> decrease(int currencyId, long value) {
         Balance balance = balances.get(currencyId);
         if (balance == null) {
             return Result.fail(RejectionReason.BALANCE_NOT_EXIST);
@@ -38,7 +38,7 @@ public class Account {
         return balance.decrease(value);
     }
 
-    public Result<Balance> freeze(short currencyId, long value) {
+    public Result<Balance> freeze(int currencyId, long value) {
         Balance balance = balances.get(currencyId);
         if (balance == null) {
             return Result.fail(RejectionReason.ACCOUNT_NOT_EXIST);
@@ -46,9 +46,18 @@ public class Account {
         return balance.freeze(value);
     }
 
-    public Result<Balance> unfreezeAndDecrease(short currencyId, long value) {
+    public Result<Balance> unfreeze(int currencyId, long value) {
+        Balance balance = balances.get(currencyId);
+        return balance.unfreeze(value);
+    }
+
+    public Result<Balance> unfreezeAndDecrease(int currencyId, long value) {
         Balance balance = balances.get(currencyId);
         return balance.unfreezeAndDecrease(value);
     }
 
+    public void settle(int payCurrencyId, long payAmount, int incomeCurrencyId, long incomeAmount) {
+        this.unfreezeAndDecrease(payCurrencyId, payAmount);
+        this.increase(incomeCurrencyId, incomeAmount);
+    }
 }

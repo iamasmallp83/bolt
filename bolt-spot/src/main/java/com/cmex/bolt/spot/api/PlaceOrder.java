@@ -3,7 +3,7 @@ package com.cmex.bolt.spot.api;
 import javolution.io.Struct;
 
 public class PlaceOrder extends Struct {
-    public final Signed16 symbolId = new Signed16();
+    public final Signed32 symbolId = new Signed32();
     public final Signed32 accountId = new Signed32();
     public final Enum8<OrderType> type = new Enum8<OrderType>(OrderType.values());
     public final Enum8<OrderSide> side = new Enum8<OrderSide>(OrderSide.values());

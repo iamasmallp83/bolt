@@ -8,16 +8,27 @@ import com.cmex.bolt.spot.repository.impl.AccountRepository;
 import com.cmex.bolt.spot.util.Result;
 import com.lmax.disruptor.RingBuffer;
 
+import java.util.Collections;
+import java.util.Map;
 import java.util.Optional;
 
 public class AccountService {
 
-    private final AccountRepository repository = new AccountRepository();
+    private final AccountRepository repository;
 
     private RingBuffer<Message> responseRingBuffer;
     private RingBuffer<Message> matchRingBuffer;
 
     public AccountService() {
+        this.repository = new AccountRepository();
+    }
+
+    public Map<Integer, Balance> getBalances(int accountId, int currencyId) {
+        return repository.get(accountId)
+                .map(account -> currencyId == 0 ? account.getBalances() :
+                        account.getBalance(currencyId).map(balance -> Map.of(currencyId, balance))
+                                .orElse(Collections.emptyMap()))
+                .orElse(Collections.emptyMap());
     }
 
     public void on(long messageId, PlaceOrder placeOrder) {
@@ -39,7 +50,7 @@ public class AccountService {
                     message.id.set(messageId);
                     message.type.set(EventType.PLACE_ORDER);
                     PlaceOrder payload = message.payload.asPlaceOrder;
-                    payload.copy(payload);
+                    placeOrder.copy(payload);
                 });
             } else {
                 responseRingBuffer.publishEvent((message, sequence) -> {
@@ -73,9 +84,7 @@ public class AccountService {
     public void on(long messageId, Decrease decrease) {
         int accountId = decrease.accountId.get();
         Optional<Account> optional = repository.get(accountId);
-        Result<Balance> result =
-                optional.map(account -> account.decrease(decrease.currencyId.get(), decrease.amount.get()))
-                        .orElse(Result.fail(RejectionReason.ACCOUNT_NOT_EXIST));
+        Result<Balance> result = optional.map(account -> account.decrease(decrease.currencyId.get(), decrease.amount.get())).orElse(Result.fail(RejectionReason.ACCOUNT_NOT_EXIST));
         responseRingBuffer.publishEvent((message, sequence) -> {
             if (result.isSuccess()) {
                 message.id.set(messageId);
@@ -91,15 +100,22 @@ public class AccountService {
     }
 
     public void on(long messageId, Unfreeze unfreeze) {
-        System.out.println(unfreeze);
+        int accountId = unfreeze.accountId.get();
+        Optional<Account> optional = repository.get(accountId);
+        Account account = optional.get();
+        account.unfreeze(unfreeze.currencyId.get(), unfreeze.amount.get());
+        responseRingBuffer.publishEvent((message, sequence) -> {
+            message.id.set(messageId);
+            message.type.set(EventType.ORDER_CANCELED);
+        });
     }
 
     public void on(long messageId, Cleared cleared) {
         int accountId = cleared.accountId.get();
         Optional<Account> optional = repository.get(accountId);
         Account account = optional.get();
-        account.unfreezeAndDecrease(cleared.payCurrencyId.get(), cleared.payAmount.get());
-        account.increase(cleared.incomeCurrencyId.get(), cleared.incomeAmount.get());
+        account.settle(cleared.payCurrencyId.get(), cleared.payAmount.get(),
+                cleared.incomeCurrencyId.get(), cleared.incomeAmount.get());
     }
 
     public void setMatchRingBuffer(RingBuffer<Message> matchRingBuffer) {

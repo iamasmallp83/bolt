@@ -14,7 +14,6 @@ public class TestOrderBook {
                     .side(Order.OrderSide.BID)
                     .price(100 - i)
                     .quantity(1)
-                    .availableQuantity(1)
                     .build();
             System.out.println(orderBook.match(order));
         }
@@ -22,9 +21,8 @@ public class TestOrderBook {
             Order order = Order.builder()
                     .type(Order.OrderType.LIMIT)
                     .side(Order.OrderSide.ASK)
-                    .price(100)
+                    .price(100 + i)
                     .quantity(2)
-                    .availableQuantity(2)
                     .build();
             System.out.println(orderBook.match(order));
         }

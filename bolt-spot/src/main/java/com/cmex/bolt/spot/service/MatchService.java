@@ -26,13 +26,17 @@ public class MatchService {
     public MatchService() {
         generator = new OrderIdGenerator();
         repository = new OrderBookRepository();
+        Symbol btcusdt = Symbol.getSymbol((short) 1);
+        Symbol ethusdt = Symbol.getSymbol((short) 2);
+        repository.getOrCreate(btcusdt.getId(), new OrderBook(btcusdt));
+        repository.getOrCreate(ethusdt.getId(), new OrderBook(ethusdt));
     }
 
     public void on(long messageId, PlaceOrder placeOrder) {
         //start to match
         Optional<OrderBook> optional = repository.get(placeOrder.symbolId.get());
         optional.ifPresentOrElse(orderBook -> {
-            Order order = getOrder(placeOrder);
+            Order order = getOrder(orderBook.getSymbol(), placeOrder);
             List<Ticket> tickets = orderBook.match(order);
             if (!tickets.isEmpty()) {
                 long totalQuantity = 0;
@@ -49,7 +53,6 @@ public class MatchService {
                 sequencerRingBuffer.publishEvent((message, sequence) -> {
                     setMessage(order, finalTotalQuantity, finalTotalVolume, message);
                 });
-
             }
             responseRingBuffer.publishEvent((message, sequence) -> {
                 message.id.set(messageId);
@@ -64,6 +67,32 @@ public class MatchService {
     }
 
     public void on(long messageId, CancelOrder cancelOrder) {
+        long orderId = cancelOrder.orderId.get();
+        int symbolId = OrderIdGenerator.getSymbolId(orderId);
+        Optional<OrderBook> optional = repository.get(symbolId);
+        optional.ifPresentOrElse(orderBook -> {
+            Order order = orderBook.cancel(orderId);
+            if (order != null) {
+                sequencerRingBuffer.publishEvent((message, sequence) -> {
+                    message.id.set(messageId);
+                    message.type.set(EventType.UNFREEZE);
+                    message.payload.asUnfreeze.accountId.set(order.getAccountId());
+                    message.payload.asUnfreeze.currencyId.set(order.getPayCurrency().getId());
+                    message.payload.asUnfreeze.amount.set(order.getUnfreezeAmount());
+                });
+            } else {
+                responseRingBuffer.publishEvent((message, sequence) -> {
+                    message.id.set(messageId);
+                    message.type.set(EventType.PLACE_ORDER_REJECTED);
+                    message.payload.asPlaceOrderRejected.reason.set(RejectionReason.ORDER_NOT_EXIST);
+                });
+            }
+
+        }, () -> responseRingBuffer.publishEvent((message, sequence) -> {
+            message.id.set(messageId);
+            message.type.set(EventType.PLACE_ORDER_REJECTED);
+            message.payload.asPlaceOrderRejected.reason.set(RejectionReason.SYMBOL_NOT_EXIST);
+        }));
     }
 
     public void setSequencerRingBuffer(RingBuffer<Message> sequencerRingBuffer) {
@@ -74,13 +103,16 @@ public class MatchService {
         this.responseRingBuffer = responseRingBuffer;
     }
 
-    private Order getOrder(PlaceOrder placeOrder) {
+    private Order getOrder(Symbol symbol, PlaceOrder placeOrder) {
         return Order.builder()
+                .symbol(symbol)
                 .id(generator.nextId(placeOrder.symbolId.get()))
                 .accountId(placeOrder.accountId.get())
+                .type(placeOrder.type.get() == OrderType.LIMIT ? Order.OrderType.LIMIT : Order.OrderType.MARKET)
                 .side(placeOrder.side.get() == OrderSide.BID ? Order.OrderSide.BID : Order.OrderSide.ASK)
                 .price(placeOrder.price.get())
                 .quantity(placeOrder.quantity.get())
+                .volume(placeOrder.volume.get())
                 .build();
     }
 
@@ -88,6 +120,7 @@ public class MatchService {
         Symbol symbol = order.getSymbol();
         message.type.set(EventType.CLEARED);
         Order.OrderSide side = order.getSide();
+        message.payload.asCleared.accountId.set(order.getAccountId());
         //支付
         message.payload.asCleared.payCurrencyId.set(symbol.getPayCurrency(side).getId());
         //得到

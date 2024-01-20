@@ -6,6 +6,6 @@ import lombok.Data;
 @Data
 @Builder
 public class Currency {
-    private short id;
+    private int id;
     private String name;
 }

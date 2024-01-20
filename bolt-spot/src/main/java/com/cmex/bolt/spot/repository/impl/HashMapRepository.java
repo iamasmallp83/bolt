@@ -19,8 +19,7 @@ public abstract class HashMapRepository<K, V> implements Repository<K, V> {
     }
 
     public V getOrCreate(K id, V value) {
-        holder.computeIfAbsent(id, k -> value);
-        return holder.putIfAbsent(id, value);
+        return holder.computeIfAbsent(id, k -> value);
     }
 
     public Optional<V> get(K id) {
