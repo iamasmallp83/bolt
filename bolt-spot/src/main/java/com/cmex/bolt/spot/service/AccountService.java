@@ -41,6 +41,9 @@ public class AccountService {
             Result<Balance> result;
             if (placeOrder.side.get() == OrderSide.BID) {
                 long volume = placeOrder.price.get() * placeOrder.quantity.get();
+                if (symbol.isQuoteSettlement()) {
+                    volume += volume * placeOrder.takerRate.get();
+                }
                 result = account.freeze(symbol.getQuote().getId(), volume);
             } else {
                 result = account.freeze(symbol.getBase().getId(), placeOrder.quantity.get());

@@ -89,6 +89,8 @@ message PlaceOrderRequest{
   optional sint64 price = 6;
   optional sint64 quantity = 7;
   optional sint64 volume = 8;
+  optional sint32 takerRate = 9;
+  optional sint32 makerRate = 10;
 }
 
 message PlaceOrderResponse{

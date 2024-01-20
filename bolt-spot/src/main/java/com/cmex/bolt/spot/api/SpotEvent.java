@@ -3,6 +3,7 @@ package com.cmex.bolt.spot.api;
 import javolution.io.Union;
 
 public class SpotEvent extends Union {
+    public final TryEvent asTryEvent = inner(new TryEvent());
     public final PlaceOrder asPlaceOrder = inner(new PlaceOrder());
     public final PlaceOrderRejected asPlaceOrderRejected = inner(new PlaceOrderRejected());
     public final OrderCreated asOrderCreated = inner(new OrderCreated());

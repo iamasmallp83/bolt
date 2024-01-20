@@ -28,8 +28,13 @@ public class Order {
 
     private long availableVolume;
 
+    private int takerRate;
+
+    private int makerRate;
+
     @Builder
-    public Order(Symbol symbol, long id, int accountId, OrderType type, OrderSide side, long price, long quantity, long volume) {
+    public Order(Symbol symbol, long id, int accountId, OrderType type, OrderSide side, long price, long quantity,
+                 long volume, int takerRate, int makerRate) {
         this.symbol = symbol;
         this.id = id;
         this.accountId = accountId;
@@ -45,6 +50,8 @@ public class Order {
             this.volume = price * quantity;
             this.availableVolume = this.volume;
         }
+        this.takerRate = takerRate;
+        this.makerRate = makerRate;
     }
 
     public enum OrderSide {
@@ -101,6 +108,10 @@ public class Order {
         } else {
             return availableQuantity;
         }
+    }
+
+    public int getRate(boolean isTaker) {
+        return (isTaker ? takerRate : makerRate);
     }
 
     @Override

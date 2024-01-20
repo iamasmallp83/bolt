@@ -17,4 +17,11 @@ public class TestMessage {
         Unfrozen unfrozen = new Unfrozen();
         System.out.println(unfrozen.size());
     }
+
+    @Test
+    public void testTryEvent(){
+        TryEvent tryEvent = new TryEvent();
+        System.out.println(tryEvent.size());
+    }
+
 }

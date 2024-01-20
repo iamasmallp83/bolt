@@ -1,6 +1,8 @@
 package com.cmex.bolt.spot.domain;
 
+import com.cmex.bolt.spot.api.RejectionReason;
 import com.cmex.bolt.spot.dto.DepthDto;
+import com.cmex.bolt.spot.util.Result;
 import lombok.Getter;
 
 import java.util.*;
@@ -23,7 +25,7 @@ public class OrderBook {
         orders = new HashMap<>();
     }
 
-    public List<Ticket> match(Order taker) {
+    public Result<List<Ticket>> match(Order taker) {
         List<Ticket> tickets = new LinkedList<>();
         TreeMap<Long, PriceNode> counter = getCounter(taker.getSide());
         while (tryMatch(counter, taker)) {
@@ -64,7 +66,10 @@ public class OrderBook {
             });
             orders.put(taker.getId(), taker);
         }
-        return tickets;
+        if (tickets.isEmpty()) {
+            return Result.fail(RejectionReason.ORDER_NOT_MATCH);
+        }
+        return Result.success(tickets);
     }
 
     private TreeMap<Long, PriceNode> getCounter(Order.OrderSide side) {
@@ -86,10 +91,10 @@ public class OrderBook {
         }
     }
 
-    public Order cancel(long orderId) {
+    public Result<Order> cancel(long orderId) {
         Order order = orders.get(orderId);
         if (order == null) {
-            return null;
+            return Result.fail(RejectionReason.ORDER_NOT_EXIST);
         }
         TreeMap<Long, PriceNode> own = getOwn(order.getSide());
         PriceNode priceNode = own.get(order.getPrice());
@@ -97,7 +102,7 @@ public class OrderBook {
         if (priceNode.isDone()) {
             own.remove(priceNode.getPrice());
         }
-        return order;
+        return Result.success(order);
     }
 
     public DepthDto getDepth() {

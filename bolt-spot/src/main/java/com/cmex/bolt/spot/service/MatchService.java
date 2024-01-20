@@ -9,6 +9,7 @@ import com.cmex.bolt.spot.domain.Ticket;
 import com.cmex.bolt.spot.dto.DepthDto;
 import com.cmex.bolt.spot.repository.impl.OrderBookRepository;
 import com.cmex.bolt.spot.util.OrderIdGenerator;
+import com.cmex.bolt.spot.util.Result;
 import com.lmax.disruptor.RingBuffer;
 
 import java.util.List;
@@ -38,13 +39,13 @@ public class MatchService {
         Optional<OrderBook> optional = repository.get(placeOrder.symbolId.get());
         optional.ifPresentOrElse(orderBook -> {
             Order order = getOrder(orderBook.getSymbol(), placeOrder);
-            List<Ticket> tickets = orderBook.match(order);
-            if (!tickets.isEmpty()) {
+            Result<List<Ticket>> result = orderBook.match(order);
+            if (result.isSuccess()) {
                 long totalQuantity = 0;
                 long totalVolume = 0;
-                for (Ticket ticket : tickets) {
+                for (Ticket ticket : result.value()) {
                     sequencerRingBuffer.publishEvent((message, sequence) -> {
-                        setMessage(ticket.getMaker(), ticket.getQuantity(), ticket.getVolume(), message);
+                        setClearedMessage(ticket.getMaker(), false, ticket.getQuantity(), ticket.getVolume(), message);
                     });
                     totalQuantity += ticket.getQuantity();
                     totalVolume += ticket.getVolume();
@@ -52,7 +53,7 @@ public class MatchService {
                 long finalTotalQuantity = totalQuantity;
                 long finalTotalVolume = totalVolume;
                 sequencerRingBuffer.publishEvent((message, sequence) -> {
-                    setMessage(order, finalTotalQuantity, finalTotalVolume, message);
+                    setClearedMessage(order, true, finalTotalQuantity, finalTotalVolume, message);
                 });
             }
             responseRingBuffer.publishEvent((message, sequence) -> {
@@ -72,11 +73,12 @@ public class MatchService {
         int symbolId = OrderIdGenerator.getSymbolId(orderId);
         Optional<OrderBook> optional = repository.get(symbolId);
         optional.ifPresentOrElse(orderBook -> {
-            Order order = orderBook.cancel(orderId);
-            if (order != null) {
+            Result<Order> result = orderBook.cancel(orderId);
+            if (result.isSuccess()) {
                 sequencerRingBuffer.publishEvent((message, sequence) -> {
                     message.id.set(messageId);
                     message.type.set(EventType.UNFREEZE);
+                    Order order = result.value();
                     message.payload.asUnfreeze.accountId.set(order.getAccountId());
                     message.payload.asUnfreeze.currencyId.set(order.getPayCurrency().getId());
                     message.payload.asUnfreeze.amount.set(order.getUnfreezeAmount());
@@ -88,14 +90,14 @@ public class MatchService {
             } else {
                 responseRingBuffer.publishEvent((message, sequence) -> {
                     message.id.set(messageId);
-                    message.type.set(EventType.PLACE_ORDER_REJECTED);
-                    message.payload.asPlaceOrderRejected.reason.set(RejectionReason.ORDER_NOT_EXIST);
+                    message.type.set(EventType.CANCEL_ORDER_REJECTED);
+                    message.payload.asPlaceOrderRejected.reason.set(result.reason());
                 });
             }
 
         }, () -> responseRingBuffer.publishEvent((message, sequence) -> {
             message.id.set(messageId);
-            message.type.set(EventType.PLACE_ORDER_REJECTED);
+            message.type.set(EventType.CANCEL_ORDER_REJECTED);
             message.payload.asPlaceOrderRejected.reason.set(RejectionReason.SYMBOL_NOT_EXIST);
         }));
     }
@@ -125,21 +127,24 @@ public class MatchService {
                 .build();
     }
 
-    private void setMessage(Order order, long quantity, long volume, Message message) {
+    private void setClearedMessage(Order order, boolean isTaker, long quantity, long volume, Message message) {
         Symbol symbol = order.getSymbol();
         message.type.set(EventType.CLEARED);
         Order.OrderSide side = order.getSide();
-        message.payload.asCleared.accountId.set(order.getAccountId());
+        Cleared cleared = message.payload.asCleared;
+        cleared.accountId.set(order.getAccountId());
         //支付
-        message.payload.asCleared.payCurrencyId.set(symbol.getPayCurrency(side).getId());
+        cleared.payCurrencyId.set(symbol.getPayCurrency(side).getId());
         //得到
-        message.payload.asCleared.incomeCurrencyId.set(symbol.getIncomeCurrency(side).getId());
+        cleared.incomeCurrencyId.set(symbol.getIncomeCurrency(side).getId());
         if (side == Order.OrderSide.BID) {
-            message.payload.asCleared.payAmount.set(volume);
-            message.payload.asCleared.incomeAmount.set(quantity);
+            cleared.payAmount.set(
+                    volume * (1 + (symbol.isQuoteSettlement() ? order.getRate(isTaker) : 0)));
+            cleared.incomeAmount.set(
+                    quantity * (1 - (symbol.isQuoteSettlement() ? 0 : order.getRate(isTaker))));
         } else {
-            message.payload.asCleared.payAmount.set(quantity);
-            message.payload.asCleared.incomeAmount.set(volume);
+            cleared.payAmount.set(quantity);
+            cleared.incomeAmount.set(volume * (1 - order.getRate(isTaker)));
         }
     }
 

@@ -135,6 +135,8 @@ public class SpotServiceImpl extends SpotServiceImplBase {
             placeOrder.price.set(request.getPrice());
             placeOrder.quantity.set(request.getQuantity());
             placeOrder.volume.set(request.getVolume());
+            placeOrder.takerRate.set(request.getTakerRate());
+            placeOrder.makerRate.set(request.getMakerRate());
         });
     }
 
