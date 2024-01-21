@@ -8,7 +8,7 @@ public class Rate {
      *
      * @return 基础利率
      */
-    private static final int BASE_RATE = 100000;
+    public static final int BASE_RATE = 100000;
 
     private int taker;
 

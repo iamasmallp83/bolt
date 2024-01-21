@@ -1,4 +1,4 @@
-package com.cmex.bolt.spot;
+package com.cmex.bolt.spot.performance;
 
 import com.google.common.base.Stopwatch;
 import org.junit.jupiter.api.Test;
