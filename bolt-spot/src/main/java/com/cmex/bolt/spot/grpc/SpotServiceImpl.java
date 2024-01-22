@@ -1,6 +1,7 @@
 package com.cmex.bolt.spot.grpc;
 
 import com.cmex.bolt.spot.api.*;
+import com.cmex.bolt.spot.domain.Symbol;
 import com.cmex.bolt.spot.dto.DepthDto;
 import com.cmex.bolt.spot.service.AccountService;
 import com.cmex.bolt.spot.service.MatchDispatcher;
@@ -16,6 +17,7 @@ import io.grpc.stub.StreamObserver;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
@@ -31,6 +33,9 @@ public class SpotServiceImpl extends SpotServiceImplBase {
     private final AtomicLong requestId = new AtomicLong();
     private final ConcurrentHashMap<Long, StreamObserver<?>> observers;
 
+    private final List<MatchService> matchServices;
+    private final AccountService accountService;
+
     public SpotServiceImpl() {
         observers = new ConcurrentHashMap<>();
         int bufferSize = 1024;
@@ -40,7 +45,8 @@ public class SpotServiceImpl extends SpotServiceImplBase {
                 new Disruptor<>(Message.FACTORY, bufferSize, DaemonThreadFactory.INSTANCE);
         Disruptor<Message> responseDisruptor =
                 new Disruptor<>(Message.FACTORY, bufferSize, DaemonThreadFactory.INSTANCE);
-        sequencerDispatcher = createSequencerDispatcher();
+        accountService = new AccountService();
+        sequencerDispatcher = createSequencerDispatcher(accountService);
         List<MatchDispatcher> matchDispatchers = createOrderDispatchers();
         sequencerDisruptor.handleEventsWith(sequencerDispatcher);
         matchDisruptor.handleEventsWith(matchDispatchers.toArray(new MatchDispatcher[0]));
@@ -50,18 +56,17 @@ public class SpotServiceImpl extends SpotServiceImplBase {
         RingBuffer<Message> responseRingBuffer = responseDisruptor.start();
         sequencerDispatcher.getAccountService().setMatchRingBuffer(matchRingBuffer);
         sequencerDispatcher.getAccountService().setResponseRingBuffer(responseRingBuffer);
-        MatchService[] matchServices = new MatchService[10];
-        int i = 0;
+        matchServices = new ArrayList<>(10);
         for (MatchDispatcher dispatcher : matchDispatchers) {
             dispatcher.getMatchService().setSequencerRingBuffer(sequencerRingBuffer);
             dispatcher.getMatchService().setResponseRingBuffer(responseRingBuffer);
-            matchServices[i++] = dispatcher.getMatchService();
+            matchServices.add(dispatcher.getMatchService());
         }
         sequencerDispatcher.setMatchServices(matchServices);
     }
 
-    private SequencerDispatcher createSequencerDispatcher() {
-        return new SequencerDispatcher();
+    private SequencerDispatcher createSequencerDispatcher(AccountService accountService) {
+        return new SequencerDispatcher(accountService);
     }
 
     private List<MatchDispatcher> createOrderDispatchers() {
@@ -74,70 +79,96 @@ public class SpotServiceImpl extends SpotServiceImplBase {
 
     @Override
     public void getAccount(GetAccountRequest request, StreamObserver<GetAccountResponse> responseObserver) {
-        AccountService service = sequencerDispatcher.getAccountService();
         Map<Integer, SpotServiceProto.Balance> balances =
-                service.getBalances(request.getAccountId(), request.getCurrencyId()).entrySet().stream()
+                accountService.getBalances(request.getAccountId(), request.getCurrencyId()).entrySet().stream()
                         .collect(Collectors.toMap(
                                 Map.Entry::getKey,
-                                entry -> SpotServiceProto.Balance.newBuilder()
-                                        .setFrozen(entry.getValue().getFrozen())
-                                        .setAvailable(entry.getValue().available())
-                                        .setValue(entry.getValue().getValue())
-                                        .build()
+                                entry ->
+                                        SpotServiceProto.Balance.newBuilder()
+                                                .setFrozen(entry.getValue().getFormatFrozen())
+                                                .setAvailable(entry.getValue().getFormatAvailable())
+                                                .setValue(entry.getValue().getFormatValue())
+                                                .build()
                         ));
-        GetAccountResponse getAccountResponse = GetAccountResponse.newBuilder()
+        GetAccountResponse response = GetAccountResponse.newBuilder()
                 .setCode(1)
                 .putAllData(balances)
                 .build();
-        responseObserver.onNext(getAccountResponse);
+        responseObserver.onNext(response);
         responseObserver.onCompleted();
     }
 
     public void increase(IncreaseRequest request, StreamObserver<IncreaseResponse> responseObserver) {
-        long id = requestId.incrementAndGet();
-        observers.put(id, responseObserver);
-        sequencerRingBuffer.publishEvent((message, sequence) -> {
-            message.id.set(id);
-            message.type.set(EventType.INCREASE);
-            Increase increase = message.payload.asIncrease;
-            increase.accountId.set(request.getAccountId());
-            increase.currencyId.set((short) request.getCurrencyId());
-            increase.amount.set(request.getAmount());
+        accountService.getCurrency(request.getCurrencyId()).ifPresentOrElse(currency -> {
+            long id = requestId.incrementAndGet();
+            observers.put(id, responseObserver);
+            sequencerRingBuffer.publishEvent((message, sequence) -> {
+                message.id.set(id);
+                message.type.set(EventType.INCREASE);
+                Increase increase = message.payload.asIncrease;
+                increase.accountId.set(request.getAccountId());
+                increase.currencyId.set((short) request.getCurrencyId());
+                increase.amount.set(currency.parse(request.getAmount()));
+            });
+        }, () -> {
+            IncreaseResponse response = IncreaseResponse.newBuilder()
+                    .setCode(RejectionReason.CURRENCY_NOT_EXIST.getCode())
+                    .build();
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
         });
     }
 
     public void decrease(DecreaseRequest request, StreamObserver<DecreaseResponse> responseObserver) {
-        long id = requestId.incrementAndGet();
-        observers.put(id, responseObserver);
-        sequencerRingBuffer.publishEvent((message, sequence) -> {
-            message.id.set(id);
-            message.type.set(EventType.DECREASE);
-            Decrease decrease = message.payload.asDecrease;
-            decrease.accountId.set(request.getAccountId());
-            decrease.currencyId.set((short) request.getCurrencyId());
-            decrease.amount.set(request.getAmount());
+        accountService.getCurrency(request.getCurrencyId()).ifPresentOrElse(currency -> {
+            long id = requestId.incrementAndGet();
+            observers.put(id, responseObserver);
+            sequencerRingBuffer.publishEvent((message, sequence) -> {
+                message.id.set(id);
+                message.type.set(EventType.DECREASE);
+                Decrease decrease = message.payload.asDecrease;
+                decrease.accountId.set(request.getAccountId());
+                decrease.currencyId.set((short) request.getCurrencyId());
+                decrease.amount.set(currency.parse(request.getAmount()));
+            });
+        }, () -> {
+            DecreaseResponse response = DecreaseResponse.newBuilder()
+                    .setCode(RejectionReason.CURRENCY_NOT_EXIST.getCode())
+                    .build();
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
         });
+
     }
 
     public void placeOrder(PlaceOrderRequest request, StreamObserver<PlaceOrderResponse> responseObserver) {
-        long id = requestId.incrementAndGet();
-        observers.put(id, responseObserver);
-        sequencerRingBuffer.publishEvent((message, sequence) -> {
-            message.id.set(id);
-            message.type.set(EventType.PLACE_ORDER);
-            PlaceOrder placeOrder = message.payload.asPlaceOrder;
-            placeOrder.symbolId.set((short) request.getSymbolId());
-            placeOrder.accountId.set(request.getAccountId());
-            placeOrder.type.set(request.getType() == PlaceOrderRequest.Type.LIMIT ?
-                    OrderType.LIMIT : OrderType.MARKET);
-            placeOrder.side.set(request.getSide() == PlaceOrderRequest.Side.BID ?
-                    OrderSide.BID : OrderSide.ASK);
-            placeOrder.price.set(request.getPrice());
-            placeOrder.quantity.set(request.getQuantity());
-            placeOrder.volume.set(request.getVolume());
-            placeOrder.takerRate.set(request.getTakerRate());
-            placeOrder.makerRate.set(request.getMakerRate());
-        });
+        getSymbol(request.getSymbolId()).ifPresentOrElse(symbol -> {
+                    long id = requestId.incrementAndGet();
+                    observers.put(id, responseObserver);
+                    sequencerRingBuffer.publishEvent((message, sequence) -> {
+                        message.id.set(id);
+                        message.type.set(EventType.PLACE_ORDER);
+                        PlaceOrder placeOrder = message.payload.asPlaceOrder;
+                        placeOrder.symbolId.set((short) request.getSymbolId());
+                        placeOrder.accountId.set(request.getAccountId());
+                        placeOrder.type.set(request.getType() == PlaceOrderRequest.Type.LIMIT ?
+                                OrderType.LIMIT : OrderType.MARKET);
+                        placeOrder.side.set(request.getSide() == PlaceOrderRequest.Side.BID ?
+                                OrderSide.BID : OrderSide.ASK);
+                        placeOrder.price.set(request.getPrice());
+                        placeOrder.quantity.set(request.getQuantity());
+                        placeOrder.volume.set(request.getVolume());
+                        placeOrder.takerRate.set(request.getTakerRate());
+                        placeOrder.makerRate.set(request.getMakerRate());
+                    });
+                }, () -> {
+                    PlaceOrderResponse response = PlaceOrderResponse.newBuilder()
+                            .setCode(RejectionReason.SYMBOL_NOT_EXIST.getCode())
+                            .build();
+                    responseObserver.onNext(response);
+                    responseObserver.onCompleted();
+                }
+        );
     }
 
     @Override
@@ -153,9 +184,8 @@ public class SpotServiceImpl extends SpotServiceImplBase {
 
     @Override
     public void getDepth(GetDepthRequest request, StreamObserver<GetDepthResponse> responseObserver) {
-        MatchService[] matchServices = sequencerDispatcher.getMatchServices();
         int symbolId = request.getSymbolId();
-        MatchService matchService = matchServices[symbolId % 10];
+        MatchService matchService = matchServices.get(symbolId % 10);
         DepthDto dto = matchService.getDepth(symbolId);
         GetDepthResponse response = GetDepthResponse.newBuilder()
                 .setCode(1)
@@ -198,5 +228,9 @@ public class SpotServiceImpl extends SpotServiceImplBase {
         public void onShutdown() {
 
         }
+    }
+
+    private Optional<Symbol> getSymbol(int symbolId) {
+        return matchServices.get(symbolId % 10).getSymbol(symbolId);
     }
 }

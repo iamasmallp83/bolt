@@ -3,9 +3,10 @@ option java_package = "com.cmex.bolt.spot.grpc";
 option java_outer_classname = "SpotServiceProto";
 
 message Balance{
-  sint64 value = 1;
-  sint64 frozen = 2;
-  sint64 available = 3;
+  string currency = 1;
+  string value = 2;
+  string frozen = 3;
+  string available = 4;
 }
 
 message Order{
@@ -26,7 +27,7 @@ message IncreaseRequest {
   sint64  requestId = 1;
   sint32  accountId = 2;
   sint32  currencyId = 3;
-  sint64  amount = 4;
+  string  amount = 4;
 }
 
 message IncreaseResponse{
@@ -39,7 +40,7 @@ message DecreaseRequest {
   sint64  requestId = 1;
   sint32  accountId = 2;
   sint32  currencyId = 3;
-  sint64  amount = 4;
+  string  amount = 4;
 }
 
 message DecreaseResponse{
@@ -86,9 +87,9 @@ message PlaceOrderRequest{
     ASK = 1;
   }
   Side side = 5;
-  optional sint64 price = 6;
-  optional sint64 quantity = 7;
-  optional sint64 volume = 8;
+  optional string price = 6;
+  optional string quantity = 7;
+  optional string volume = 8;
   optional sint32 takerRate = 9;
   optional sint32 makerRate = 10;
 }

@@ -9,9 +9,10 @@ import lombok.NoArgsConstructor;
 
 @Data
 @Builder
-@NoArgsConstructor
 @AllArgsConstructor
 public class Balance {
+    private Currency currency;
+
     private long value;
 
     private long frozen;
@@ -50,5 +51,18 @@ public class Balance {
 
     public long available() {
         return value - frozen;
+    }
+
+    public String getFormatValue() {
+        return currency.format(value);
+    }
+
+    public String getFormatFrozen() {
+        return currency.format(frozen);
+    }
+
+
+    public String getFormatAvailable() {
+        return currency.format(available());
     }
 }

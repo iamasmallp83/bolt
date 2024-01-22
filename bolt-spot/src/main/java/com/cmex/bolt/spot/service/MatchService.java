@@ -34,6 +34,10 @@ public class MatchService {
         repository.getOrCreate(ethusdt.getId(), new OrderBook(ethusdt));
     }
 
+    public Optional<Symbol> getSymbol(int symbolId) {
+        return Optional.ofNullable(null);
+    }
+
     public void on(long messageId, PlaceOrder placeOrder) {
         //start to match
         Optional<OrderBook> optional = repository.get(placeOrder.symbolId.get());

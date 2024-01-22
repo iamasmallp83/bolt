@@ -6,16 +6,17 @@ import javolution.io.Struct;
 import java.util.function.Supplier;
 
 public class Increased extends Struct implements Supplier<SpotServiceProto.IncreaseResponse> {
-    public final Struct.Signed32 accountId = new Struct.Signed32();
+    public final Struct.UTF8String currency = new Struct.UTF8String(16);
     public final Struct.Signed64 value = new Struct.Signed64();
     public final Struct.Signed64 frozen = new Struct.Signed64();
 
     @Override
     public SpotServiceProto.IncreaseResponse get() {
         SpotServiceProto.Balance balance = SpotServiceProto.Balance.newBuilder()
-                .setValue(value.get())
-                .setFrozen(frozen.get())
-                .setAvailable(value.get() - frozen.get())
+                .setCurrency(currency.get())
+                .setValue(String.valueOf(value.get()))
+                .setFrozen(String.valueOf(frozen.get()))
+                .setAvailable(String.valueOf(value.get() - frozen.get()))
                 .build();
         return SpotServiceProto.IncreaseResponse.newBuilder().setCode(1).setData(balance).build();
     }

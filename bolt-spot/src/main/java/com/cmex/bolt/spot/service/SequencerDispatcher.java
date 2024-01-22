@@ -6,24 +6,26 @@ import com.cmex.bolt.spot.util.OrderIdGenerator;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
 
+import java.util.List;
+
 public class SequencerDispatcher implements EventHandler<Message>, LifecycleAware {
 
     private final AccountService accountService;
-    private MatchService[] matchServices;
+    private List<MatchService> matchServices;
 
-    public SequencerDispatcher() {
-        this.accountService = new AccountService();
+    public SequencerDispatcher(AccountService accountService) {
+        this.accountService = accountService;
     }
 
     public AccountService getAccountService() {
         return accountService;
     }
 
-    public void setMatchServices(MatchService[] matchServices) {
+    public void setMatchServices(List<MatchService> matchServices) {
         this.matchServices = matchServices;
     }
 
-    public MatchService[] getMatchServices() {
+    public List<MatchService> getMatchServices() {
         return matchServices;
     }
 
@@ -47,7 +49,7 @@ public class SequencerDispatcher implements EventHandler<Message>, LifecycleAwar
                 break;
             case CANCEL_ORDER:
                 int symbolId = OrderIdGenerator.getSymbolId(message.payload.asCancelOrder.orderId.get());
-                matchServices[symbolId % 10].on(message.id.get(), message.payload.asCancelOrder);
+                matchServices.get(symbolId % 10).on(message.id.get(), message.payload.asCancelOrder);
                 break;
         }
     }

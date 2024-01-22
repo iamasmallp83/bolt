@@ -20,4 +20,12 @@ public class Currency {
         this.precision = precision;
         this.multiplier = NumberUtils.powLong(precision);
     }
+
+    public long parse(String amount) {
+        return Math.round(Double.parseDouble(amount) * NumberUtils.powLong(precision));
+    }
+
+    public String format(long amount) {
+        return String.valueOf(amount / NumberUtils.powDouble(precision));
+    }
 }
