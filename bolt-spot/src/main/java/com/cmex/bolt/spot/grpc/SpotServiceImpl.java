@@ -113,6 +113,7 @@ public class SpotServiceImpl extends SpotServiceImplBase {
         }, () -> {
             IncreaseResponse response = IncreaseResponse.newBuilder()
                     .setCode(RejectionReason.CURRENCY_NOT_EXIST.getCode())
+                    .setMessage(RejectionReason.CURRENCY_NOT_EXIST.name())
                     .build();
             responseObserver.onNext(response);
             responseObserver.onCompleted();
@@ -134,6 +135,7 @@ public class SpotServiceImpl extends SpotServiceImplBase {
         }, () -> {
             DecreaseResponse response = DecreaseResponse.newBuilder()
                     .setCode(RejectionReason.CURRENCY_NOT_EXIST.getCode())
+                    .setMessage(RejectionReason.CURRENCY_NOT_EXIST.name())
                     .build();
             responseObserver.onNext(response);
             responseObserver.onCompleted();
@@ -155,15 +157,16 @@ public class SpotServiceImpl extends SpotServiceImplBase {
                                 OrderType.LIMIT : OrderType.MARKET);
                         placeOrder.side.set(request.getSide() == PlaceOrderRequest.Side.BID ?
                                 OrderSide.BID : OrderSide.ASK);
-                        placeOrder.price.set(request.getPrice());
-                        placeOrder.quantity.set(request.getQuantity());
-                        placeOrder.volume.set(request.getVolume());
+                        placeOrder.price.set(symbol.formatPrice(request.getPrice()));
+                        placeOrder.quantity.set(symbol.formatQuantity(request.getQuantity()));
+                        placeOrder.volume.set(symbol.formatPrice(request.getVolume()));
                         placeOrder.takerRate.set(request.getTakerRate());
                         placeOrder.makerRate.set(request.getMakerRate());
                     });
                 }, () -> {
                     PlaceOrderResponse response = PlaceOrderResponse.newBuilder()
                             .setCode(RejectionReason.SYMBOL_NOT_EXIST.getCode())
+                            .setMessage(RejectionReason.SYMBOL_NOT_EXIST.name())
                             .build();
                     responseObserver.onNext(response);
                     responseObserver.onCompleted();

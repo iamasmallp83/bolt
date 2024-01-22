@@ -7,6 +7,7 @@ import com.cmex.bolt.spot.domain.Currency;
 import com.cmex.bolt.spot.domain.Symbol;
 import com.cmex.bolt.spot.repository.impl.AccountRepository;
 import com.cmex.bolt.spot.repository.impl.CurrencyRepository;
+import com.cmex.bolt.spot.repository.impl.SymbolRepository;
 import com.cmex.bolt.spot.util.Result;
 import com.lmax.disruptor.RingBuffer;
 
@@ -19,12 +20,15 @@ public class AccountService {
     private final AccountRepository accountRepository;
     private final CurrencyRepository currencyRepository;
 
+    private final SymbolRepository symbolRepository;
+
     private RingBuffer<Message> responseRingBuffer;
     private RingBuffer<Message> matchRingBuffer;
 
     public AccountService() {
         this.accountRepository = new AccountRepository();
         this.currencyRepository = new CurrencyRepository();
+        this.symbolRepository = new SymbolRepository();
     }
 
     public Optional<Currency> getCurrency(int currencyId) {
@@ -40,50 +44,68 @@ public class AccountService {
     }
 
     public void on(long messageId, PlaceOrder placeOrder) {
-        //锁定金额
-        int accountId = placeOrder.accountId.get();
-        Symbol symbol = Symbol.getSymbol(placeOrder.symbolId.get());
-        Optional<Account> optional = accountRepository.get(accountId);
-        optional.ifPresentOrElse(account -> {
-            //account 存在
-            Result<Balance> result;
-            if (placeOrder.side.get() == OrderSide.BID) {
-                long volume = placeOrder.price.get() * placeOrder.quantity.get();
-                if (symbol.isQuoteSettlement()) {
-                    volume += volume * placeOrder.takerRate.get();
-                }
-                result = account.freeze(symbol.getQuote().getId(), volume);
-            } else {
-                result = account.freeze(symbol.getBase().getId(), placeOrder.quantity.get());
-            }
-            if (result.isSuccess()) {
-                matchRingBuffer.publishEvent((message, sequence) -> {
-                    message.id.set(messageId);
-                    message.type.set(EventType.PLACE_ORDER);
-                    PlaceOrder payload = message.payload.asPlaceOrder;
-                    placeOrder.copy(payload);
-                });
-            } else {
-                responseRingBuffer.publishEvent((message, sequence) -> {
-                    message.id.set(messageId);
-                    message.type.set(EventType.PLACE_ORDER_REJECTED);
-                    message.payload.asPlaceOrderRejected.reason.set(result.reason());
-                });
-            }
-        }, () -> {
-            //account 不存在
-            responseRingBuffer.publishEvent((message, sequence) -> {
-                message.id.set(messageId);
-                message.type.set(EventType.PLACE_ORDER_REJECTED);
-                message.payload.asPlaceOrderRejected.reason.set(RejectionReason.ACCOUNT_NOT_EXIST);
-            });
+        int symbolId = placeOrder.symbolId.get();
+        symbolRepository.get(symbolId).ifPresentOrElse(
+                symbol -> handleSymbolPresent(messageId, symbol, placeOrder),
+                () -> handleSymbolAbsent(messageId, EventType.PLACE_ORDER_REJECTED)
+        );
+    }
+
+    private void handleSymbolPresent(long messageId, Symbol symbol, PlaceOrder placeOrder) {
+        accountRepository.get(placeOrder.accountId.get()).ifPresentOrElse(
+                account -> handleAccountPresent(messageId, symbol, account, placeOrder),
+                () -> handleAccountAbsent(messageId, EventType.PLACE_ORDER_REJECTED)
+        );
+    }
+
+    private void handleSymbolAbsent(long messageId, EventType eventType) {
+        publishFailureEvent(messageId, eventType, RejectionReason.SYMBOL_NOT_EXIST);
+    }
+
+    private void handleAccountPresent(long messageId, Symbol symbol, Account account, PlaceOrder placeOrder) {
+        Result<Balance> result = calculateAndFreezeAmount(symbol, account, placeOrder);
+        if (result.isSuccess()) {
+            publishPlaceOrderEvent(messageId, placeOrder);
+        } else {
+            publishFailureEvent(messageId, EventType.PLACE_ORDER_REJECTED, result.reason());
+        }
+    }
+
+    private void handleAccountAbsent(long messageId, EventType eventType) {
+        publishFailureEvent(messageId, eventType, RejectionReason.ACCOUNT_NOT_EXIST);
+    }
+
+    private void publishPlaceOrderEvent(long messageId, PlaceOrder placeOrder) {
+        matchRingBuffer.publishEvent((message, sequence) -> {
+            message.id.set(messageId);
+            message.type.set(EventType.PLACE_ORDER);
+            PlaceOrder payload = message.payload.asPlaceOrder;
+            placeOrder.copy(payload);
         });
     }
 
     public void on(long messageId, Increase increase) {
         int accountId = increase.accountId.get();
         Account account = accountRepository.getOrCreate(accountId, new Account(accountId));
-        Result<Balance> result = account.increase(increase.currencyId.get(), increase.amount.get());
+        currencyRepository.get(increase.currencyId.get()).ifPresentOrElse(
+                currency -> handleCurrencyPresent(messageId, increase, account, currency),
+                () -> handleCurrencyAbsent(messageId)
+        );
+    }
+
+    public void on(long messageId, Decrease decrease) {
+        int accountId = decrease.accountId.get();
+        Result<Balance> result = accountRepository.get(accountId)
+                .map(account -> account.decrease(decrease.currencyId.get(), decrease.amount.get()))
+                .orElse(Result.fail(RejectionReason.ACCOUNT_NOT_EXIST));
+        if (result.isSuccess()) {
+            publishDecreasedEvent(messageId, result.value());
+        } else {
+            publishFailureEvent(messageId, EventType.DECREASE_REJECTED, result.reason());
+        }
+    }
+
+    private void publishIncreasedEvent(long messageId, Result<Balance> result) {
         responseRingBuffer.publishEvent((message, sequence) -> {
             message.id.set(messageId);
             message.type.set(EventType.INCREASED);
@@ -92,23 +114,42 @@ public class AccountService {
         });
     }
 
-    public void on(long messageId, Decrease decrease) {
-        int accountId = decrease.accountId.get();
-        Optional<Account> optional = accountRepository.get(accountId);
-        Result<Balance> result = optional.map(account -> account.decrease(decrease.currencyId.get(), decrease.amount.get())).orElse(Result.fail(RejectionReason.ACCOUNT_NOT_EXIST));
+    private void publishDecreasedEvent(long messageId, Balance balance) {
         responseRingBuffer.publishEvent((message, sequence) -> {
-            if (result.isSuccess()) {
-                message.id.set(messageId);
-                message.type.set(EventType.DECREASED);
-                message.payload.asDecreased.value.set(result.value().getValue());
-                message.payload.asDecreased.frozen.set(result.value().getFrozen());
-            } else {
-                message.id.set(messageId);
-                message.type.set(EventType.DECREASE_REJECTED);
-                message.payload.asDecreaseRejected.reason.set(result.reason());
-            }
+            message.id.set(messageId);
+            message.type.set(EventType.DECREASED);
+            message.payload.asDecreased.value.set(balance.getValue());
+            message.payload.asDecreased.frozen.set(balance.getFrozen());
         });
     }
+
+    private Result<Balance> calculateAndFreezeAmount(Symbol symbol, Account account, PlaceOrder placeOrder) {
+        if (placeOrder.side.get() == OrderSide.BID) {
+            long volume = placeOrder.price.get() * placeOrder.quantity.get();
+            if (symbol.isQuoteSettlement()) {
+                volume += volume * placeOrder.takerRate.get();
+            }
+            return account.freeze(symbol.getQuote().getId(), volume);
+        } else {
+            return account.freeze(symbol.getBase().getId(), placeOrder.quantity.get());
+        }
+    }
+
+    private void handleCurrencyPresent(long messageId, Increase increase, Account account, Currency currency) {
+        Result<Balance> result = account.increase(currency, increase.amount.get());
+        publishIncreasedEvent(messageId, result);
+    }
+
+    private void handleCurrencyAbsent(long messageId) {
+        publishFailureEvent(messageId, EventType.INCREASE_REJECTED, RejectionReason.CURRENCY_NOT_EXIST);
+    }
+
+    private void publishFailureEvent(long messageId, EventType eventType, RejectionReason rejectionReason) {
+        responseRingBuffer.publishEvent((message, sequence) -> {
+            rejectionReason.setMessage(message, messageId, eventType);
+        });
+    }
+
 
     public void on(long messageId, Unfreeze unfreeze) {
         int accountId = unfreeze.accountId.get();
@@ -122,7 +163,7 @@ public class AccountService {
         Optional<Account> optional = accountRepository.get(accountId);
         Account account = optional.get();
         account.settle(cleared.payCurrencyId.get(), cleared.payAmount.get(),
-                cleared.incomeCurrencyId.get(), cleared.incomeAmount.get());
+                currencyRepository.get(cleared.incomeCurrencyId.get()).get(), cleared.incomeAmount.get());
     }
 
     public void setMatchRingBuffer(RingBuffer<Message> matchRingBuffer) {

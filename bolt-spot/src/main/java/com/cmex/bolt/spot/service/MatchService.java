@@ -8,6 +8,7 @@ import com.cmex.bolt.spot.domain.Symbol;
 import com.cmex.bolt.spot.domain.Ticket;
 import com.cmex.bolt.spot.dto.DepthDto;
 import com.cmex.bolt.spot.repository.impl.OrderBookRepository;
+import com.cmex.bolt.spot.repository.impl.SymbolRepository;
 import com.cmex.bolt.spot.util.OrderIdGenerator;
 import com.cmex.bolt.spot.util.Result;
 import com.lmax.disruptor.RingBuffer;
@@ -23,24 +24,22 @@ public class MatchService {
 
     private final OrderIdGenerator generator;
 
-    private final OrderBookRepository repository;
+    private final SymbolRepository symbolRepository;
+    private final OrderBookRepository orderBookRepository;
 
     public MatchService() {
         generator = new OrderIdGenerator();
-        repository = new OrderBookRepository();
-        Symbol btcusdt = Symbol.getSymbol((short) 1);
-        Symbol ethusdt = Symbol.getSymbol((short) 2);
-        repository.getOrCreate(btcusdt.getId(), new OrderBook(btcusdt));
-        repository.getOrCreate(ethusdt.getId(), new OrderBook(ethusdt));
+        symbolRepository = new SymbolRepository();
+        orderBookRepository = new OrderBookRepository();
     }
 
     public Optional<Symbol> getSymbol(int symbolId) {
-        return Optional.ofNullable(null);
+        return symbolRepository.get(symbolId);
     }
 
     public void on(long messageId, PlaceOrder placeOrder) {
         //start to match
-        Optional<OrderBook> optional = repository.get(placeOrder.symbolId.get());
+        Optional<OrderBook> optional = orderBookRepository.get(placeOrder.symbolId.get());
         optional.ifPresentOrElse(orderBook -> {
             Order order = getOrder(orderBook.getSymbol(), placeOrder);
             Result<List<Ticket>> result = orderBook.match(order);
@@ -75,7 +74,7 @@ public class MatchService {
     public void on(long messageId, CancelOrder cancelOrder) {
         long orderId = cancelOrder.orderId.get();
         int symbolId = OrderIdGenerator.getSymbolId(orderId);
-        Optional<OrderBook> optional = repository.get(symbolId);
+        Optional<OrderBook> optional = orderBookRepository.get(symbolId);
         optional.ifPresentOrElse(orderBook -> {
             Result<Order> result = orderBook.cancel(orderId);
             if (result.isSuccess()) {
@@ -115,7 +114,7 @@ public class MatchService {
     }
 
     public DepthDto getDepth(int symbolId) {
-        return repository.get(symbolId).map(OrderBook::getDepth).orElse(DepthDto.builder().build());
+        return orderBookRepository.get(symbolId).map(OrderBook::getDepth).orElse(DepthDto.builder().build());
     }
 
     private Order getOrder(Symbol symbol, PlaceOrder placeOrder) {

@@ -5,7 +5,6 @@ import com.cmex.bolt.spot.repository.Repository;
 
 import java.util.HashMap;
 import java.util.Optional;
-import java.util.function.Function;
 
 /**
  * 业务串行执行、无并发场景

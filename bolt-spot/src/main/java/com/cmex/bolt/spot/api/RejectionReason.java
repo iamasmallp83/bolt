@@ -18,4 +18,10 @@ public enum RejectionReason {
     public int getCode() {
         return code;
     }
+
+    public void setMessage(Message message, long messageId, EventType type) {
+        message.id.set(messageId);
+        message.type.set(type);
+        message.payload.asPlaceOrderRejected.reason.set(this);
+    }
 }

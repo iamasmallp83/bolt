@@ -1,9 +1,6 @@
 package com.cmex.bolt.spot.performance;
 
 import com.google.common.base.Stopwatch;
-import org.decimal4j.immutable.Decimal18f;
-import org.decimal4j.immutable.Decimal8f;
-import org.decimal4j.mutable.MutableDecimal8f;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;

@@ -14,6 +14,7 @@ public enum EventType {
     DECREASE_REJECTED(new DecreaseRejected()),
     INCREASE(new Increase()),
     INCREASED(new Increased()),
+    INCREASE_REJECTED(new IncreaseRejected()),
     FREEZE(new Freeze()),
     UNFREEZE(new Unfreeze()),
     CLEARED(new Cleared());

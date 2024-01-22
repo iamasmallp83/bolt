@@ -25,7 +25,4 @@ public class PlaceOrder extends Struct {
         target.makerRate.set(this.makerRate.get());
     }
 
-    public long getCost() {
-
-    }
 }

@@ -7,7 +7,7 @@ import java.math.BigDecimal;
 public class TestOrderBook {
     @Test
     public void testOrderBook() {
-        OrderBook orderBook = new OrderBook(Symbol.getSymbol((short) 1));
+        OrderBook orderBook = new OrderBook(Symbol.builder().build());
         for (int i = 0; i < 5; i++) {
             Order order = Order.builder()
                     .type(Order.OrderType.LIMIT)

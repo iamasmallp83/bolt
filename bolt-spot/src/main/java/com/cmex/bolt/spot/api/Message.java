@@ -1,16 +1,14 @@
 package com.cmex.bolt.spot.api;
 
-import java.nio.ByteBuffer;
-
+import com.lmax.disruptor.EventFactory;
 import javolution.io.Struct;
 
-import com.lmax.disruptor.EventFactory;
+import java.nio.ByteBuffer;
 
 public class Message extends Struct {
     public final Enum32<EventType> type = new Enum32<EventType>(EventType.values());
     public final Signed64 id = new Struct.Signed64();
     public final SpotEvent payload = inner(new SpotEvent());
-
 
     public int getSize(Struct s) {
         return (this.size() - payload.size()) + s.size();
@@ -33,4 +31,9 @@ public class Message extends Struct {
             return message;
         }
     };
+
+    public void set(){
+
+    }
+
 }

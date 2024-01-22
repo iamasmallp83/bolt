@@ -1,6 +1,5 @@
 package com.cmex.bolt.spot;
 
-import org.decimal4j.immutable.Decimal4f;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -15,8 +14,6 @@ public class SpotTest {
      */
     @Test
     public void shouldDecimal4j() {
-        Decimal4f decimal4f = Decimal4f.valueOf(1.01);
-        System.out.println(decimal4f);
     }
 
     public static double round(double value, int places) {

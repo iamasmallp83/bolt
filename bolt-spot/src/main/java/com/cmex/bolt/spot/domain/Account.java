@@ -21,11 +21,14 @@ public class Account {
         return Optional.ofNullable(balances.get(currencyId));
     }
 
-    public Result<Balance> increase(int currencyId, long value) {
-        Balance balance = balances.get(currencyId);
+    public Result<Balance> increase(Currency currency, long value) {
+        Balance balance = balances.get(currency.getId());
         if (balance == null) {
-            balance = new Balance();
-            balances.put(currencyId, balance);
+            balance = Balance.builder()
+                    .currency(currency)
+                    .value(value)
+                    .build();
+            balances.put(currency.getId(), balance);
         }
         return balance.increase(value);
     }
@@ -56,8 +59,8 @@ public class Account {
         return balance.unfreezeAndDecrease(value);
     }
 
-    public void settle(int payCurrencyId, long payAmount, int incomeCurrencyId, long incomeAmount) {
+    public void settle(int payCurrencyId, long payAmount, Currency incomeCurrency, long incomeAmount) {
         this.unfreezeAndDecrease(payCurrencyId, payAmount);
-        this.increase(incomeCurrencyId, incomeAmount);
+        this.increase(incomeCurrency, incomeAmount);
     }
 }

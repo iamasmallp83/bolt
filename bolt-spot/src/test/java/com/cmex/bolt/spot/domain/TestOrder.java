@@ -8,7 +8,6 @@ public class TestOrder {
     @Test
     public void test() {
         Order order = Order.builder()
-                .symbol(Symbol.getSymbol((short) 1))
                 .id(1)
                 .accountId(1)
                 .type(Order.OrderType.LIMIT)

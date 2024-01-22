@@ -14,26 +14,22 @@ public class Symbol {
 
     private Currency quote;
 
-    private boolean quoteSettlement = true;
-
-    public static Symbol getSymbol(int id) {
-        switch (id) {
-            case 1:
-                return Symbol.builder().id((short) 1).name("BTCUSDT").base(Currency.builder().id((short) 2).build())
-                        .quote(Currency.builder().id((short) 1).name("BTC").build()).build();
-            case 2:
-                return Symbol.builder().id((short) 2).name("ETHUSDT").base(Currency.builder().id((short) 3).build())
-                        .quote(Currency.builder().id((short) 1).name("ETH").build()).build();
-        }
-        return null;
-    }
+    private boolean quoteSettlement;
 
     public Currency getPayCurrency(Order.OrderSide side) {
         return side == Order.OrderSide.BID ? quote : base;
     }
 
+    public long formatPrice(String price){
+        return quote.parse(price);
+    }
+
     public Currency getIncomeCurrency(Order.OrderSide side) {
         return side == Order.OrderSide.BID ? base : quote;
+    }
+
+    public long formatQuantity(String quantity){
+        return base.parse(quantity);
     }
 
     public Currency getFeeCurrency(Order.OrderSide side) {
