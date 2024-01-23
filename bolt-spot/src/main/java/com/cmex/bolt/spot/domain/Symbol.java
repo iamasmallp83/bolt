@@ -1,5 +1,6 @@
 package com.cmex.bolt.spot.domain;
 
+import com.google.common.base.Strings;
 import lombok.Builder;
 import lombok.Data;
 
@@ -20,16 +21,30 @@ public class Symbol {
         return side == Order.OrderSide.BID ? quote : base;
     }
 
-    public long formatPrice(String price){
+    public long formatPrice(String price) {
+        if (Strings.isNullOrEmpty(price)) {
+            return 0;
+        }
         return quote.parse(price);
+    }
+
+    public String parsePrice(long price) {
+        return quote.format(price);
     }
 
     public Currency getIncomeCurrency(Order.OrderSide side) {
         return side == Order.OrderSide.BID ? base : quote;
     }
 
-    public long formatQuantity(String quantity){
+    public long formatQuantity(String quantity) {
+        if (Strings.isNullOrEmpty(quantity)) {
+            return 0;
+        }
         return base.parse(quantity);
+    }
+
+    public String parseQuantity(long quantity) {
+        return base.format(quantity);
     }
 
     public Currency getFeeCurrency(Order.OrderSide side) {
@@ -38,4 +53,9 @@ public class Symbol {
         }
         return getIncomeCurrency(side);
     }
+
+    public long getVolume(long price, long quantity) {
+        return price * quantity / base.getMultiplier();
+    }
+
 }

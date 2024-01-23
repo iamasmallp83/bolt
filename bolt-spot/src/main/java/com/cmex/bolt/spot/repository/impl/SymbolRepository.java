@@ -35,7 +35,7 @@ public class SymbolRepository extends HashMapRepository<Integer, Symbol> {
                 .quote(usdt)
                 .quoteSettlement(true)
                 .build();
-        this.getOrCreate(btcusdt.getId(), btcusdt);
-        this.getOrCreate(shibusdt.getId(), shibusdt);
+        holder.put(btcusdt.getId(), btcusdt);
+        holder.put(shibusdt.getId(), shibusdt);
     }
 }

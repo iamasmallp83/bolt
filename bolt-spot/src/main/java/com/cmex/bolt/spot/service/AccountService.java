@@ -1,10 +1,7 @@
 package com.cmex.bolt.spot.service;
 
 import com.cmex.bolt.spot.api.*;
-import com.cmex.bolt.spot.domain.Account;
-import com.cmex.bolt.spot.domain.Balance;
-import com.cmex.bolt.spot.domain.Currency;
-import com.cmex.bolt.spot.domain.Symbol;
+import com.cmex.bolt.spot.domain.*;
 import com.cmex.bolt.spot.repository.impl.AccountRepository;
 import com.cmex.bolt.spot.repository.impl.CurrencyRepository;
 import com.cmex.bolt.spot.repository.impl.SymbolRepository;
@@ -105,12 +102,15 @@ public class AccountService {
         }
     }
 
-    private void publishIncreasedEvent(long messageId, Result<Balance> result) {
+    private void publishIncreasedEvent(long messageId, Balance balance) {
         responseRingBuffer.publishEvent((message, sequence) -> {
             message.id.set(messageId);
             message.type.set(EventType.INCREASED);
-            message.payload.asIncreased.value.set(result.value().getValue());
-            message.payload.asIncreased.frozen.set(result.value().getFrozen());
+            Increased increased = message.payload.asIncreased;
+            increased.currency.set(balance.getCurrency().getName());
+            increased.value.set(balance.getFormatValue());
+            increased.frozen.set(balance.getFormatFrozen());
+            increased.available.set(balance.getFormatAvailable());
         });
     }
 
@@ -118,26 +118,36 @@ public class AccountService {
         responseRingBuffer.publishEvent((message, sequence) -> {
             message.id.set(messageId);
             message.type.set(EventType.DECREASED);
-            message.payload.asDecreased.value.set(balance.getValue());
-            message.payload.asDecreased.frozen.set(balance.getFrozen());
+            Decreased decreased = message.payload.asDecreased;
+            decreased.currency.set(balance.getCurrency().getName());
+            decreased.value.set(balance.getFormatValue());
+            decreased.frozen.set(balance.getFormatFrozen());
+            decreased.available.set(balance.getFormatAvailable());
         });
     }
 
     private Result<Balance> calculateAndFreezeAmount(Symbol symbol, Account account, PlaceOrder placeOrder) {
         if (placeOrder.side.get() == OrderSide.BID) {
-            long volume = placeOrder.price.get() * placeOrder.quantity.get();
-            if (symbol.isQuoteSettlement()) {
-                volume += volume * placeOrder.takerRate.get();
+            long volume;
+            if (placeOrder.volume.get() > 0) {
+                volume = placeOrder.volume.get();
+            } else {
+                volume = symbol.getVolume(placeOrder.price.get(), placeOrder.quantity.get());
             }
+            if (symbol.isQuoteSettlement()) {
+                volume += Rate.getRate(volume, placeOrder.takerRate.get());
+            }
+            placeOrder.locked.set(volume);
             return account.freeze(symbol.getQuote().getId(), volume);
         } else {
+            placeOrder.locked.set(placeOrder.quantity.get());
             return account.freeze(symbol.getBase().getId(), placeOrder.quantity.get());
         }
     }
 
     private void handleCurrencyPresent(long messageId, Increase increase, Account account, Currency currency) {
         Result<Balance> result = account.increase(currency, increase.amount.get());
-        publishIncreasedEvent(messageId, result);
+        publishIncreasedEvent(messageId, result.value());
     }
 
     private void handleCurrencyAbsent(long messageId) {
@@ -162,7 +172,7 @@ public class AccountService {
         int accountId = cleared.accountId.get();
         Optional<Account> optional = accountRepository.get(accountId);
         Account account = optional.get();
-        account.settle(cleared.payCurrencyId.get(), cleared.payAmount.get(),
+        account.settle(cleared.payCurrencyId.get(), cleared.payAmount.get(), cleared.refundAmount.get(),
                 currencyRepository.get(cleared.incomeCurrencyId.get()).get(), cleared.incomeAmount.get());
     }
 

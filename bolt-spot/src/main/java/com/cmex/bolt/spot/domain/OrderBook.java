@@ -115,8 +115,8 @@ public class OrderBook {
 
     private TreeMap<String, String> convert(TreeMap<Long, PriceNode> target) {
         return target.entrySet().stream().collect(Collectors.toMap(
-                entry -> String.valueOf(entry.getKey()),
-                entry -> String.valueOf(entry.getValue().getQuantity()),
+                entry -> symbol.parsePrice(entry.getKey()),
+                entry -> symbol.parseQuantity(entry.getValue().getQuantity()),
                 (o1, o2) -> o1,
                 TreeMap::new
         ));

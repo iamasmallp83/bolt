@@ -21,8 +21,8 @@ public class CurrencyRepository extends HashMapRepository<Integer, Currency> {
                 .name("SHIB")
                 .precision(0)
                 .build();
-        this.getOrCreate(usdt.getId(), usdt);
-        this.getOrCreate(btc.getId(), btc);
-        this.getOrCreate(shib.getId(), shib);
+        holder.put(usdt.getId(), usdt);
+        holder.put(btc.getId(), btc);
+        holder.put(shib.getId(), shib);
     }
 }

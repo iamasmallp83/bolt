@@ -24,6 +24,10 @@ public class BigDecimalUtil {
         return one.compareTo(two) == 0;
     }
 
+    public static boolean eq(String one, String two) {
+        return new BigDecimal(one).compareTo(new BigDecimal(two)) == 0;
+    }
+
     public static boolean gtZero(BigDecimal one) {
         return one.compareTo(BigDecimal.ZERO) > 0;
     }
@@ -39,6 +43,7 @@ public class BigDecimalUtil {
     public static BigDecimal max(BigDecimal one, BigDecimal two) {
         return gte(one, two) ? one : two;
     }
+
     public static BigDecimal min(BigDecimal one, BigDecimal two) {
         return gte(one, two) ? two : one;
     }

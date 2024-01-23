@@ -42,9 +42,9 @@ public class Balance {
         return Result.success(this);
     }
 
-    public Result<Balance> unfreezeAndDecrease(long amount) {
-        frozen -= amount;
-        value -= amount;
+    public Result<Balance> unfreezeAndDecrease(long unfreezeAmount, long decreaseAmount) {
+        frozen -= unfreezeAmount;
+        value -= decreaseAmount;
         return Result.success(this);
     }
 

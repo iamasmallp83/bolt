@@ -2,10 +2,7 @@ package com.cmex.bolt.spot.service;
 
 
 import com.cmex.bolt.spot.api.*;
-import com.cmex.bolt.spot.domain.Order;
-import com.cmex.bolt.spot.domain.OrderBook;
-import com.cmex.bolt.spot.domain.Symbol;
-import com.cmex.bolt.spot.domain.Ticket;
+import com.cmex.bolt.spot.domain.*;
 import com.cmex.bolt.spot.dto.DepthDto;
 import com.cmex.bolt.spot.repository.impl.OrderBookRepository;
 import com.cmex.bolt.spot.repository.impl.SymbolRepository;
@@ -127,6 +124,9 @@ public class MatchService {
                 .price(placeOrder.price.get())
                 .quantity(placeOrder.quantity.get())
                 .volume(placeOrder.volume.get())
+                .locked(placeOrder.locked.get())
+                .takerRate(placeOrder.takerRate.get())
+                .makerRate(placeOrder.makerRate.get())
                 .build();
     }
 
@@ -142,12 +142,15 @@ public class MatchService {
         cleared.incomeCurrencyId.set(symbol.getIncomeCurrency(side).getId());
         if (side == Order.OrderSide.BID) {
             cleared.payAmount.set(
-                    volume * (1 + (symbol.isQuoteSettlement() ? order.getRate(isTaker) : 0)));
+                    Math.round(volume * (1 + (symbol.isQuoteSettlement() ? order.getRate(isTaker) / Rate.BASE_RATE : 0))));
             cleared.incomeAmount.set(
-                    quantity * (1 - (symbol.isQuoteSettlement() ? 0 : order.getRate(isTaker))));
+                    Math.round(quantity * (1 - (symbol.isQuoteSettlement() ? 0 : order.getRate(isTaker) / Rate.BASE_RATE))));
+            if (order.isDone() && order.getSide() == Order.OrderSide.BID && order.left() > 0) {
+                cleared.refundAmount.set(order.left());
+            }
         } else {
             cleared.payAmount.set(quantity);
-            cleared.incomeAmount.set(volume * (1 - order.getRate(isTaker)));
+            cleared.incomeAmount.set(Math.round(volume * (1 - (order.getRate(isTaker) / Rate.BASE_RATE))));
         }
     }
 

@@ -1,6 +1,7 @@
 package com.cmex.bolt.spot.grpc;
 
 import com.cmex.bolt.spot.api.*;
+import com.cmex.bolt.spot.domain.Balance;
 import com.cmex.bolt.spot.domain.Symbol;
 import com.cmex.bolt.spot.dto.DepthDto;
 import com.cmex.bolt.spot.service.AccountService;
@@ -84,11 +85,15 @@ public class SpotServiceImpl extends SpotServiceImplBase {
                         .collect(Collectors.toMap(
                                 Map.Entry::getKey,
                                 entry ->
-                                        SpotServiceProto.Balance.newBuilder()
-                                                .setFrozen(entry.getValue().getFormatFrozen())
-                                                .setAvailable(entry.getValue().getFormatAvailable())
-                                                .setValue(entry.getValue().getFormatValue())
-                                                .build()
+                                {
+                                    Balance balance = entry.getValue();
+                                    return SpotServiceProto.Balance.newBuilder()
+                                            .setCurrency(balance.getCurrency().getName())
+                                            .setFrozen(balance.getFormatFrozen())
+                                            .setAvailable(balance.getFormatAvailable())
+                                            .setValue(balance.getFormatValue())
+                                            .build();
+                                }
                         ));
         GetAccountResponse response = GetAccountResponse.newBuilder()
                 .setCode(1)

@@ -6,17 +6,18 @@ import javolution.io.Struct;
 import java.util.function.Supplier;
 
 public class Decreased extends Struct implements Supplier<SpotServiceProto.DecreaseResponse> {
-    public final Struct.UTF8String currency = new Struct.UTF8String(16);
-    public final Struct.Signed64 value = new Struct.Signed64();
-    public final Struct.Signed64 frozen = new Struct.Signed64();
+    public final UTF8String currency = new UTF8String(8);
+    public final UTF8String value = new UTF8String(18);
+    public final UTF8String frozen = new UTF8String(18);
+    public final UTF8String available = new UTF8String(18);
 
     @Override
     public SpotServiceProto.DecreaseResponse get() {
         SpotServiceProto.Balance balance = SpotServiceProto.Balance.newBuilder()
                 .setCurrency(currency.get())
-                .setValue(String.valueOf(value.get()))
-                .setFrozen(String.valueOf(frozen.get()))
-                .setAvailable(String.valueOf(value.get() - frozen.get()))
+                .setValue(value.get())
+                .setFrozen(frozen.get())
+                .setAvailable(available.get())
                 .build();
         return SpotServiceProto.DecreaseResponse.newBuilder().setCode(1).setData(balance).build();
     }

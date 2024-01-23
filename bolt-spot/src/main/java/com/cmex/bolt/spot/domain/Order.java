@@ -28,13 +28,17 @@ public class Order {
 
     private long availableVolume;
 
+    private long locked;
+
+    private long cost;
+
     private int takerRate;
 
     private int makerRate;
 
     @Builder
     public Order(Symbol symbol, long id, int accountId, OrderType type, OrderSide side, long price, long quantity,
-                 long volume, int takerRate, int makerRate) {
+                 long volume, long locked, int takerRate, int makerRate) {
         this.symbol = symbol;
         this.id = id;
         this.accountId = accountId;
@@ -43,13 +47,9 @@ public class Order {
         this.price = price;
         this.quantity = quantity;
         this.availableQuantity = this.quantity;
-        if (volume > 0) {
-            this.volume = volume;
-            this.availableVolume = volume;
-        } else {
-            this.volume = price * quantity;
-            this.availableVolume = this.volume;
-        }
+        this.volume = volume;
+        this.availableVolume = volume;
+        this.locked = locked;
         this.takerRate = takerRate;
         this.makerRate = makerRate;
     }
@@ -72,24 +72,34 @@ public class Order {
 
     public Ticket match(Order maker) {
         long amount;
+        long volume;
         if (type == OrderType.MARKET) {
             amount = maker.availableQuantity;
             if (quantity > 0) {
-                availableQuantity = availableQuantity - (amount);
+                availableQuantity = availableQuantity - amount;
             } else {
-                availableVolume = availableVolume - (maker.price * amount);
+                volume = symbol.getVolume(maker.price, amount);
+                availableVolume = availableVolume - volume;
             }
         } else {
             amount = Math.min(availableQuantity, maker.availableQuantity);
             availableQuantity = availableQuantity - amount;
         }
+        volume = symbol.getVolume(maker.price, amount);
         maker.availableQuantity = maker.availableQuantity - amount;
+        if (side == OrderSide.BID) {
+            cost += volume + Rate.getRate(volume, takerRate);
+            maker.cost += amount + Rate.getRate(amount, makerRate);
+        } else {
+            cost += amount + Rate.getRate(amount, makerRate);
+            maker.cost += volume + Rate.getRate(volume, makerRate);
+        }
         return Ticket.builder()
                 .taker(this)
                 .maker(maker)
                 .price(maker.price)
                 .quantity(amount)
-                .volume(maker.price * amount)
+                .volume(volume)
                 .takerSide(this.side)
                 .build();
     }
@@ -112,6 +122,10 @@ public class Order {
 
     public int getRate(boolean isTaker) {
         return (isTaker ? takerRate : makerRate);
+    }
+
+    public long left() {
+        return locked - cost;
     }
 
     @Override

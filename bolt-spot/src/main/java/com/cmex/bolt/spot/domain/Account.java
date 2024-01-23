@@ -7,6 +7,7 @@ import lombok.Data;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Optional;
 
 @Data
 public class Account {
@@ -22,14 +23,9 @@ public class Account {
     }
 
     public Result<Balance> increase(Currency currency, long value) {
-        Balance balance = balances.get(currency.getId());
-        if (balance == null) {
-            balance = Balance.builder()
-                    .currency(currency)
-                    .value(value)
-                    .build();
-            balances.put(currency.getId(), balance);
-        }
+        Balance balance = balances.computeIfAbsent(currency.getId(), currencyId -> Balance.builder()
+                .currency(currency)
+                .build());
         return balance.increase(value);
     }
 
@@ -54,13 +50,13 @@ public class Account {
         return balance.unfreeze(value);
     }
 
-    public Result<Balance> unfreezeAndDecrease(int currencyId, long value) {
+    public Result<Balance> unfreezeAndDecrease(int currencyId, long unfreezeAmount, long decreaseAmount) {
         Balance balance = balances.get(currencyId);
-        return balance.unfreezeAndDecrease(value);
+        return balance.unfreezeAndDecrease(unfreezeAmount, decreaseAmount);
     }
 
-    public void settle(int payCurrencyId, long payAmount, Currency incomeCurrency, long incomeAmount) {
-        this.unfreezeAndDecrease(payCurrencyId, payAmount);
+    public void settle(int payCurrencyId, long payAmount, long refundAmount, Currency incomeCurrency, long incomeAmount) {
+        this.unfreezeAndDecrease(payCurrencyId, payAmount + refundAmount, payAmount);
         this.increase(incomeCurrency, incomeAmount);
     }
 }
