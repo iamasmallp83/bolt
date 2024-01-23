@@ -9,7 +9,7 @@ public class CurrencyRepository extends HashMapRepository<Integer, Currency> {
         Currency usdt = Currency.builder()
                 .id(1)
                 .name("USDT")
-                .precision(6)
+                .precision(8)
                 .build();
         Currency btc = Currency.builder()
                 .id(2)

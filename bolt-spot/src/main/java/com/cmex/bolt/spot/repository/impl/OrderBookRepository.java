@@ -10,7 +10,7 @@ public class OrderBookRepository extends HashMapRepository<Integer, OrderBook>{
         Currency usdt = Currency.builder()
                 .id(1)
                 .name("USDT")
-                .precision(6)
+                .precision(8)
                 .build();
         Currency btc = Currency.builder()
                 .id(2)

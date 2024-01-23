@@ -84,8 +84,7 @@ public class SpotServiceImpl extends SpotServiceImplBase {
                 accountService.getBalances(request.getAccountId(), request.getCurrencyId()).entrySet().stream()
                         .collect(Collectors.toMap(
                                 Map.Entry::getKey,
-                                entry ->
-                                {
+                                entry -> {
                                     Balance balance = entry.getValue();
                                     return SpotServiceProto.Balance.newBuilder()
                                             .setCurrency(balance.getCurrency().getName())
@@ -93,8 +92,7 @@ public class SpotServiceImpl extends SpotServiceImplBase {
                                             .setAvailable(balance.getFormatAvailable())
                                             .setValue(balance.getFormatValue())
                                             .build();
-                                }
-                        ));
+                                }));
         GetAccountResponse response = GetAccountResponse.newBuilder()
                 .setCode(1)
                 .putAllData(balances)

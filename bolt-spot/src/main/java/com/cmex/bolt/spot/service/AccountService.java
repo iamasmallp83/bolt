@@ -84,10 +84,9 @@ public class AccountService {
     public void on(long messageId, Increase increase) {
         int accountId = increase.accountId.get();
         Account account = accountRepository.getOrCreate(accountId, new Account(accountId));
-        currencyRepository.get(increase.currencyId.get()).ifPresentOrElse(
-                currency -> handleCurrencyPresent(messageId, increase, account, currency),
-                () -> handleCurrencyAbsent(messageId)
-        );
+        //前置已经检查币种存在
+        currencyRepository.get(increase.currencyId.get()).ifPresent(
+                currency -> handleCurrencyPresent(messageId, increase, account, currency));
     }
 
     public void on(long messageId, Decrease decrease) {
@@ -150,9 +149,6 @@ public class AccountService {
         publishIncreasedEvent(messageId, result.value());
     }
 
-    private void handleCurrencyAbsent(long messageId) {
-        publishFailureEvent(messageId, EventType.INCREASE_REJECTED, RejectionReason.CURRENCY_NOT_EXIST);
-    }
 
     private void publishFailureEvent(long messageId, EventType eventType, RejectionReason rejectionReason) {
         responseRingBuffer.publishEvent((message, sequence) -> {
