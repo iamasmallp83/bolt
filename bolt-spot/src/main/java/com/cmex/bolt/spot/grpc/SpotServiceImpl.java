@@ -195,7 +195,7 @@ public class SpotServiceImpl extends SpotServiceImplBase {
         DepthDto dto = matchService.getDepth(symbolId);
         GetDepthResponse response = GetDepthResponse.newBuilder()
                 .setCode(1)
-                .setData(Depth.newBuilder().putAllAsks(dto.getAsks()).putAllBids(dto.getBids()))
+                .setData(Depth.newBuilder().setSymbol(dto.getSymbol()).putAllAsks(dto.getAsks()).putAllBids(dto.getBids()))
                 .build();
         responseObserver.onNext(response);
         responseObserver.onCompleted();

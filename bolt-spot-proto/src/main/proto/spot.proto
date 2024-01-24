@@ -120,8 +120,9 @@ message GetDepthResponse{
 }
 
 message Depth{
-  map<string, string> asks = 1;
-  map<string, string> bids = 2;
+  string symbol = 1;
+  map<string, string> asks = 2;
+  map<string, string> bids = 3;
 }
 
 service SpotService {

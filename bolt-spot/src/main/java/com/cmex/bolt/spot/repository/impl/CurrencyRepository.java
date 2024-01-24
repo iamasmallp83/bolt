@@ -21,8 +21,14 @@ public class CurrencyRepository extends HashMapRepository<Integer, Currency> {
                 .name("SHIB")
                 .precision(0)
                 .build();
+        Currency eth = Currency.builder()
+                .id(4)
+                .name("ETH")
+                .precision(6)
+                .build();
         holder.put(usdt.getId(), usdt);
         holder.put(btc.getId(), btc);
         holder.put(shib.getId(), shib);
+        holder.put(eth.getId(), eth);
     }
 }

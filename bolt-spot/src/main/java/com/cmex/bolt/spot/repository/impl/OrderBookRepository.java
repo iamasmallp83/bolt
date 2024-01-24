@@ -22,6 +22,11 @@ public class OrderBookRepository extends HashMapRepository<Integer, OrderBook>{
                 .name("SHIB")
                 .precision(0)
                 .build();
+        Currency eth = Currency.builder()
+                .id(4)
+                .name("ETH")
+                .precision(6)
+                .build();
         Symbol btcusdt = Symbol.builder()
                 .id(1)
                 .name("BTCUSDT")
@@ -36,7 +41,15 @@ public class OrderBookRepository extends HashMapRepository<Integer, OrderBook>{
                 .quote(usdt)
                 .quoteSettlement(true)
                 .build();
+        Symbol ehtusdt = Symbol.builder()
+                .id(3)
+                .name("ETHUSDT")
+                .base(eth)
+                .quote(usdt)
+                .quoteSettlement(true)
+                .build();
         holder.put(btcusdt.getId(), new OrderBook(btcusdt));
         holder.put(shibusdt.getId(), new OrderBook(shibusdt));
+        holder.put(ehtusdt.getId(), new OrderBook(ehtusdt));
     }
 }

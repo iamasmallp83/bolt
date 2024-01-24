@@ -21,6 +21,11 @@ public class SymbolRepository extends HashMapRepository<Integer, Symbol> {
                 .name("SHIB")
                 .precision(0)
                 .build();
+        Currency eth = Currency.builder()
+                .id(4)
+                .name("ETH")
+                .precision(6)
+                .build();
         Symbol btcusdt = Symbol.builder()
                 .id(1)
                 .name("BTCUSDT")
@@ -35,7 +40,15 @@ public class SymbolRepository extends HashMapRepository<Integer, Symbol> {
                 .quote(usdt)
                 .quoteSettlement(true)
                 .build();
+        Symbol ehtusdt = Symbol.builder()
+                .id(3)
+                .name("ETHUSDT")
+                .base(eth)
+                .quote(usdt)
+                .quoteSettlement(true)
+                .build();
         holder.put(btcusdt.getId(), btcusdt);
         holder.put(shibusdt.getId(), shibusdt);
+        holder.put(ehtusdt.getId(), ehtusdt);
     }
 }
