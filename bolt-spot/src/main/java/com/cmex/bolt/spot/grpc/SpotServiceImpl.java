@@ -39,13 +39,13 @@ public class SpotServiceImpl extends SpotServiceImplBase {
 
     public SpotServiceImpl() {
         observers = new ConcurrentHashMap<>();
-        int bufferSize = 1024;
+        int bufferSize = 1024*128;
         Disruptor<Message> sequencerDisruptor =
-                new Disruptor<>(Message.FACTORY, bufferSize, DaemonThreadFactory.INSTANCE);
+                new Disruptor<>(Message.FACTORY, 1024*32, DaemonThreadFactory.INSTANCE);
         Disruptor<Message> matchDisruptor =
-                new Disruptor<>(Message.FACTORY, bufferSize, DaemonThreadFactory.INSTANCE);
+                new Disruptor<>(Message.FACTORY, 1024*256, DaemonThreadFactory.INSTANCE);
         Disruptor<Message> responseDisruptor =
-                new Disruptor<>(Message.FACTORY, bufferSize, DaemonThreadFactory.INSTANCE);
+                new Disruptor<>(Message.FACTORY, 1024*32, DaemonThreadFactory.INSTANCE);
         accountService = new AccountService();
         sequencerDispatcher = createSequencerDispatcher(accountService);
         List<MatchDispatcher> matchDispatchers = createOrderDispatchers();

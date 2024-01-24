@@ -22,7 +22,7 @@ public class Balance {
     }
 
     public Result<Balance> decrease(long amount) {
-        if (this.value < amount) {
+        if (this.available() < amount) {
             return Result.fail(RejectionReason.BALANCE_NOT_ENOUGH);
         }
         this.value -= amount;
@@ -30,7 +30,7 @@ public class Balance {
     }
 
     public Result<Balance> freeze(long amount) {
-        if (this.value < amount) {
+        if (this.available() < amount) {
             return Result.fail(RejectionReason.BALANCE_NOT_ENOUGH);
         }
         this.frozen += amount;

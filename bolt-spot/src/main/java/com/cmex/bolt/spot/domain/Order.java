@@ -28,7 +28,7 @@ public class Order {
 
     private long availableVolume;
 
-    private long locked;
+    private long frozen;
 
     private long cost;
 
@@ -38,7 +38,7 @@ public class Order {
 
     @Builder
     public Order(Symbol symbol, long id, int accountId, OrderType type, OrderSide side, long price, long quantity,
-                 long volume, long locked, int takerRate, int makerRate) {
+                 long volume, long frozen, int takerRate, int makerRate) {
         this.symbol = symbol;
         this.id = id;
         this.accountId = accountId;
@@ -49,7 +49,7 @@ public class Order {
         this.availableQuantity = this.quantity;
         this.volume = volume;
         this.availableVolume = volume;
-        this.locked = locked;
+        this.frozen = frozen;
         this.takerRate = takerRate;
         this.makerRate = makerRate;
     }
@@ -125,7 +125,7 @@ public class Order {
     }
 
     public long left() {
-        return locked - cost;
+        return frozen - cost;
     }
 
     @Override

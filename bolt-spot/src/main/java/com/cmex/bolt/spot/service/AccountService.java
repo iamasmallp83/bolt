@@ -136,10 +136,10 @@ public class AccountService {
             if (symbol.isQuoteSettlement()) {
                 volume += Rate.getRate(volume, placeOrder.takerRate.get());
             }
-            placeOrder.locked.set(volume);
+            placeOrder.frozen.set(volume);
             return account.freeze(symbol.getQuote().getId(), volume);
         } else {
-            placeOrder.locked.set(placeOrder.quantity.get());
+            placeOrder.frozen.set(placeOrder.quantity.get());
             return account.freeze(symbol.getBase().getId(), placeOrder.quantity.get());
         }
     }

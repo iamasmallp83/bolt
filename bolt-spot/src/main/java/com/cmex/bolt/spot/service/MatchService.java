@@ -44,6 +44,7 @@ public class MatchService {
                 long totalQuantity = 0;
                 long totalVolume = 0;
                 for (Ticket ticket : result.value()) {
+                    //TODO 性能测试成交的时候卡住
                     sequencerRingBuffer.publishEvent((message, sequence) -> {
                         setClearedMessage(ticket.getMaker(), false, ticket.getQuantity(), ticket.getVolume(), message);
                     });
@@ -124,7 +125,7 @@ public class MatchService {
                 .price(placeOrder.price.get())
                 .quantity(placeOrder.quantity.get())
                 .volume(placeOrder.volume.get())
-                .locked(placeOrder.locked.get())
+                .frozen(placeOrder.frozen.get())
                 .takerRate(placeOrder.takerRate.get())
                 .makerRate(placeOrder.makerRate.get())
                 .build();
