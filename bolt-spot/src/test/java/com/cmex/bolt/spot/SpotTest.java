@@ -6,7 +6,6 @@ import com.cmex.bolt.spot.util.BigDecimalUtil;
 import com.cmex.bolt.spot.util.FakeStreamObserver;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.TestInstance;
 
 import java.math.BigDecimal;
 import java.util.concurrent.CountDownLatch;
@@ -98,27 +97,4 @@ public class SpotTest {
         }));
     }
 
-    protected <T> void increase(int accountId, int currencyId, String amount, FakeStreamObserver<T> observer) {
-        service.increase(SpotServiceProto.IncreaseRequest.newBuilder()
-                .setAccountId(accountId)
-                .setCurrencyId(currencyId)
-                .setAmount(amount)
-                .build(), FakeStreamObserver.logger());
-    }
-
-    protected void increase(int accountId, int currencyId, String amount) {
-        increase(accountId, currencyId, amount, FakeStreamObserver.logger());
-    }
-
-    protected <T> void getAccount(int accountId, FakeStreamObserver<T> observer) {
-        service.getAccount(SpotServiceProto.GetAccountRequest.newBuilder()
-                .setAccountId(accountId)
-                .build(), FakeStreamObserver.logger());
-    }
-
-    protected void getDepth(int symbolId) {
-        service.getDepth(SpotServiceProto.GetDepthRequest.newBuilder()
-                .setSymbolId(symbolId)
-                .build(), FakeStreamObserver.logger());
-    }
 }

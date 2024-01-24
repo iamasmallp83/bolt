@@ -12,6 +12,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static com.cmex.bolt.spot.grpc.SpotServiceProto.PlaceOrderRequest;
+import static com.cmex.bolt.spot.util.SpotServiceUtil.*;
 
 /**
  * Unit test for simple App.
@@ -27,14 +28,14 @@ public class TestAccount {
         CountDownLatch latch = new CountDownLatch(1);
         executor.submit(() -> {
             for (int i = 1; i <= times; i++) {
-                increase(1, 1, "1");
+                increase(service, 1, 1, "1");
             }
             latch.countDown();
         });
         latch.await();
         System.out.println("elapsed : " + stopwatch.elapsed(TimeUnit.MILLISECONDS));
         TimeUnit.SECONDS.sleep(1);
-        getAccount(1, FakeStreamObserver.logger());
+        getAccount(service, 1, FakeStreamObserver.logger());
         executor.shutdown();
     }
 
@@ -54,29 +55,5 @@ public class TestAccount {
                 .setPrice(price)
                 .setQuantity(quantity)
                 .build(), observer);
-    }
-
-    public static <T> void increase(int accountId, int currencyId, String amount, FakeStreamObserver<SpotServiceProto.IncreaseResponse> observer) {
-        service.increase(SpotServiceProto.IncreaseRequest.newBuilder()
-                .setAccountId(accountId)
-                .setCurrencyId(currencyId)
-                .setAmount(amount)
-                .build(), observer);
-    }
-
-    public static void increase(int accountId, int currencyId, String amount) {
-        increase(accountId, currencyId, amount, FakeStreamObserver.noop());
-    }
-
-    public static <T> void getAccount(int accountId, FakeStreamObserver<T> observer) {
-        service.getAccount(SpotServiceProto.GetAccountRequest.newBuilder()
-                .setAccountId(accountId)
-                .build(), FakeStreamObserver.logger());
-    }
-
-    public static void getDepth(int symbolId) {
-        service.getDepth(SpotServiceProto.GetDepthRequest.newBuilder()
-                .setSymbolId(symbolId)
-                .build(), FakeStreamObserver.logger());
     }
 }

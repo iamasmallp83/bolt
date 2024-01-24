@@ -53,6 +53,7 @@ public class MatchService {
                 }
                 long finalTotalQuantity = totalQuantity;
                 long finalTotalVolume = totalVolume;
+                //TODO 性能测试成交的时候卡住
                 sequencerRingBuffer.publishEvent((message, sequence) -> {
                     setClearedMessage(order, true, finalTotalQuantity, finalTotalVolume, message);
                 });

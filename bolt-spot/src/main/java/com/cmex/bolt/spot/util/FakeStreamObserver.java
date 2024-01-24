@@ -39,11 +39,6 @@ public class FakeStreamObserver<T> implements StreamObserver<T> {
     }
 
     public static <T> FakeStreamObserver<T> logger() {
-        return new FakeStreamObserver<T>(new Consumer<T>() {
-            @Override
-            public void accept(T t) {
-                System.out.println(Instant.now().toString() + " " + Thread.currentThread() + " : " + t);
-            }
-        });
+        return new FakeStreamObserver<T>(t -> System.out.println(Instant.now().toString() + " " + Thread.currentThread() + " : " + t));
     }
 }
