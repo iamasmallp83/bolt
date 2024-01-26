@@ -4,6 +4,7 @@ import com.cmex.bolt.spot.grpc.SpotServiceImpl;
 import com.cmex.bolt.spot.grpc.SpotServiceProto;
 import com.cmex.bolt.spot.util.BigDecimalUtil;
 import com.cmex.bolt.spot.util.FakeStreamObserver;
+import com.cmex.bolt.spot.util.SpotServiceUtil;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 
@@ -82,6 +83,8 @@ public class SpotTest {
             Assertions.assertTrue(BigDecimalUtil.eq(new BigDecimal(response.getData().getAvailable()), new BigDecimal("200000000000")));
             countDownLatch.countDown();
         }));
+        SpotServiceUtil.increase(service, 11, 1, "1");
+        SpotServiceUtil.increase(service, 12, 2, "1");
         countDownLatch.await();
         service.getAccount(GetAccountRequest.newBuilder().setAccountId(1).build(), FakeStreamObserver.of(response -> {
             Assertions.assertEquals(response.getCode(), 1);

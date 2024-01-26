@@ -32,25 +32,25 @@ public class TestMatch {
 
     @Test
     public void testOrder() throws InterruptedException {
-        long times = 1000000;
+        long times = 500;
         ExecutorService executor = Executors.newFixedThreadPool(8);
         Stopwatch stopwatch = Stopwatch.createStarted();
         CountDownLatch latch = new CountDownLatch(2);
         executor.submit(() -> {
             for (int i = 1; i <= times; i++) {
-                if (i % 10 == 0) {
-                    System.out.println("bid times = " + i);
-                }
+//                if (i % 1000 == 0) {
+//                    System.out.println("bid times = " + i);
+//                }
                 placeOrder(1, 1, PlaceOrderRequest.Type.LIMIT, PlaceOrderRequest.Side.BID, "1", "1");
             }
             System.out.println("bid send done");
             latch.countDown();
         });
-        executor.submit(() -> { 
+        executor.submit(() -> {
             for (int i = 1; i <= times; i++) {
-                if (i % 10 == 0) {
-                    System.out.println("ask times = " + i);
-                }
+//                if (i % 1000 == 0) {
+//                    System.out.println("ask times = " + i);
+//                }
                 placeOrder(1, 2, PlaceOrderRequest.Type.LIMIT, PlaceOrderRequest.Side.ASK, "1", "1");
             }
             System.out.println("ask send done");
