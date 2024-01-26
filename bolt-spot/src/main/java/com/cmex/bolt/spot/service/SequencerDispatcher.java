@@ -12,6 +12,7 @@ public class SequencerDispatcher implements EventHandler<Message>, LifecycleAwar
 
     private final AccountService accountService;
     private List<MatchService> matchServices;
+    private long counter;
 
     public SequencerDispatcher(AccountService accountService) {
         this.accountService = accountService;
