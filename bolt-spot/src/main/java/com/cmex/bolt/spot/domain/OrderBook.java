@@ -36,10 +36,13 @@ public class OrderBook {
             Iterator<Order> it = priceNode.iterator();
             while (it.hasNext()) {
                 Order maker = it.next();
-                tickets.add(taker.match(maker));
+                Ticket ticket = taker.match(maker);
+                tickets.add(ticket);
                 if (maker.isDone()) {
                     priceNode.remove(maker);
                     orders.remove(maker.getId());
+                } else {
+                    priceNode.decreaseQuantity(ticket.getQuantity());
                 }
                 if (taker.isDone()) {
                     takerDone = true;

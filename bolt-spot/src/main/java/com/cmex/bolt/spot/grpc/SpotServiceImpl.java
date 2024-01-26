@@ -28,7 +28,6 @@ import static com.cmex.bolt.spot.grpc.SpotServiceProto.*;
 public class SpotServiceImpl extends SpotServiceImplBase {
 
     private final RingBuffer<Message> sequencerRingBuffer;
-    private final SequencerDispatcher sequencerDispatcher;
 
     private final AtomicLong requestId = new AtomicLong();
     private final ConcurrentHashMap<Long, StreamObserver<?>> observers;
@@ -39,16 +38,16 @@ public class SpotServiceImpl extends SpotServiceImplBase {
     public SpotServiceImpl() {
         observers = new ConcurrentHashMap<>();
         Disruptor<Message> sequencerDisruptor =
-                new Disruptor<>(Message.FACTORY, 32, DaemonThreadFactory.INSTANCE,
-                        ProducerType.MULTI, new YieldingWaitStrategy());
+                new Disruptor<>(Message.FACTORY, 1024 * 1024 * 2, DaemonThreadFactory.INSTANCE,
+                        ProducerType.MULTI, new BlockingWaitStrategy());
         Disruptor<Message> matchDisruptor =
-                new Disruptor<>(Message.FACTORY, 32, DaemonThreadFactory.INSTANCE,
-                        ProducerType.SINGLE, new YieldingWaitStrategy());
+                new Disruptor<>(Message.FACTORY, 256, DaemonThreadFactory.INSTANCE,
+                        ProducerType.MULTI, new BlockingWaitStrategy());
         Disruptor<Message> responseDisruptor =
-                new Disruptor<>(Message.FACTORY, 32, DaemonThreadFactory.INSTANCE,
-                        ProducerType.MULTI, new YieldingWaitStrategy());
+                new Disruptor<>(Message.FACTORY, 256, DaemonThreadFactory.INSTANCE,
+                        ProducerType.MULTI, new BlockingWaitStrategy());
         accountService = new AccountService();
-        sequencerDispatcher = createSequencerDispatcher(accountService);
+        SequencerDispatcher sequencerDispatcher = createSequencerDispatcher(accountService);
         List<MatchDispatcher> matchDispatchers = createOrderDispatchers();
         sequencerDisruptor.handleEventsWith(sequencerDispatcher);
         matchDisruptor.handleEventsWith(matchDispatchers.toArray(new MatchDispatcher[0]));

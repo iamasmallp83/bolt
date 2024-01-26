@@ -3,7 +3,6 @@ package com.cmex.bolt.spot.performance;
 import com.cmex.bolt.spot.grpc.SpotServiceImpl;
 import com.cmex.bolt.spot.grpc.SpotServiceProto;
 import com.cmex.bolt.spot.util.FakeStreamObserver;
-import com.cmex.bolt.spot.util.SpotServiceUtil;
 import com.google.common.base.Stopwatch;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -24,34 +23,44 @@ public class TestMatch {
 
     @BeforeAll
     public static void init() {
-        increase(service, 1, 1, "10000000");
-        increase(service, 2, 2, "10000000");
-        increase(service, 3, 3, "10000000");
-        increase(service, 4, 4, "10000000");
+        increase(service, 1, 1, "1000000");
+        increase(service, 2, 2, "1000000");
+        increase(service, 3, 1, "10000000");
+        increase(service, 4, 3, "10000000");
     }
 
     @Test
     public void testOrder() throws InterruptedException {
-        long times = 1000000;
+        long times = 500000;
         ExecutorService executor = Executors.newFixedThreadPool(8);
         Stopwatch stopwatch = Stopwatch.createStarted();
         CountDownLatch latch = new CountDownLatch(2);
         executor.submit(() -> {
             for (int i = 1; i <= times; i++) {
-                if (i % 10 == 0) {
+                placeOrder(1, 1, PlaceOrderRequest.Type.LIMIT, PlaceOrderRequest.Side.BID, "1", "1");
+                if (i % 1000 == 0) {
+                    try {
+                        TimeUnit.MILLISECONDS.sleep(5);
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
                     System.out.println("bid times = " + i);
                 }
-                placeOrder(1, 1, PlaceOrderRequest.Type.LIMIT, PlaceOrderRequest.Side.BID, "1", "1");
             }
             System.out.println("bid send done");
             latch.countDown();
         });
-        executor.submit(() -> { 
+        executor.submit(() -> {
             for (int i = 1; i <= times; i++) {
-                if (i % 10 == 0) {
-                    System.out.println("ask times = " + i);
-                }
                 placeOrder(1, 2, PlaceOrderRequest.Type.LIMIT, PlaceOrderRequest.Side.ASK, "1", "1");
+                if (i % 1000 == 0) {
+                    try {
+                        TimeUnit.MILLISECONDS.sleep(5);
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
+                    System.out.println("bid times = " + i);
+                }
             }
             System.out.println("ask send done");
             latch.countDown();
@@ -59,10 +68,13 @@ public class TestMatch {
         latch.await();
         System.out.println("elapsed : " + stopwatch.elapsed(TimeUnit.MILLISECONDS));
         TimeUnit.SECONDS.sleep(1);
-        getAccount(service, 1, FakeStreamObserver.logger());
-        getAccount(service, 2, FakeStreamObserver.logger());
-        getDepth(service, 1);
-        TimeUnit.SECONDS.sleep(1);
+        System.out.println("==========================================================");
+        for(int i = 0; i < 3; i++) {
+            getAccount(service, 1, FakeStreamObserver.logger());
+            getAccount(service, 2, FakeStreamObserver.logger());
+            getDepth(service, 1);
+            TimeUnit.SECONDS.sleep(1);
+        }
         executor.shutdown();
     }
 
