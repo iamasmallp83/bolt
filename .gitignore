@@ -11,3 +11,4 @@ target/
 
 ### Mac OS ###
 .DS_Store
+bolt-spot/journal.data
