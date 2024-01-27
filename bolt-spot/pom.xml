@@ -34,6 +34,14 @@
             <groupId>org.javolution</groupId>
             <artifactId>javolution-core-java</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.aeron</groupId>
+            <artifactId>aeron-driver</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.aeron</groupId>
+            <artifactId>aeron-client</artifactId>
+        </dependency>
     </dependencies>
     <build>
         <plugins>

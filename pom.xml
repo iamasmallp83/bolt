@@ -62,6 +62,16 @@
                 <artifactId>commons-lang3</artifactId>
                 <version>3.14.0</version>
             </dependency>
+            <dependency>
+                <groupId>io.aeron</groupId>
+                <artifactId>aeron-driver</artifactId>
+                <version>1.43.0</version>
+            </dependency>
+            <dependency>
+                <groupId>io.aeron</groupId>
+                <artifactId>aeron-client</artifactId>
+                <version>1.43.0</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 </project>

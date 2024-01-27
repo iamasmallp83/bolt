@@ -1,7 +1,9 @@
-package com.cmex.bolt.spot.service;
+package com.cmex.bolt.spot.handler;
 
 import com.cmex.bolt.spot.api.EventType;
 import com.cmex.bolt.spot.api.Message;
+import com.cmex.bolt.spot.service.AccountService;
+import com.cmex.bolt.spot.service.MatchService;
 import com.cmex.bolt.spot.util.OrderIdGenerator;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
@@ -12,7 +14,6 @@ public class SequencerDispatcher implements EventHandler<Message>, LifecycleAwar
 
     private final AccountService accountService;
     private List<MatchService> matchServices;
-    private long counter;
 
     public SequencerDispatcher(AccountService accountService) {
         this.accountService = accountService;

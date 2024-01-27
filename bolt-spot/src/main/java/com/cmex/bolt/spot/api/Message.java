@@ -6,7 +6,7 @@ import javolution.io.Struct;
 import java.nio.ByteBuffer;
 
 public class Message extends Struct {
-    public final Enum32<EventType> type = new Enum32<EventType>(EventType.values());
+    public final Enum32<EventType> type = new Enum32<>(EventType.values());
     public final Signed64 id = new Struct.Signed64();
     public final SpotEvent payload = inner(new SpotEvent());
 
@@ -15,7 +15,7 @@ public class Message extends Struct {
     }
 
     public int getSize() {
-        EventType type = (EventType) this.type.get();
+        EventType type = this.type.get();
         return getSize(type.getStruct());
     }
 
@@ -24,15 +24,13 @@ public class Message extends Struct {
         return "Message [type=" + type.get() + "]";
     }
 
-    public final static EventFactory<Message> FACTORY = new EventFactory<Message>() {
-        public Message newInstance() {
-            Message message = new Message();
-            message.setByteBuffer(ByteBuffer.allocate(message.size()), 0);
-            return message;
-        }
+    public final static EventFactory<Message> FACTORY = () -> {
+        Message message = new Message();
+        message.setByteBuffer(ByteBuffer.allocate(message.size()), 0);
+        return message;
     };
 
-    public void set(){
+    public void set() {
 
     }
 

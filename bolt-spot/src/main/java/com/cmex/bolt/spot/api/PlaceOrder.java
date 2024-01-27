@@ -27,4 +27,19 @@ public class PlaceOrder extends Struct {
         target.makerRate.set(this.makerRate.get());
     }
 
+    @Override
+    public String toString() {
+        return "PlaceOrder{" +
+                "symbolId=" + symbolId +
+                ", accountId=" + accountId +
+                ", type=" + type +
+                ", side=" + side +
+                ", price=" + price +
+                ", quantity=" + quantity +
+                ", volume=" + volume +
+                ", frozen=" + frozen +
+                ", takerRate=" + takerRate +
+                ", makerRate=" + makerRate +
+                '}';
+    }
 }

@@ -9,10 +9,11 @@ import org.junit.jupiter.api.Test;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class TestDisruptor {
     @Test
-    public void test() {
+    public void test() throws InterruptedException {
         // 创建一个 Disruptor 实例
         Disruptor<MyEvent> disruptor = new Disruptor<>(MyEvent::new, 1024, Executors.newFixedThreadPool(4));
 
@@ -30,12 +31,15 @@ public class TestDisruptor {
 
 // 启动 Disruptor
         disruptor.start();
-        disruptor.publishEvent(new EventTranslator<MyEvent>() {
-            @Override
-            public void translateTo(MyEvent event, long sequence) {
+        for (int i = 0; i < 1000000; i++) {
+            disruptor.publishEvent(new EventTranslator<MyEvent>() {
+                @Override
+                public void translateTo(MyEvent event, long sequence) {
 
-            }
-        });
+                }
+            });
+        }
+        TimeUnit.SECONDS.sleep(3);
     }
 
     private class MyEvent {
@@ -46,7 +50,7 @@ public class TestDisruptor {
 
         @Override
         public void onEvent(MyEvent event, long sequence, boolean endOfBatch) throws Exception {
-            System.out.println("journal consume");
+//            System.out.println("journal consume : " + sequence);
             this.sequence.set(sequence);
         }
 
@@ -60,7 +64,7 @@ public class TestDisruptor {
 
         @Override
         public void onEvent(MyEvent event, long sequence, boolean endOfBatch) throws Exception {
-            System.out.println("replication consume");
+//            System.out.println("replication consume : " + sequence);
             this.sequence.set(sequence);
         }
 
@@ -72,7 +76,7 @@ public class TestDisruptor {
     private class MyApplicationConsumer implements EventHandler<MyEvent> {
         @Override
         public void onEvent(MyEvent event, long sequence, boolean endOfBatch) throws Exception {
-            System.out.println("application consume");
+//            System.out.println("application consume : " + sequence);
         }
     }
 }

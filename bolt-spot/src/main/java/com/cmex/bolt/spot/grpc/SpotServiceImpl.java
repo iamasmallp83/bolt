@@ -1,14 +1,16 @@
 package com.cmex.bolt.spot.grpc;
 
 import com.cmex.bolt.spot.api.*;
+import com.cmex.bolt.spot.handler.*;
 import com.cmex.bolt.spot.domain.Balance;
 import com.cmex.bolt.spot.domain.Symbol;
 import com.cmex.bolt.spot.dto.DepthDto;
 import com.cmex.bolt.spot.service.AccountService;
-import com.cmex.bolt.spot.service.MatchDispatcher;
 import com.cmex.bolt.spot.service.MatchService;
-import com.cmex.bolt.spot.service.SequencerDispatcher;
-import com.lmax.disruptor.*;
+import com.lmax.disruptor.EventHandler;
+import com.lmax.disruptor.LifecycleAware;
+import com.lmax.disruptor.LiteBlockingWaitStrategy;
+import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
 import com.lmax.disruptor.util.DaemonThreadFactory;
@@ -39,7 +41,7 @@ public class SpotServiceImpl extends SpotServiceImplBase {
     public SpotServiceImpl() {
         observers = new ConcurrentHashMap<>();
         Disruptor<Message> sequencerDisruptor =
-                new Disruptor<>(Message.FACTORY, 1024*1024, DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(Message.FACTORY, 1024, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new LiteBlockingWaitStrategy());
         Disruptor<Message> matchDisruptor =
                 new Disruptor<>(Message.FACTORY, 1024, DaemonThreadFactory.INSTANCE,
@@ -50,7 +52,10 @@ public class SpotServiceImpl extends SpotServiceImplBase {
         accountService = new AccountService();
         sequencerDispatcher = createSequencerDispatcher(accountService);
         List<MatchDispatcher> matchDispatchers = createOrderDispatchers();
-        sequencerDisruptor.handleEventsWith(sequencerDispatcher);
+        JournalHandler journalHandler = new JournalHandler();
+        UdpEventHandler udpEventHandler = new UdpEventHandler("127.0.0.1", 20514);
+        sequencerDisruptor.handleEventsWith(journalHandler, udpEventHandler).then(sequencerDispatcher);
+        sequencerDisruptor.getRingBuffer().addGatingSequences(journalHandler.getSequence(), udpEventHandler.getSequence());
         matchDisruptor.handleEventsWith(matchDispatchers.toArray(new MatchDispatcher[0]));
         responseDisruptor.handleEventsWith(new ResponseEventHandler());
         sequencerRingBuffer = sequencerDisruptor.start();
