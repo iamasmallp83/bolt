@@ -53,9 +53,8 @@ public class SpotServiceImpl extends SpotServiceImplBase {
         sequencerDispatcher = createSequencerDispatcher(accountService);
         List<MatchDispatcher> matchDispatchers = createOrderDispatchers();
         JournalHandler journalHandler = new JournalHandler();
-        UdpEventHandler udpEventHandler = new UdpEventHandler("127.0.0.1", 20514);
-        sequencerDisruptor.handleEventsWith(journalHandler, udpEventHandler).then(sequencerDispatcher);
-        sequencerDisruptor.getRingBuffer().addGatingSequences(journalHandler.getSequence(), udpEventHandler.getSequence());
+        sequencerDisruptor.handleEventsWith(journalHandler).then(sequencerDispatcher);
+        sequencerDisruptor.getRingBuffer().addGatingSequences(journalHandler.getSequence());
         matchDisruptor.handleEventsWith(matchDispatchers.toArray(new MatchDispatcher[0]));
         responseDisruptor.handleEventsWith(new ResponseEventHandler());
         sequencerRingBuffer = sequencerDisruptor.start();

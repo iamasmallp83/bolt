@@ -1,12 +1,12 @@
 package com.cmex.bolt.spot;
 
 import com.cmex.bolt.spot.grpc.SpotServiceImpl;
+import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.UncaughtExceptionHandlers;
 import io.grpc.Server;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import io.grpc.netty.shaded.io.netty.channel.EventLoopGroup;
-import io.grpc.netty.shaded.io.netty.channel.ServerChannel;
 import io.grpc.netty.shaded.io.netty.channel.nio.NioEventLoopGroup;
 import io.grpc.netty.shaded.io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.grpc.netty.shaded.io.netty.util.concurrent.DefaultThreadFactory;
@@ -15,7 +15,6 @@ import java.io.IOException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinWorkerThread;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class SpotServer {
@@ -32,21 +31,19 @@ public class SpotServer {
     }
 
     private static Server newNettyServer(int port) {
-        ThreadFactory tf = new DefaultThreadFactory("event-loop", true);
         // On Linux it can, possibly, be improved by using
         // io.netty.channel.epoll.EpollEventLoopGroup
         // io.netty.channel.epoll.EpollServerSocketChannel
-        final EventLoopGroup boss = new NioEventLoopGroup(1, tf);
-        final EventLoopGroup worker = new NioEventLoopGroup(0, tf);
-        final Class<? extends ServerChannel> channelType = NioServerSocketChannel.class;
+        final EventLoopGroup boss = new NioEventLoopGroup(1, new DefaultThreadFactory("boss", true));
+        final EventLoopGroup worker = new NioEventLoopGroup(0, new DefaultThreadFactory("worker", true));
         NettyServerBuilder builder = NettyServerBuilder
                 .forPort(port)
                 .bossEventLoopGroup(boss)
                 .workerEventLoopGroup(worker)
-                .channelType(channelType)
+                .channelType(NioServerSocketChannel.class)
                 .addService(new SpotServiceImpl())
                 .flowControlWindow(NettyChannelBuilder.DEFAULT_FLOW_CONTROL_WINDOW);
-        builder.executor(getAsyncExecutor());
+        builder.executor(MoreExecutors.directExecutor());
         return builder.build();
     }
 
