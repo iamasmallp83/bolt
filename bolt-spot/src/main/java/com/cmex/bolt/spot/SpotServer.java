@@ -43,7 +43,10 @@ public class SpotServer {
                 .channelType(NioServerSocketChannel.class)
                 .addService(new SpotServiceImpl())
                 .flowControlWindow(NettyChannelBuilder.DEFAULT_FLOW_CONTROL_WINDOW);
+        //使用worker执行操作
         builder.executor(MoreExecutors.directExecutor());
+        //创建线程池执行
+//        builder.executor(getAsyncExecutor());
         return builder.build();
     }
 
