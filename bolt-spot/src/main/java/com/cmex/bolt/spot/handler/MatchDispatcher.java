@@ -6,25 +6,20 @@ import com.cmex.bolt.spot.service.MatchService;
 import com.cmex.bolt.spot.util.OrderIdGenerator;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
+import lombok.Getter;
 
 public class MatchDispatcher implements EventHandler<Message>, LifecycleAware {
 
     private final int amount;
+    @Getter
     private final int partition;
+    @Getter
     private final MatchService matchService;
 
     public MatchDispatcher(int amount, int partition) {
         this.amount = amount;
         this.partition = partition;
         this.matchService = new MatchService();
-    }
-
-    public int getPartition() {
-        return partition;
-    }
-
-    public MatchService getMatchService() {
-        return matchService;
     }
 
     public void onEvent(Message message, long sequence, boolean endOfBatch) {

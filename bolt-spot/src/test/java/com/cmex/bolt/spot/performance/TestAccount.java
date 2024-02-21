@@ -38,9 +38,8 @@ public class TestAccount {
         });
         latch.await();
         System.out.println("elapsed : " + stopwatch.elapsed(TimeUnit.MILLISECONDS));
-        TimeUnit.SECONDS.sleep(1);
         AtomicBoolean running = new AtomicBoolean(true);
-        while (running.get())
+        while (running.get()) {
             getAccount(service, times, new FakeStreamObserver<>(response -> {
                 SpotServiceProto.Balance balance = response.getDataMap().get(1);
                 if (balance != null) {
@@ -52,6 +51,7 @@ public class TestAccount {
                     throw new RuntimeException(e);
                 }
             }));
+        }
         System.out.println("elapsed : " + stopwatch.elapsed(TimeUnit.MILLISECONDS));
         executor.shutdown();
     }

@@ -23,7 +23,7 @@ public class TestBTCUSDT extends SpotTest {
      */
     @Test
     public void testBtcUsdt() throws InterruptedException {
-        CountDownLatch latch = new CountDownLatch(2);
+        final CountDownLatch latch = new CountDownLatch(1);
         service.placeOrder(SpotServiceProto.PlaceOrderRequest.newBuilder()
                 .setRequestId(1)
                 .setSymbolId(1)
@@ -38,6 +38,8 @@ public class TestBTCUSDT extends SpotTest {
             Assertions.assertTrue(response.getData().getId() > 0);
             latch.countDown();
         }));
+        latch.await();
+        final CountDownLatch takerLatch = new CountDownLatch(1);
         service.placeOrder(SpotServiceProto.PlaceOrderRequest.newBuilder()
                 .setRequestId(1)
                 .setSymbolId(1)
@@ -50,9 +52,9 @@ public class TestBTCUSDT extends SpotTest {
                 .setMakerRate(100)
                 .build(), FakeStreamObserver.of(response -> {
             Assertions.assertTrue(response.getData().getId() > 0);
-            latch.countDown();
+            takerLatch.countDown();
         }));
-        latch.await();
+        takerLatch.await();
         service.getAccount(SpotServiceProto.GetAccountRequest.newBuilder().setAccountId(2).build(), FakeStreamObserver.of(response -> {
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "9.98"));
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(2).getAvailable(), "99"));

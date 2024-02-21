@@ -30,8 +30,4 @@ public class Message extends Struct {
         return message;
     };
 
-    public void set() {
-
-    }
-
 }

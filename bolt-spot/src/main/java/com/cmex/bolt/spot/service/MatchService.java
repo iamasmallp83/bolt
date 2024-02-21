@@ -9,14 +9,17 @@ import com.cmex.bolt.spot.repository.impl.SymbolRepository;
 import com.cmex.bolt.spot.util.OrderIdGenerator;
 import com.cmex.bolt.spot.util.Result;
 import com.lmax.disruptor.RingBuffer;
+import lombok.Setter;
 
 import java.util.List;
 import java.util.Optional;
 
 public class MatchService {
 
+    @Setter
     private RingBuffer<Message> sequencerRingBuffer;
 
+    @Setter
     private RingBuffer<Message> responseRingBuffer;
 
     private final OrderIdGenerator generator;
@@ -44,7 +47,6 @@ public class MatchService {
                 long totalQuantity = 0;
                 long totalVolume = 0;
                 for (Ticket ticket : result.value()) {
-                    //TODO 性能测试成交的时候卡住
                     sequencerRingBuffer.publishEvent((message, sequence) -> {
                         setClearedMessage(ticket.getMaker(), false, ticket.getQuantity(), ticket.getVolume(), message);
                     });
@@ -53,7 +55,6 @@ public class MatchService {
                 }
                 long finalTotalQuantity = totalQuantity;
                 long finalTotalVolume = totalVolume;
-                //TODO 性能测试成交的时候卡住
                 sequencerRingBuffer.publishEvent((message, sequence) -> {
                     setClearedMessage(order, true, finalTotalQuantity, finalTotalVolume, message);
                 });
@@ -102,14 +103,6 @@ public class MatchService {
             message.type.set(EventType.CANCEL_ORDER_REJECTED);
             message.payload.asPlaceOrderRejected.reason.set(RejectionReason.SYMBOL_NOT_EXIST);
         }));
-    }
-
-    public void setSequencerRingBuffer(RingBuffer<Message> sequencerRingBuffer) {
-        this.sequencerRingBuffer = sequencerRingBuffer;
-    }
-
-    public void setResponseRingBuffer(RingBuffer<Message> responseRingBuffer) {
-        this.responseRingBuffer = responseRingBuffer;
     }
 
     public DepthDto getDepth(int symbolId) {

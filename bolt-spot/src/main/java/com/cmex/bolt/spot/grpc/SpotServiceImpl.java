@@ -29,53 +29,57 @@ import static com.cmex.bolt.spot.grpc.SpotServiceProto.*;
 
 public class SpotServiceImpl extends SpotServiceImplBase {
 
-    private final RingBuffer<Message> sequencerRingBuffer;
-    private final SequencerDispatcher sequencerDispatcher;
-
+    private final RingBuffer<Message> accountRingBuffer;
     private final AtomicLong requestId = new AtomicLong();
     private final ConcurrentHashMap<Long, StreamObserver<?>> observers;
 
+    private final List<AccountService> accountServices;
+
     private final List<MatchService> matchServices;
-    private final AccountService accountService;
 
     public SpotServiceImpl() {
         observers = new ConcurrentHashMap<>();
-        Disruptor<Message> sequencerDisruptor =
-                new Disruptor<>(Message.FACTORY, 1024, DaemonThreadFactory.INSTANCE,
+        Disruptor<Message> accountDisruptor =
+                new Disruptor<>(Message.FACTORY, 1024 * 256, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new LiteBlockingWaitStrategy());
         Disruptor<Message> matchDisruptor =
-                new Disruptor<>(Message.FACTORY, 1024, DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(Message.FACTORY, 1024 * 256, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new LiteBlockingWaitStrategy());
         Disruptor<Message> responseDisruptor =
-                new Disruptor<>(Message.FACTORY, 1024, DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(Message.FACTORY, 1024 * 256, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new LiteBlockingWaitStrategy());
-        accountService = new AccountService();
-        sequencerDispatcher = createSequencerDispatcher(accountService);
-        List<MatchDispatcher> matchDispatchers = createOrderDispatchers();
-        JournalHandler journalHandler = new JournalHandler();
-        sequencerDisruptor.handleEventsWith(journalHandler).then(sequencerDispatcher);
-        sequencerDisruptor.getRingBuffer().addGatingSequences(journalHandler.getSequence());
+        List<AccountDispatcher> accountDispatchers = createAccountDispatchers();
+        List<MatchDispatcher> matchDispatchers = createMatchDispatchers();
         matchDisruptor.handleEventsWith(matchDispatchers.toArray(new MatchDispatcher[0]));
         responseDisruptor.handleEventsWith(new ResponseEventHandler());
-        sequencerRingBuffer = sequencerDisruptor.start();
+        accountDisruptor.handleEventsWith(accountDispatchers.toArray(new AccountDispatcher[0]));
+        accountRingBuffer = accountDisruptor.start();
         RingBuffer<Message> matchRingBuffer = matchDisruptor.start();
         RingBuffer<Message> responseRingBuffer = responseDisruptor.start();
-        sequencerDispatcher.getAccountService().setMatchRingBuffer(matchRingBuffer);
-        sequencerDispatcher.getAccountService().setResponseRingBuffer(responseRingBuffer);
         matchServices = new ArrayList<>(10);
         for (MatchDispatcher dispatcher : matchDispatchers) {
-            dispatcher.getMatchService().setSequencerRingBuffer(sequencerRingBuffer);
+            dispatcher.getMatchService().setSequencerRingBuffer(accountRingBuffer);
             dispatcher.getMatchService().setResponseRingBuffer(responseRingBuffer);
             matchServices.add(dispatcher.getMatchService());
         }
-        sequencerDispatcher.setMatchServices(matchServices);
+        accountServices = new ArrayList<>(10);
+        for (AccountDispatcher dispatcher : accountDispatchers) {
+            dispatcher.getAccountService().setMatchRingBuffer(matchRingBuffer);
+            dispatcher.getAccountService().setResponseRingBuffer(responseRingBuffer);
+            dispatcher.setMatchServices(matchServices);
+            accountServices.add(dispatcher.getAccountService());
+        }
     }
 
-    private SequencerDispatcher createSequencerDispatcher(AccountService accountService) {
-        return new SequencerDispatcher(accountService);
+    private List<AccountDispatcher> createAccountDispatchers() {
+        List<AccountDispatcher> dispatchers = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            dispatchers.add(new AccountDispatcher(10, i));
+        }
+        return dispatchers;
     }
 
-    private List<MatchDispatcher> createOrderDispatchers() {
+    private List<MatchDispatcher> createMatchDispatchers() {
         List<MatchDispatcher> dispatchers = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
             dispatchers.add(new MatchDispatcher(10, i));
@@ -83,10 +87,14 @@ public class SpotServiceImpl extends SpotServiceImplBase {
         return dispatchers;
     }
 
+    private AccountService getAccountService(int accountId) {
+        return accountServices.get(accountId % 10);
+    }
+
     @Override
     public void getAccount(GetAccountRequest request, StreamObserver<GetAccountResponse> responseObserver) {
         Map<Integer, SpotServiceProto.Balance> balances =
-                accountService.getBalances(request.getAccountId(), request.getCurrencyId()).entrySet().stream()
+                getAccountService(request.getAccountId()).getBalances(request.getAccountId(), request.getCurrencyId()).entrySet().stream()
                         .collect(Collectors.toMap(
                                 Map.Entry::getKey,
                                 entry -> {
@@ -107,10 +115,10 @@ public class SpotServiceImpl extends SpotServiceImplBase {
     }
 
     public void increase(IncreaseRequest request, StreamObserver<IncreaseResponse> responseObserver) {
-        accountService.getCurrency(request.getCurrencyId()).ifPresentOrElse(currency -> {
+        getAccountService(request.getAccountId()).getCurrency(request.getCurrencyId()).ifPresentOrElse(currency -> {
             long id = requestId.incrementAndGet();
             observers.put(id, responseObserver);
-            sequencerRingBuffer.publishEvent((message, sequence) -> {
+            accountRingBuffer.publishEvent((message, sequence) -> {
                 message.id.set(id);
                 message.type.set(EventType.INCREASE);
                 Increase increase = message.payload.asIncrease;
@@ -129,10 +137,10 @@ public class SpotServiceImpl extends SpotServiceImplBase {
     }
 
     public void decrease(DecreaseRequest request, StreamObserver<DecreaseResponse> responseObserver) {
-        accountService.getCurrency(request.getCurrencyId()).ifPresentOrElse(currency -> {
+        getAccountService(request.getAccountId()).getCurrency(request.getCurrencyId()).ifPresentOrElse(currency -> {
             long id = requestId.incrementAndGet();
             observers.put(id, responseObserver);
-            sequencerRingBuffer.publishEvent((message, sequence) -> {
+            accountRingBuffer.publishEvent((message, sequence) -> {
                 message.id.set(id);
                 message.type.set(EventType.DECREASE);
                 Decrease decrease = message.payload.asDecrease;
@@ -155,7 +163,7 @@ public class SpotServiceImpl extends SpotServiceImplBase {
         getSymbol(request.getSymbolId()).ifPresentOrElse(symbol -> {
                     long id = requestId.incrementAndGet();
                     observers.put(id, responseObserver);
-                    sequencerRingBuffer.publishEvent((message, sequence) -> {
+                    accountRingBuffer.publishEvent((message, sequence) -> {
                         message.id.set(id);
                         message.type.set(EventType.PLACE_ORDER);
                         PlaceOrder placeOrder = message.payload.asPlaceOrder;
@@ -186,7 +194,7 @@ public class SpotServiceImpl extends SpotServiceImplBase {
     public void cancelOrder(CancelOrderRequest request, StreamObserver<CancelOrderResponse> responseObserver) {
         long id = requestId.incrementAndGet();
         observers.put(id, responseObserver);
-        sequencerRingBuffer.publishEvent((message, sequence) -> {
+        accountRingBuffer.publishEvent((message, sequence) -> {
             message.id.set(id);
             message.type.set(EventType.CANCEL_ORDER);
             message.payload.asCancelOrder.orderId.set(request.getOrderId());

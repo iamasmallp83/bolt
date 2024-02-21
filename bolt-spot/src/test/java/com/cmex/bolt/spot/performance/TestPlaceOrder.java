@@ -26,11 +26,15 @@ public class TestPlaceOrder {
         increase(2, 2, "10000000");
         increase(3, 3, "10000000");
         increase(4, 4, "10000000");
+        increase(5, 1, "10000000");
+        increase(6, 2, "10000000");
+        increase(7, 3, "10000000");
+        increase(8, 4, "10000000");
     }
 
     @Test
     public void testOrder() throws InterruptedException {
-        long times = 1000000;
+        long times = 400000;
         ExecutorService executor = Executors.newFixedThreadPool(8);
         Stopwatch stopwatch = Stopwatch.createStarted();
         CountDownLatch latch = new CountDownLatch(1);
@@ -40,6 +44,28 @@ public class TestPlaceOrder {
                     placeOrder(1, 1, PlaceOrderRequest.Type.LIMIT, PlaceOrderRequest.Side.BID, "1", "1", FakeStreamObserver.logger());
                 } else {
                     placeOrder(1, 1, PlaceOrderRequest.Type.LIMIT, PlaceOrderRequest.Side.BID, "1", "1");
+                }
+            }
+            System.out.println("btc send done");
+            latch.countDown();
+        });
+        executor.submit(() -> {
+            for (int i = 1; i <= times; i++) {
+                if (i == 1 || i == times) {
+                    placeOrder(1, 5, PlaceOrderRequest.Type.LIMIT, PlaceOrderRequest.Side.BID, "1", "1", FakeStreamObserver.logger());
+                } else {
+                    placeOrder(1, 5, PlaceOrderRequest.Type.LIMIT, PlaceOrderRequest.Side.BID, "1", "1");
+                }
+            }
+            System.out.println("btc send done");
+            latch.countDown();
+        });
+        executor.submit(() -> {
+            for (int i = 1; i <= times; i++) {
+                if (i == 1 || i == times) {
+                    placeOrder(1, 2, PlaceOrderRequest.Type.LIMIT, PlaceOrderRequest.Side.ASK, "10", "1", FakeStreamObserver.logger());
+                } else {
+                    placeOrder(1, 2, PlaceOrderRequest.Type.LIMIT, PlaceOrderRequest.Side.ASK, "10", "1");
                 }
             }
             System.out.println("btc send done");
