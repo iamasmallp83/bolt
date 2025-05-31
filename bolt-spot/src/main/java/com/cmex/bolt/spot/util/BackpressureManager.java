@@ -21,7 +21,7 @@ public class BackpressureManager {
     private final AtomicLong maxUsageRate = new AtomicLong(0);
     
     public BackpressureManager(String name, RingBuffer<?> ringBuffer) {
-        this(name, ringBuffer, 0.6, 0.8);
+        this(name, ringBuffer, 0.75, 0.9);
     }
     
     public BackpressureManager(String name, RingBuffer<?> ringBuffer, double highWatermark, double criticalWatermark) {

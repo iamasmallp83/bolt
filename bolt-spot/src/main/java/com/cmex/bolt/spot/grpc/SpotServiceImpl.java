@@ -46,13 +46,13 @@ public class SpotServiceImpl extends SpotServiceImplBase {
         
         // 创建Disruptor - 增加容量以减少背压
         Disruptor<Message> accountDisruptor =
-                new Disruptor<>(Message.FACTORY, 1024 * 32, DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(Message.FACTORY, 1024 * 1024 * 2, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new BusySpinWaitStrategy());
         Disruptor<Message> matchDisruptor =
-                new Disruptor<>(Message.FACTORY, 1024 * 16, DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(Message.FACTORY, 1024 * 1024, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new BusySpinWaitStrategy());
         Disruptor<Message> responseDisruptor =
-                new Disruptor<>(Message.FACTORY, 1024 * 32, DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(Message.FACTORY, 1024 * 1024, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new BusySpinWaitStrategy());
         
         List<AccountDispatcher> accountDispatchers = createAccountDispatchers();
@@ -66,9 +66,9 @@ public class SpotServiceImpl extends SpotServiceImplBase {
         RingBuffer<Message> responseRingBuffer = responseDisruptor.start();
         
         // 初始化背压管理器
-        accountBackpressureManager = new BackpressureManager("Account", accountRingBuffer, 0.7, 0.9);
-        matchBackpressureManager = new BackpressureManager("Match", matchRingBuffer, 0.7, 0.9);
-        responseBackpressureManager = new BackpressureManager("Response", responseRingBuffer, 0.8, 0.95);
+        accountBackpressureManager = new BackpressureManager("Account", accountRingBuffer);
+        matchBackpressureManager = new BackpressureManager("Match", matchRingBuffer);
+        responseBackpressureManager = new BackpressureManager("Response", responseRingBuffer);
         
         // 初始化监控器
         ringBufferMonitor = new RingBufferMonitor(5000); // 5秒报告一次

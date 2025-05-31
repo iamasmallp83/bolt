@@ -21,9 +21,9 @@ import static com.cmex.bolt.spot.util.SpotServiceUtil.*;
  * Unit test for simple App.
  */
 public class TestMatch {
-    private static SpotServiceImpl service = new SpotServiceImpl();
+    private static final SpotServiceImpl service = new SpotServiceImpl();
 
-    private static int TIMES = 100000;
+    private static final int TIMES = 100000;
 
     @BeforeAll
     public static void init() {
