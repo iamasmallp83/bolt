@@ -64,6 +64,8 @@ public class AccountDispatcher implements EventHandler<Message>, LifecycleAware 
                 int symbolId = OrderIdGenerator.getSymbolId(message.payload.asCancelOrder.orderId.get());
                 matchServices.get(symbolId % 10).on(message.id.get(), message.payload.asCancelOrder);
                 break;
+            default:
+                break;
         }
     }
 

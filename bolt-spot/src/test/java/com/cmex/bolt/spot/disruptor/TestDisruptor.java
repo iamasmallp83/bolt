@@ -6,8 +6,6 @@ import com.lmax.disruptor.Sequence;
 import com.lmax.disruptor.dsl.Disruptor;
 import org.junit.jupiter.api.Test;
 
-import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
@@ -15,7 +13,8 @@ public class TestDisruptor {
     @Test
     public void test() throws InterruptedException {
         // 创建一个 Disruptor 实例
-        Disruptor<MyEvent> disruptor = new Disruptor<>(MyEvent::new, 1024, Executors.newFixedThreadPool(4));
+        Disruptor<MyEvent> disruptor = new Disruptor<MyEvent>(MyEvent::new, 1024, Executors.newFixedThreadPool(4));
+        
 
 // 创建消费者
         MyJournalConsumer journalConsumer = new MyJournalConsumer();

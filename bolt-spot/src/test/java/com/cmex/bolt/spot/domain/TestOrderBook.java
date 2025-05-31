@@ -2,8 +2,6 @@ package com.cmex.bolt.spot.domain;
 
 import org.junit.jupiter.api.Test;
 
-import java.math.BigDecimal;
-
 public class TestOrderBook {
     @Test
     public void testOrderBook() {

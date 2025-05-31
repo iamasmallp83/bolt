@@ -4,6 +4,7 @@ package com.cmex.bolt.spot.util;
 import java.time.Instant;
 
 public class OrderIdGenerator {
+    @SuppressWarnings("unused")
     private static final int UNUSED_BITS = 1; // Sign bit, Unused (always set to 0)
     private static final int EPOCH_BITS = 39;
     private static final int SYMBOL_BITS = 11;

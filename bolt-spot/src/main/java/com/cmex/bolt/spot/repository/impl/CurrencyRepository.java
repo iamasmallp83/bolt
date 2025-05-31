@@ -1,7 +1,6 @@
 package com.cmex.bolt.spot.repository.impl;
 
 import com.cmex.bolt.spot.domain.Currency;
-import org.checkerframework.checker.units.qual.C;
 
 public class CurrencyRepository extends HashMapRepository<Integer, Currency> {
 

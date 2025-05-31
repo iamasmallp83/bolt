@@ -23,7 +23,7 @@ import static com.cmex.bolt.spot.util.SpotServiceUtil.*;
 public class TestMatch {
     private static SpotServiceImpl service = new SpotServiceImpl();
 
-    private static int TIMES = 50000;
+    private static int TIMES = 100000;
 
     @BeforeAll
     public static void init() {
@@ -87,6 +87,7 @@ public class TestMatch {
                 break;
             }
             TimeUnit.MILLISECONDS.sleep(500);
+            System.out.println("waiting for account deal done");
         }
         System.out.println("get account elapsed : " + stopwatch.elapsed(TimeUnit.MILLISECONDS));
         getDepth(service, 1);

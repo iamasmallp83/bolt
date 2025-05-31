@@ -36,6 +36,8 @@ public class MatchDispatcher implements EventHandler<Message>, LifecycleAware {
                     matchService.on(message.id.get(), message.payload.asPlaceOrder);
                 }
                 break;
+            default:
+                break;
         }
     }
 

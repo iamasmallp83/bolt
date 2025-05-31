@@ -1,7 +1,6 @@
 package com.cmex.bolt.spot;
 
 import com.cmex.bolt.spot.grpc.SpotServiceImpl;
-import com.cmex.bolt.spot.grpc.SpotServiceProto;
 import com.cmex.bolt.spot.util.BigDecimalUtil;
 import com.cmex.bolt.spot.util.FakeStreamObserver;
 import com.cmex.bolt.spot.util.SpotServiceUtil;

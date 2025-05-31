@@ -7,7 +7,6 @@ import com.cmex.bolt.spot.util.FakeStreamObserver;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import java.util.concurrent.CountDownLatch;
 
 public class TestAccount extends SpotTest {
 

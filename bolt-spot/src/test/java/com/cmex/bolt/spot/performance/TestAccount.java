@@ -1,6 +1,5 @@
 package com.cmex.bolt.spot.performance;
 
-import com.cmex.bolt.spot.domain.Balance;
 import com.cmex.bolt.spot.grpc.SpotServiceImpl;
 import com.cmex.bolt.spot.grpc.SpotServiceProto;
 import com.cmex.bolt.spot.util.BigDecimalUtil;
@@ -8,7 +7,6 @@ import com.cmex.bolt.spot.util.FakeStreamObserver;
 import com.google.common.base.Stopwatch;
 import org.junit.jupiter.api.Test;
 
-import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;

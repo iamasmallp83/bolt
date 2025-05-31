@@ -7,10 +7,9 @@ import com.cmex.bolt.spot.domain.Symbol;
 import com.cmex.bolt.spot.dto.DepthDto;
 import com.cmex.bolt.spot.service.AccountService;
 import com.cmex.bolt.spot.service.MatchService;
-import com.lmax.disruptor.EventHandler;
-import com.lmax.disruptor.LifecycleAware;
-import com.lmax.disruptor.LiteBlockingWaitStrategy;
-import com.lmax.disruptor.RingBuffer;
+import com.cmex.bolt.spot.util.BackpressureManager;
+import com.cmex.bolt.spot.monitor.RingBufferMonitor;
+import com.lmax.disruptor.*;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
 import com.lmax.disruptor.util.DaemonThreadFactory;
@@ -34,28 +33,50 @@ public class SpotServiceImpl extends SpotServiceImplBase {
     private final ConcurrentHashMap<Long, StreamObserver<?>> observers;
 
     private final List<AccountService> accountServices;
-
     private final List<MatchService> matchServices;
+    
+    // 背压管理器
+    private final BackpressureManager accountBackpressureManager;
+    private final BackpressureManager matchBackpressureManager;
+    private final BackpressureManager responseBackpressureManager;
+    private final RingBufferMonitor ringBufferMonitor;
 
     public SpotServiceImpl() {
         observers = new ConcurrentHashMap<>();
+        
+        // 创建Disruptor - 增加容量以减少背压
         Disruptor<Message> accountDisruptor =
-                new Disruptor<>(Message.FACTORY, 1024 * 256, DaemonThreadFactory.INSTANCE,
-                        ProducerType.MULTI, new LiteBlockingWaitStrategy());
+                new Disruptor<>(Message.FACTORY, 1024 * 32, DaemonThreadFactory.INSTANCE,
+                        ProducerType.MULTI, new BusySpinWaitStrategy());
         Disruptor<Message> matchDisruptor =
-                new Disruptor<>(Message.FACTORY, 1024 * 256, DaemonThreadFactory.INSTANCE,
-                        ProducerType.MULTI, new LiteBlockingWaitStrategy());
+                new Disruptor<>(Message.FACTORY, 1024 * 16, DaemonThreadFactory.INSTANCE,
+                        ProducerType.MULTI, new BusySpinWaitStrategy());
         Disruptor<Message> responseDisruptor =
-                new Disruptor<>(Message.FACTORY, 1024 * 256, DaemonThreadFactory.INSTANCE,
-                        ProducerType.MULTI, new LiteBlockingWaitStrategy());
+                new Disruptor<>(Message.FACTORY, 1024 * 32, DaemonThreadFactory.INSTANCE,
+                        ProducerType.MULTI, new BusySpinWaitStrategy());
+        
         List<AccountDispatcher> accountDispatchers = createAccountDispatchers();
         List<MatchDispatcher> matchDispatchers = createMatchDispatchers();
         matchDisruptor.handleEventsWith(matchDispatchers.toArray(new MatchDispatcher[0]));
         responseDisruptor.handleEventsWith(new ResponseEventHandler());
         accountDisruptor.handleEventsWith(accountDispatchers.toArray(new AccountDispatcher[0]));
+        
         accountRingBuffer = accountDisruptor.start();
         RingBuffer<Message> matchRingBuffer = matchDisruptor.start();
         RingBuffer<Message> responseRingBuffer = responseDisruptor.start();
+        
+        // 初始化背压管理器
+        accountBackpressureManager = new BackpressureManager("Account", accountRingBuffer, 0.7, 0.9);
+        matchBackpressureManager = new BackpressureManager("Match", matchRingBuffer, 0.7, 0.9);
+        responseBackpressureManager = new BackpressureManager("Response", responseRingBuffer, 0.8, 0.95);
+        
+        // 初始化监控器
+        ringBufferMonitor = new RingBufferMonitor(5000); // 5秒报告一次
+        ringBufferMonitor.addManager(accountBackpressureManager);
+        ringBufferMonitor.addManager(matchBackpressureManager);
+        ringBufferMonitor.addManager(responseBackpressureManager);
+        ringBufferMonitor.startMonitoring();
+        
         matchServices = new ArrayList<>(10);
         for (MatchDispatcher dispatcher : matchDispatchers) {
             dispatcher.getMatchService().setSequencerRingBuffer(accountRingBuffer);
@@ -91,6 +112,54 @@ public class SpotServiceImpl extends SpotServiceImplBase {
         return accountServices.get(accountId % 10);
     }
 
+    /**
+     * 处理系统繁忙的响应
+     */
+    private void handleSystemBusy(StreamObserver<?> responseObserver, String operationType) {
+        switch (operationType) {
+            case "PLACE_ORDER" -> {
+                PlaceOrderResponse response = PlaceOrderResponse.newBuilder()
+                        .setCode(RejectionReason.SYSTEM_BUSY.getCode())
+                        .setMessage("System is busy, please try again later")
+                        .build();
+                @SuppressWarnings("unchecked")
+                StreamObserver<PlaceOrderResponse> observer = (StreamObserver<PlaceOrderResponse>) responseObserver;
+                observer.onNext(response);
+                observer.onCompleted();
+            }
+            case "INCREASE" -> {
+                IncreaseResponse response = IncreaseResponse.newBuilder()
+                        .setCode(RejectionReason.SYSTEM_BUSY.getCode())
+                        .setMessage("System is busy, please try again later")
+                        .build();
+                @SuppressWarnings("unchecked")
+                StreamObserver<IncreaseResponse> observer = (StreamObserver<IncreaseResponse>) responseObserver;
+                observer.onNext(response);
+                observer.onCompleted();
+            }
+            case "DECREASE" -> {
+                DecreaseResponse response = DecreaseResponse.newBuilder()
+                        .setCode(RejectionReason.SYSTEM_BUSY.getCode())
+                        .setMessage("System is busy, please try again later")
+                        .build();
+                @SuppressWarnings("unchecked")
+                StreamObserver<DecreaseResponse> observer = (StreamObserver<DecreaseResponse>) responseObserver;
+                observer.onNext(response);
+                observer.onCompleted();
+            }
+            case "CANCEL_ORDER" -> {
+                CancelOrderResponse response = CancelOrderResponse.newBuilder()
+                        .setCode(RejectionReason.SYSTEM_BUSY.getCode())
+                        .setMessage("System is busy, please try again later")
+                        .build();
+                @SuppressWarnings("unchecked")
+                StreamObserver<CancelOrderResponse> observer = (StreamObserver<CancelOrderResponse>) responseObserver;
+                observer.onNext(response);
+                observer.onCompleted();
+            }
+        }
+    }
+
     @Override
     public void getAccount(GetAccountRequest request, StreamObserver<GetAccountResponse> responseObserver) {
         Map<Integer, SpotServiceProto.Balance> balances =
@@ -115,6 +184,12 @@ public class SpotServiceImpl extends SpotServiceImplBase {
     }
 
     public void increase(IncreaseRequest request, StreamObserver<IncreaseResponse> responseObserver) {
+        // 检查背压状态
+        if (!accountBackpressureManager.canAcceptRequest()) {
+            handleSystemBusy(responseObserver, "INCREASE");
+            return;
+        }
+
         getAccountService(request.getAccountId()).getCurrency(request.getCurrencyId()).ifPresentOrElse(currency -> {
             long id = requestId.incrementAndGet();
             observers.put(id, responseObserver);
@@ -137,6 +212,12 @@ public class SpotServiceImpl extends SpotServiceImplBase {
     }
 
     public void decrease(DecreaseRequest request, StreamObserver<DecreaseResponse> responseObserver) {
+        // 检查背压状态
+        if (!accountBackpressureManager.canAcceptRequest()) {
+            handleSystemBusy(responseObserver, "DECREASE");
+            return;
+        }
+
         getAccountService(request.getAccountId()).getCurrency(request.getCurrencyId()).ifPresentOrElse(currency -> {
             long id = requestId.incrementAndGet();
             observers.put(id, responseObserver);
@@ -156,42 +237,59 @@ public class SpotServiceImpl extends SpotServiceImplBase {
             responseObserver.onNext(response);
             responseObserver.onCompleted();
         });
-
     }
 
     public void placeOrder(PlaceOrderRequest request, StreamObserver<PlaceOrderResponse> responseObserver) {
+        // 检查背压状态
+        BackpressureManager.BackpressureResult result = accountBackpressureManager.checkCapacity();
+        if (result == BackpressureManager.BackpressureResult.CRITICAL_REJECT) {
+            handleSystemBusy(responseObserver, "PLACE_ORDER");
+            return;
+        }
+        
+        // 如果是高负载，输出警告日志
+        if (result == BackpressureManager.BackpressureResult.HIGH_LOAD) {
+            System.out.printf("WARNING: Account RingBuffer usage is high: %.2f%%%n", 
+                accountBackpressureManager.getCurrentUsageRate() * 100);
+        }
+
         getSymbol(request.getSymbolId()).ifPresentOrElse(symbol -> {
-                    long id = requestId.incrementAndGet();
-                    observers.put(id, responseObserver);
-                    accountRingBuffer.publishEvent((message, sequence) -> {
-                        message.id.set(id);
-                        message.type.set(EventType.PLACE_ORDER);
-                        PlaceOrder placeOrder = message.payload.asPlaceOrder;
-                        placeOrder.symbolId.set((short) request.getSymbolId());
-                        placeOrder.accountId.set(request.getAccountId());
-                        placeOrder.type.set(request.getType() == PlaceOrderRequest.Type.LIMIT ?
-                                OrderType.LIMIT : OrderType.MARKET);
-                        placeOrder.side.set(request.getSide() == PlaceOrderRequest.Side.BID ?
-                                OrderSide.BID : OrderSide.ASK);
-                        placeOrder.price.set(symbol.formatPrice(request.getPrice()));
-                        placeOrder.quantity.set(symbol.formatQuantity(request.getQuantity()));
-                        placeOrder.volume.set(symbol.formatPrice(request.getVolume()));
-                        placeOrder.takerRate.set(request.getTakerRate());
-                        placeOrder.makerRate.set(request.getMakerRate());
-                    });
-                }, () -> {
-                    PlaceOrderResponse response = PlaceOrderResponse.newBuilder()
-                            .setCode(RejectionReason.SYMBOL_NOT_EXIST.getCode())
-                            .setMessage(RejectionReason.SYMBOL_NOT_EXIST.name())
-                            .build();
-                    responseObserver.onNext(response);
-                    responseObserver.onCompleted();
-                }
-        );
+            long id = requestId.incrementAndGet();
+            observers.put(id, responseObserver);
+            accountRingBuffer.publishEvent((message, sequence) -> {
+                message.id.set(id);
+                message.type.set(EventType.PLACE_ORDER);
+                PlaceOrder placeOrder = message.payload.asPlaceOrder;
+                placeOrder.symbolId.set((short) request.getSymbolId());
+                placeOrder.accountId.set(request.getAccountId());
+                placeOrder.type.set(request.getType() == PlaceOrderRequest.Type.LIMIT ?
+                        OrderType.LIMIT : OrderType.MARKET);
+                placeOrder.side.set(request.getSide() == PlaceOrderRequest.Side.BID ?
+                        OrderSide.BID : OrderSide.ASK);
+                placeOrder.price.set(symbol.formatPrice(request.getPrice()));
+                placeOrder.quantity.set(symbol.formatQuantity(request.getQuantity()));
+                placeOrder.volume.set(symbol.formatPrice(request.getVolume()));
+                placeOrder.takerRate.set(request.getTakerRate());
+                placeOrder.makerRate.set(request.getMakerRate());
+            });
+        }, () -> {
+            PlaceOrderResponse response = PlaceOrderResponse.newBuilder()
+                    .setCode(RejectionReason.SYMBOL_NOT_EXIST.getCode())
+                    .setMessage(RejectionReason.SYMBOL_NOT_EXIST.name())
+                    .build();
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        });
     }
 
     @Override
     public void cancelOrder(CancelOrderRequest request, StreamObserver<CancelOrderResponse> responseObserver) {
+        // 检查背压状态
+        if (!accountBackpressureManager.canAcceptRequest()) {
+            handleSystemBusy(responseObserver, "CANCEL_ORDER");
+            return;
+        }
+
         long id = requestId.incrementAndGet();
         observers.put(id, responseObserver);
         accountRingBuffer.publishEvent((message, sequence) -> {
@@ -212,6 +310,51 @@ public class SpotServiceImpl extends SpotServiceImplBase {
                 .build();
         responseObserver.onNext(response);
         responseObserver.onCompleted();
+    }
+
+    /**
+     * 获取背压统计信息 - 用于外部监控
+     */
+    public BackpressureManager.BackpressureStats getAccountBackpressureStats() {
+        return accountBackpressureManager.getStats();
+    }
+
+    public BackpressureManager.BackpressureStats getMatchBackpressureStats() {
+        return matchBackpressureManager.getStats();
+    }
+
+    public BackpressureManager.BackpressureStats getResponseBackpressureStats() {
+        return responseBackpressureManager.getStats();
+    }
+
+    /**
+     * 获取监控器的汇总统计
+     */
+    public RingBufferMonitor.SummaryStats getMonitorSummary() {
+        return ringBufferMonitor.getSummaryStats();
+    }
+
+    /**
+     * 立即输出监控报告
+     */
+    public void reportMonitorStats() {
+        ringBufferMonitor.reportStats();
+    }
+
+    /**
+     * 重置所有统计信息
+     */
+    public void resetAllStats() {
+        accountBackpressureManager.resetStats();
+        matchBackpressureManager.resetStats();
+        responseBackpressureManager.resetStats();
+    }
+
+    /**
+     * 关闭监控器（在服务停止时调用）
+     */
+    public void shutdown() {
+        ringBufferMonitor.stopMonitoring();
     }
 
     private class ResponseEventHandler implements EventHandler<Message>, LifecycleAware {
