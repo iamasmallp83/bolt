@@ -1,17 +1,36 @@
+### Gradle ###
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+### Maven ###
 target/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
 
+### IDE ###
 .vscode/
-
-### IntelliJ IDEA ###
 .idea/
 *.iws
 *.iml
 *.ipr
+*.project
+*.classpath
+.settings/
 
-### Mac OS ###
+### Operating System ###
 .DS_Store
+
+### Application Specific ###
 bolt-spot/journal.data
 journal.data
+
+### Logs and Temp Files ###
+*.log
+*.tmp
+*.temp
+tmp/
+temp/
+logs/

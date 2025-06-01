@@ -1,0 +1,2 @@
+rootProject.name = 'bolt'
+include 'bolt-spot-proto', 'bolt-spot'

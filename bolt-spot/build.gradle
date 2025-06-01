@@ -1,0 +1,46 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+dependencies {
+    implementation project(':bolt-spot-proto')
+    
+    implementation "com.lmax:disruptor:${versions.disruptor}"
+    implementation "org.javolution:javolution-core-java:${versions.javolution}"
+    implementation "io.aeron:aeron-driver:${versions.aeron}"
+    implementation "io.aeron:aeron-client:${versions.aeron}"
+
+    compileOnly "org.projectlombok:lombok:${versions.lombok}"
+    annotationProcessor "org.projectlombok:lombok:${versions.lombok}"
+    
+    testImplementation "org.junit.jupiter:junit-jupiter-engine:${versions.junit}"
+    testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:${versions.junit}"
+}
+
+application {
+    mainClass = 'com.cmex.bolt.spot.TestMatch'
+}
+
+tasks.withType(Test) {
+    useJUnitPlatform()
+}
+
+tasks.named('compileJava') {
+    doFirst {
+        println "Compilation classpath:"
+        classpath.files.each { println it.absolutePath }
+        println "\n是否包含bolt-spot-proto的classes目录:"
+        println classpath.files.any { it.absolutePath.contains('bolt-spot-proto/build/classes') }
+    }
+}
+
+task fatJar(type: Jar) {
+    archiveFileName = 'bolt-spot-all-in-one.jar'
+    manifest {
+        attributes 'Main-Class': 'com.cmex.bolt.spot.TestMatch'
+    }
+    from { configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
+    with jar
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}

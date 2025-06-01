@@ -1,0 +1,43 @@
+plugins {
+    id 'java'
+}
+
+allprojects {
+    group = 'com.cmex'
+    version = '1.0-SNAPSHOT'
+    
+    repositories {
+        mavenCentral()
+    }
+}
+
+subprojects {
+    apply plugin: 'java'
+    
+    java {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    
+    tasks.withType(JavaCompile) {
+        options.encoding = 'UTF-8'
+    }
+}
+
+// 定义所有子项目通用的依赖版本
+ext {
+    versions = [
+        junit: '5.9.2',
+        disruptor: '3.4.4',
+        lombok: '1.18.22',
+        javolution: '6.0.0',
+        fastutil: '8.5.12',
+        guava: '33.0.0-jre',
+        commonsLang3: '3.14.0',
+        aeron: '1.43.0',
+        grpc: '1.61.0',
+        protobuf: '3.19.2',
+        protobufPlugin: '0.9.4',
+        annotationsApi: '6.0.53'
+    ]
+}
