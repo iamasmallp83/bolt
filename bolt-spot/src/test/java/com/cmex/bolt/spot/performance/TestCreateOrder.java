@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit;
 
 public class TestCreateOrder {
 
-    private int times = 1_000_000;
+    private final int times = 1_000_000;
 
     @Test
     public void testCreateOrder() {

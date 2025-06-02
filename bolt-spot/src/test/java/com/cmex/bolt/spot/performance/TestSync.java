@@ -86,8 +86,8 @@ public class TestSync {
     private static class TestSyncRunner implements Runnable {
 
 
-        private CountDownLatch latch;
-        private Account account;
+        private final CountDownLatch latch;
+        private final Account account;
 
         public TestSyncRunner(Account account, CountDownLatch latch) {
             this.account = account;
@@ -108,8 +108,8 @@ public class TestSync {
     private static class TestSyncMultiAccountsRunner implements Runnable {
 
 
-        private CountDownLatch latch;
-        private List<Account> accounts;
+        private final CountDownLatch latch;
+        private final List<Account> accounts;
 
         public TestSyncMultiAccountsRunner(List<Account> accounts, CountDownLatch latch) {
             this.accounts = accounts;

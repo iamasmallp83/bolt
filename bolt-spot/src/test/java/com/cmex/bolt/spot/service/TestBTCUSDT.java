@@ -55,6 +55,7 @@ public class TestBTCUSDT extends SpotTest {
             takerLatch.countDown();
         }));
         takerLatch.await();
+        Thread.sleep(1000);
         service.getAccount(SpotServiceProto.GetAccountRequest.newBuilder().setAccountId(2).build(), FakeStreamObserver.of(response -> {
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "9.98"));
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(2).getAvailable(), "99"));

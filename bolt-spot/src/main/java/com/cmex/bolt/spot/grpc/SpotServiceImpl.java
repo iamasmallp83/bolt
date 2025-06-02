@@ -46,13 +46,13 @@ public class SpotServiceImpl extends SpotServiceImplBase {
         
         // 创建Disruptor - 增加容量以减少背压
         Disruptor<Message> accountDisruptor =
-                new Disruptor<>(Message.FACTORY, 1024 * 1024 * 2, DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(Message.FACTORY, 1024 * 64, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new BusySpinWaitStrategy());
         Disruptor<Message> matchDisruptor =
-                new Disruptor<>(Message.FACTORY, 1024 * 1024, DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(Message.FACTORY, 1024 * 32, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new BusySpinWaitStrategy());
         Disruptor<Message> responseDisruptor =
-                new Disruptor<>(Message.FACTORY, 1024 * 1024, DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(Message.FACTORY, 1024 * 32, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new BusySpinWaitStrategy());
         
         List<AccountDispatcher> accountDispatchers = createAccountDispatchers();

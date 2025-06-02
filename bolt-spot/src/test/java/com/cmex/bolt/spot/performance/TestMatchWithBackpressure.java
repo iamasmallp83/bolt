@@ -23,8 +23,8 @@ import static com.cmex.bolt.spot.util.SpotServiceUtil.*;
  * 测试BackpressureManager的效果
  */
 public class TestMatchWithBackpressure {
-    private static SpotServiceImpl service = new SpotServiceImpl();
-    private static int TIMES = 5000; // 故意设置高值来触发背压
+    private static final SpotServiceImpl service = new SpotServiceImpl();
+    private static final int TIMES = 5000; // 故意设置高值来触发背压
 
     @BeforeAll
     public static void init() {

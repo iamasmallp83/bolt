@@ -23,8 +23,8 @@ import static com.cmex.bolt.spot.util.SpotServiceUtil.*;
  * 改进版TestMatch，支持背压处理的完成判断
  */
 public class TestMatchV2 {
-    private static SpotServiceImpl service = new SpotServiceImpl();
-    private static int TIMES = 10000;
+    private static final SpotServiceImpl service = new SpotServiceImpl();
+    private static final int TIMES = 10000;
     
     // 请求跟踪器
     private static final AtomicLong totalSentRequests = new AtomicLong(0);

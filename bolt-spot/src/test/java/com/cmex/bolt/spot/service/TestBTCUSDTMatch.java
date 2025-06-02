@@ -27,7 +27,7 @@ public class TestBTCUSDTMatch extends SpotTest {
         service.placeOrder(SpotServiceProto.PlaceOrderRequest.newBuilder()
                 .setRequestId(1)
                 .setSymbolId(1)
-                .setAccountId(11)
+                .setAccountId(1)
                 .setType(SpotServiceProto.PlaceOrderRequest.Type.LIMIT)
                 .setSide(SpotServiceProto.PlaceOrderRequest.Side.BID)
                 .setPrice("1")
@@ -39,7 +39,7 @@ public class TestBTCUSDTMatch extends SpotTest {
         service.placeOrder(SpotServiceProto.PlaceOrderRequest.newBuilder()
                 .setRequestId(1)
                 .setSymbolId(1)
-                .setAccountId(12)
+                .setAccountId(2)
                 .setType(SpotServiceProto.PlaceOrderRequest.Type.LIMIT)
                 .setSide(SpotServiceProto.PlaceOrderRequest.Side.ASK)
                 .setPrice("1")
@@ -49,13 +49,14 @@ public class TestBTCUSDTMatch extends SpotTest {
             latch.countDown();
         }));
         latch.await();
-        service.getAccount(SpotServiceProto.GetAccountRequest.newBuilder().setAccountId(11).build(), FakeStreamObserver.of(response -> {
-            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "0"));
+        Thread.sleep(1000);
+        service.getAccount(SpotServiceProto.GetAccountRequest.newBuilder().setAccountId(1).build(), FakeStreamObserver.of(response -> {
+            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "9999"));
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(2).getAvailable(), "1"));
         }));
-        service.getAccount(SpotServiceProto.GetAccountRequest.newBuilder().setAccountId(12).build(), FakeStreamObserver.of(response -> {
+        service.getAccount(SpotServiceProto.GetAccountRequest.newBuilder().setAccountId(2).build(), FakeStreamObserver.of(response -> {
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "1"));
-            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(2).getAvailable(), "0"));
+            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(2).getAvailable(), "99"));
         }));
     }
 }

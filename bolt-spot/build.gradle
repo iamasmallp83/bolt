@@ -19,26 +19,17 @@ dependencies {
 }
 
 application {
-    mainClass = 'com.cmex.bolt.spot.TestMatch'
+    mainClass = 'com.cmex.bolt.spot.SpotServer'
 }
 
 tasks.withType(Test) {
     useJUnitPlatform()
 }
 
-tasks.named('compileJava') {
-    doFirst {
-        println "Compilation classpath:"
-        classpath.files.each { println it.absolutePath }
-        println "\n是否包含bolt-spot-proto的classes目录:"
-        println classpath.files.any { it.absolutePath.contains('bolt-spot-proto/build/classes') }
-    }
-}
-
 task fatJar(type: Jar) {
     archiveFileName = 'bolt-spot-all-in-one.jar'
     manifest {
-        attributes 'Main-Class': 'com.cmex.bolt.spot.TestMatch'
+        attributes 'Main-Class': 'com.cmex.bolt.spot.SpotServer'
     }
     from { configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
     with jar

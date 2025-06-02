@@ -45,7 +45,7 @@ public class OrderIdGenerator {
         lastTimestamp = currentTimestamp;
 
         long id = currentTimestamp << (SYMBOL_BITS + SEQUENCE_BITS)
-                | (symbolId << SEQUENCE_BITS)
+                | ((long) symbolId << SEQUENCE_BITS)
                 | sequence;
 
         return id;

@@ -21,7 +21,7 @@ import static com.cmex.bolt.spot.util.SpotServiceUtil.increase;
  * 测试平均处理时间计算修复
  */
 public class TestCalculationFix {
-    private static SpotServiceImpl service = new SpotServiceImpl();
+    private static final SpotServiceImpl service = new SpotServiceImpl();
 
     @Test
     public void testAverageProcessingTimeCalculation() throws InterruptedException, IOException {

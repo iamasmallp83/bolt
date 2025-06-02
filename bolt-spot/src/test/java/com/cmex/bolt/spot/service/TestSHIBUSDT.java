@@ -53,7 +53,10 @@ public class TestSHIBUSDT extends SpotTest {
             latch.countDown();
         }));
         latch.await();
+        Thread.sleep(1000);
         service.getAccount(SpotServiceProto.GetAccountRequest.newBuilder().setAccountId(4).build(), FakeStreamObserver.of(response -> {
+            System.out.println(response.getDataMap().get(1));
+            System.out.println(response.getDataMap().get(3));
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "85.914"));
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(3).getAvailable(), "10000000"));
         }));
@@ -106,7 +109,10 @@ public class TestSHIBUSDT extends SpotTest {
             latch.countDown();
         }));
         latch.await();
+        Thread.sleep(1000);
         service.getAccount(SpotServiceProto.GetAccountRequest.newBuilder().setAccountId(5).build(), FakeStreamObserver.of(response -> {
+            System.out.println(response.getDataMap().get(1));
+            System.out.println(response.getDataMap().get(3));
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "9931062.4"));
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(3).getAvailable(), "8000000000"));
         }));

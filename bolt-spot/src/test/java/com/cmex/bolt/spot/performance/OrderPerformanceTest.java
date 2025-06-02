@@ -21,7 +21,7 @@ import static com.cmex.bolt.spot.util.SpotServiceUtil.*;
  * 专门用于测试和分析订单处理的效率统计
  */
 public class OrderPerformanceTest {
-    private static SpotServiceImpl service = new SpotServiceImpl();
+    private static final SpotServiceImpl service = new SpotServiceImpl();
 
     @BeforeAll
     public static void init() {

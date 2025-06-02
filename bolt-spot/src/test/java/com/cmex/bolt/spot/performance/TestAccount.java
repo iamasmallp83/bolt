@@ -20,7 +20,7 @@ import static com.cmex.bolt.spot.util.SpotServiceUtil.*;
  * Unit test for simple App.
  */
 public class TestAccount {
-    private static SpotServiceImpl service = new SpotServiceImpl();
+    private static final SpotServiceImpl service = new SpotServiceImpl();
 
     @Test
     public void testIncrease() throws InterruptedException {

@@ -10,9 +10,9 @@ public enum RejectionReason {
     ORDER_NOT_EXIST(3002),
     SYSTEM_BUSY(1000);
 
-    private int code;
+    private final int code;
 
-    private RejectionReason(int code) {
+    RejectionReason(int code) {
         this.code = code;
     }
 

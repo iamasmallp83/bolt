@@ -48,240 +48,239 @@ public class HTMLReportGenerator {
      * 构建HTML内容
      */
     private String buildHTMLContent() {
-        StringBuilder html = new StringBuilder();
-        
+
         // HTML头部
-        html.append(getHTMLHeader());
+
+        String html = getHTMLHeader() +
+
+                // 报告标题和摘要
+                getReportHeader() +
+
+                // 总体统计摘要
+                getSummarySection() +
+
+                // 详细测试结果
+                getDetailedResults() +
+
+                // 性能图表
+                getPerformanceCharts() +
+
+                // 建议和结论
+                getRecommendations() +
+
+                // HTML尾部
+                getHTMLFooter();
         
-        // 报告标题和摘要
-        html.append(getReportHeader());
-        
-        // 总体统计摘要
-        html.append(getSummarySection());
-        
-        // 详细测试结果
-        html.append(getDetailedResults());
-        
-        // 性能图表
-        html.append(getPerformanceCharts());
-        
-        // 建议和结论
-        html.append(getRecommendations());
-        
-        // HTML尾部
-        html.append(getHTMLFooter());
-        
-        return html.toString();
+        return html;
     }
     
     /**
      * HTML文档头部
      */
     private String getHTMLHeader() {
-        StringBuilder html = new StringBuilder();
-        html.append("<!DOCTYPE html>\n");
-        html.append("<html lang=\"zh-CN\">\n");
-        html.append("<head>\n");
-        html.append("    <meta charset=\"UTF-8\">\n");
-        html.append("    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
-        html.append("    <title>").append(reportTitle).append("</title>\n");
-        html.append("    <script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>\n");
-        html.append("    <style>\n");
-        html.append("        :root {\n");
-        html.append("            --primary-color: #2c3e50;\n");
-        html.append("            --secondary-color: #3498db;\n");
-        html.append("            --success-color: #27ae60;\n");
-        html.append("            --warning-color: #f39c12;\n");
-        html.append("            --danger-color: #e74c3c;\n");
-        html.append("            --light-bg: #ecf0f1;\n");
-        html.append("            --card-shadow: 0 2px 10px rgba(0,0,0,0.1);\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        * {\n");
-        html.append("            margin: 0;\n");
-        html.append("            padding: 0;\n");
-        html.append("            box-sizing: border-box;\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        body {\n");
-        html.append("            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\n");
-        html.append("            line-height: 1.6;\n");
-        html.append("            color: var(--primary-color);\n");
-        html.append("            background-color: var(--light-bg);\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        .container {\n");
-        html.append("            max-width: 1200px;\n");
-        html.append("            margin: 0 auto;\n");
-        html.append("            padding: 20px;\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        .header {\n");
-        html.append("            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));\n");
-        html.append("            color: white;\n");
-        html.append("            padding: 30px 0;\n");
-        html.append("            margin-bottom: 30px;\n");
-        html.append("            border-radius: 10px;\n");
-        html.append("            text-align: center;\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        .header h1 {\n");
-        html.append("            font-size: 2.5em;\n");
-        html.append("            margin-bottom: 10px;\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        .header .subtitle {\n");
-        html.append("            font-size: 1.2em;\n");
-        html.append("            opacity: 0.9;\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        .card {\n");
-        html.append("            background: white;\n");
-        html.append("            border-radius: 10px;\n");
-        html.append("            padding: 25px;\n");
-        html.append("            margin-bottom: 25px;\n");
-        html.append("            box-shadow: var(--card-shadow);\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        .card h2 {\n");
-        html.append("            color: var(--primary-color);\n");
-        html.append("            margin-bottom: 20px;\n");
-        html.append("            padding-bottom: 10px;\n");
-        html.append("            border-bottom: 2px solid var(--secondary-color);\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        .metrics-grid {\n");
-        html.append("            display: grid;\n");
-        html.append("            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));\n");
-        html.append("            gap: 20px;\n");
-        html.append("            margin: 20px 0;\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        .metric-card {\n");
-        html.append("            background: linear-gradient(135deg, #f8f9fa, #e9ecef);\n");
-        html.append("            padding: 20px;\n");
-        html.append("            border-radius: 8px;\n");
-        html.append("            text-align: center;\n");
-        html.append("            border-left: 4px solid var(--secondary-color);\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        .metric-value {\n");
-        html.append("            font-size: 2em;\n");
-        html.append("            font-weight: bold;\n");
-        html.append("            color: var(--primary-color);\n");
-        html.append("            margin-bottom: 5px;\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        .metric-label {\n");
-        html.append("            font-size: 0.9em;\n");
-        html.append("            color: #6c757d;\n");
-        html.append("            text-transform: uppercase;\n");
-        html.append("            letter-spacing: 1px;\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        .status-badge {\n");
-        html.append("            display: inline-block;\n");
-        html.append("            padding: 4px 12px;\n");
-        html.append("            border-radius: 20px;\n");
-        html.append("            font-size: 0.8em;\n");
-        html.append("            font-weight: bold;\n");
-        html.append("            text-transform: uppercase;\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        .status-excellent { background-color: var(--success-color); color: white; }\n");
-        html.append("        .status-good { background-color: #2ecc71; color: white; }\n");
-        html.append("        .status-acceptable { background-color: var(--warning-color); color: white; }\n");
-        html.append("        .status-poor { background-color: var(--danger-color); color: white; }\n");
-        html.append("        \n");
-        html.append("        .test-result {\n");
-        html.append("            margin-bottom: 30px;\n");
-        html.append("            border: 1px solid #dee2e6;\n");
-        html.append("            border-radius: 8px;\n");
-        html.append("            overflow: hidden;\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        .test-header {\n");
-        html.append("            background-color: var(--primary-color);\n");
-        html.append("            color: white;\n");
-        html.append("            padding: 15px 20px;\n");
-        html.append("            font-weight: bold;\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        .test-content {\n");
-        html.append("            padding: 20px;\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        .progress-bar {\n");
-        html.append("            background-color: #e9ecef;\n");
-        html.append("            border-radius: 10px;\n");
-        html.append("            height: 20px;\n");
-        html.append("            overflow: hidden;\n");
-        html.append("            margin: 10px 0;\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        .progress-fill {\n");
-        html.append("            height: 100%;\n");
-        html.append("            background: linear-gradient(90deg, var(--success-color), var(--secondary-color));\n");
-        html.append("            transition: width 0.3s ease;\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        .chart-container {\n");
-        html.append("            position: relative;\n");
-        html.append("            height: 400px;\n");
-        html.append("            margin: 20px 0;\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        table {\n");
-        html.append("            width: 100%;\n");
-        html.append("            border-collapse: collapse;\n");
-        html.append("            margin: 20px 0;\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        th, td {\n");
-        html.append("            padding: 12px;\n");
-        html.append("            text-align: left;\n");
-        html.append("            border-bottom: 1px solid #dee2e6;\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        th {\n");
-        html.append("            background-color: var(--light-bg);\n");
-        html.append("            font-weight: bold;\n");
-        html.append("            color: var(--primary-color);\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        .recommendation {\n");
-        html.append("            background-color: #fff3cd;\n");
-        html.append("            border: 1px solid #ffeaa7;\n");
-        html.append("            border-radius: 6px;\n");
-        html.append("            padding: 15px;\n");
-        html.append("            margin: 10px 0;\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        .recommendation .icon {\n");
-        html.append("            display: inline-block;\n");
-        html.append("            width: 20px;\n");
-        html.append("            text-align: center;\n");
-        html.append("            margin-right: 10px;\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        @media (max-width: 768px) {\n");
-        html.append("            .container {\n");
-        html.append("                padding: 10px;\n");
-        html.append("            }\n");
-        html.append("            \n");
-        html.append("            .metrics-grid {\n");
-        html.append("                grid-template-columns: 1fr;\n");
-        html.append("            }\n");
-        html.append("            \n");
-        html.append("            .header h1 {\n");
-        html.append("                font-size: 2em;\n");
-        html.append("            }\n");
-        html.append("        }\n");
-        html.append("    </style>\n");
-        html.append("</head>\n");
-        html.append("<body>\n");
+        String html = "<!DOCTYPE html>\n" +
+                "<html lang=\"zh-CN\">\n" +
+                "<head>\n" +
+                "    <meta charset=\"UTF-8\">\n" +
+                "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n" +
+                "    <title>" + reportTitle + "</title>\n" +
+                "    <script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>\n" +
+                "    <style>\n" +
+                "        :root {\n" +
+                "            --primary-color: #2c3e50;\n" +
+                "            --secondary-color: #3498db;\n" +
+                "            --success-color: #27ae60;\n" +
+                "            --warning-color: #f39c12;\n" +
+                "            --danger-color: #e74c3c;\n" +
+                "            --light-bg: #ecf0f1;\n" +
+                "            --card-shadow: 0 2px 10px rgba(0,0,0,0.1);\n" +
+                "        }\n" +
+                "        \n" +
+                "        * {\n" +
+                "            margin: 0;\n" +
+                "            padding: 0;\n" +
+                "            box-sizing: border-box;\n" +
+                "        }\n" +
+                "        \n" +
+                "        body {\n" +
+                "            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\n" +
+                "            line-height: 1.6;\n" +
+                "            color: var(--primary-color);\n" +
+                "            background-color: var(--light-bg);\n" +
+                "        }\n" +
+                "        \n" +
+                "        .container {\n" +
+                "            max-width: 1200px;\n" +
+                "            margin: 0 auto;\n" +
+                "            padding: 20px;\n" +
+                "        }\n" +
+                "        \n" +
+                "        .header {\n" +
+                "            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));\n" +
+                "            color: white;\n" +
+                "            padding: 30px 0;\n" +
+                "            margin-bottom: 30px;\n" +
+                "            border-radius: 10px;\n" +
+                "            text-align: center;\n" +
+                "        }\n" +
+                "        \n" +
+                "        .header h1 {\n" +
+                "            font-size: 2.5em;\n" +
+                "            margin-bottom: 10px;\n" +
+                "        }\n" +
+                "        \n" +
+                "        .header .subtitle {\n" +
+                "            font-size: 1.2em;\n" +
+                "            opacity: 0.9;\n" +
+                "        }\n" +
+                "        \n" +
+                "        .card {\n" +
+                "            background: white;\n" +
+                "            border-radius: 10px;\n" +
+                "            padding: 25px;\n" +
+                "            margin-bottom: 25px;\n" +
+                "            box-shadow: var(--card-shadow);\n" +
+                "        }\n" +
+                "        \n" +
+                "        .card h2 {\n" +
+                "            color: var(--primary-color);\n" +
+                "            margin-bottom: 20px;\n" +
+                "            padding-bottom: 10px;\n" +
+                "            border-bottom: 2px solid var(--secondary-color);\n" +
+                "        }\n" +
+                "        \n" +
+                "        .metrics-grid {\n" +
+                "            display: grid;\n" +
+                "            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));\n" +
+                "            gap: 20px;\n" +
+                "            margin: 20px 0;\n" +
+                "        }\n" +
+                "        \n" +
+                "        .metric-card {\n" +
+                "            background: linear-gradient(135deg, #f8f9fa, #e9ecef);\n" +
+                "            padding: 20px;\n" +
+                "            border-radius: 8px;\n" +
+                "            text-align: center;\n" +
+                "            border-left: 4px solid var(--secondary-color);\n" +
+                "        }\n" +
+                "        \n" +
+                "        .metric-value {\n" +
+                "            font-size: 2em;\n" +
+                "            font-weight: bold;\n" +
+                "            color: var(--primary-color);\n" +
+                "            margin-bottom: 5px;\n" +
+                "        }\n" +
+                "        \n" +
+                "        .metric-label {\n" +
+                "            font-size: 0.9em;\n" +
+                "            color: #6c757d;\n" +
+                "            text-transform: uppercase;\n" +
+                "            letter-spacing: 1px;\n" +
+                "        }\n" +
+                "        \n" +
+                "        .status-badge {\n" +
+                "            display: inline-block;\n" +
+                "            padding: 4px 12px;\n" +
+                "            border-radius: 20px;\n" +
+                "            font-size: 0.8em;\n" +
+                "            font-weight: bold;\n" +
+                "            text-transform: uppercase;\n" +
+                "        }\n" +
+                "        \n" +
+                "        .status-excellent { background-color: var(--success-color); color: white; }\n" +
+                "        .status-good { background-color: #2ecc71; color: white; }\n" +
+                "        .status-acceptable { background-color: var(--warning-color); color: white; }\n" +
+                "        .status-poor { background-color: var(--danger-color); color: white; }\n" +
+                "        \n" +
+                "        .test-result {\n" +
+                "            margin-bottom: 30px;\n" +
+                "            border: 1px solid #dee2e6;\n" +
+                "            border-radius: 8px;\n" +
+                "            overflow: hidden;\n" +
+                "        }\n" +
+                "        \n" +
+                "        .test-header {\n" +
+                "            background-color: var(--primary-color);\n" +
+                "            color: white;\n" +
+                "            padding: 15px 20px;\n" +
+                "            font-weight: bold;\n" +
+                "        }\n" +
+                "        \n" +
+                "        .test-content {\n" +
+                "            padding: 20px;\n" +
+                "        }\n" +
+                "        \n" +
+                "        .progress-bar {\n" +
+                "            background-color: #e9ecef;\n" +
+                "            border-radius: 10px;\n" +
+                "            height: 20px;\n" +
+                "            overflow: hidden;\n" +
+                "            margin: 10px 0;\n" +
+                "        }\n" +
+                "        \n" +
+                "        .progress-fill {\n" +
+                "            height: 100%;\n" +
+                "            background: linear-gradient(90deg, var(--success-color), var(--secondary-color));\n" +
+                "            transition: width 0.3s ease;\n" +
+                "        }\n" +
+                "        \n" +
+                "        .chart-container {\n" +
+                "            position: relative;\n" +
+                "            height: 400px;\n" +
+                "            margin: 20px 0;\n" +
+                "        }\n" +
+                "        \n" +
+                "        table {\n" +
+                "            width: 100%;\n" +
+                "            border-collapse: collapse;\n" +
+                "            margin: 20px 0;\n" +
+                "        }\n" +
+                "        \n" +
+                "        th, td {\n" +
+                "            padding: 12px;\n" +
+                "            text-align: left;\n" +
+                "            border-bottom: 1px solid #dee2e6;\n" +
+                "        }\n" +
+                "        \n" +
+                "        th {\n" +
+                "            background-color: var(--light-bg);\n" +
+                "            font-weight: bold;\n" +
+                "            color: var(--primary-color);\n" +
+                "        }\n" +
+                "        \n" +
+                "        .recommendation {\n" +
+                "            background-color: #fff3cd;\n" +
+                "            border: 1px solid #ffeaa7;\n" +
+                "            border-radius: 6px;\n" +
+                "            padding: 15px;\n" +
+                "            margin: 10px 0;\n" +
+                "        }\n" +
+                "        \n" +
+                "        .recommendation .icon {\n" +
+                "            display: inline-block;\n" +
+                "            width: 20px;\n" +
+                "            text-align: center;\n" +
+                "            margin-right: 10px;\n" +
+                "        }\n" +
+                "        \n" +
+                "        @media (max-width: 768px) {\n" +
+                "            .container {\n" +
+                "                padding: 10px;\n" +
+                "            }\n" +
+                "            \n" +
+                "            .metrics-grid {\n" +
+                "                grid-template-columns: 1fr;\n" +
+                "            }\n" +
+                "            \n" +
+                "            .header h1 {\n" +
+                "                font-size: 2em;\n" +
+                "            }\n" +
+                "        }\n" +
+                "    </style>\n" +
+                "</head>\n" +
+                "<body>\n";
         
-        return html.toString();
+        return html;
     }
     
     /**

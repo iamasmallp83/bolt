@@ -19,9 +19,9 @@ public enum EventType {
     UNFREEZE(new Unfreeze()),
     CLEARED(new Cleared());
 
-    private Struct struct;
+    private final Struct struct;
 
-    private EventType(Struct struct) {
+    EventType(Struct struct) {
         this.struct = struct;
     }
 

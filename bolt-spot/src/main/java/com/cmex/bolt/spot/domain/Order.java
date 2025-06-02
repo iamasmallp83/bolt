@@ -55,11 +55,11 @@ public class Order {
     }
 
     public enum OrderSide {
-        BID, ASK;
+        BID, ASK
     }
 
     public enum OrderType {
-        LIMIT, MARKET;
+        LIMIT, MARKET
     }
 
     public boolean isDone() {

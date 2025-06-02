@@ -18,7 +18,7 @@ import static com.cmex.bolt.spot.grpc.SpotServiceProto.PlaceOrderRequest;
  * Unit test for simple App.
  */
 public class TestPlaceOrder {
-    private static SpotServiceImpl service = new SpotServiceImpl();
+    private static final SpotServiceImpl service = new SpotServiceImpl();
 
     @BeforeAll
     public static void init() {

@@ -21,8 +21,8 @@ import static com.cmex.bolt.spot.util.SpotServiceUtil.*;
  * 演示如何在有背压控制的情况下正确判断处理完成
  */
 public class TestMatchImproved {
-    private static SpotServiceImpl service = new SpotServiceImpl();
-    private static int TIMES = 100000;
+    private static final SpotServiceImpl service = new SpotServiceImpl();
+    private static final int TIMES = 100000;
 
     @BeforeAll
     public static void init() {

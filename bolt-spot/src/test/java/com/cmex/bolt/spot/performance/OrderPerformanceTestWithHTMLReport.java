@@ -22,7 +22,7 @@ import static com.cmex.bolt.spot.util.SpotServiceUtil.increase;
  * 全面测试系统在不同负载下的性能表现
  */
 public class OrderPerformanceTestWithHTMLReport {
-    private static SpotServiceImpl service = new SpotServiceImpl();
+    private static final SpotServiceImpl service = new SpotServiceImpl();
 
     @Test
     public void runComprehensivePerformanceTest() throws InterruptedException, IOException {
