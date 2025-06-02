@@ -9,12 +9,12 @@ public class SymbolRepository extends HashMapRepository<Integer, Symbol> {
         Currency usdt = Currency.builder()
                 .id(1)
                 .name("USDT")
-                .precision(8)
+                .precision(4)
                 .build();
         Currency btc = Currency.builder()
                 .id(2)
                 .name("BTC")
-                .precision(8)
+                .precision(6)
                 .build();
         Currency shib = Currency.builder()
                 .id(3)
@@ -24,7 +24,7 @@ public class SymbolRepository extends HashMapRepository<Integer, Symbol> {
         Currency eth = Currency.builder()
                 .id(4)
                 .name("ETH")
-                .precision(6)
+                .precision(4)
                 .build();
         Symbol btcusdt = Symbol.builder()
                 .id(1)
