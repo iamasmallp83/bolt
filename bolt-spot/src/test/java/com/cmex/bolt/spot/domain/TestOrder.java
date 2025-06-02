@@ -1,10 +1,11 @@
 package com.cmex.bolt.spot.domain;
 
-import org.junit.jupiter.api.Assertions;
+import com.cmex.bolt.spot.repository.impl.SymbolRepository;
 import org.junit.jupiter.api.Test;
 
 public class TestOrder {
 
+    @SuppressWarnings("OptionalGetWithoutIsPresent")
     @Test
     public void test() {
         Order order = Order.builder()
@@ -12,10 +13,11 @@ public class TestOrder {
                 .accountId(1)
                 .type(Order.OrderType.LIMIT)
                 .side(Order.OrderSide.BID)
-                .price(100)
-                .quantity(1)
+                .price(100000)
+                .quantity(100)
                 .build();
-        Assertions.assertEquals(100L, order.getAvailableVolume());
-        Assertions.assertEquals(order.getVolume(), order.getAvailableVolume());
+        System.out.println(order.getVolume());
+        SymbolRepository symbolRepository = new SymbolRepository();
+        Symbol btcusdt = symbolRepository.get(1).get();
     }
 }

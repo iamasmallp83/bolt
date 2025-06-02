@@ -55,7 +55,7 @@ public class Symbol {
     }
 
     public long getVolume(long price, long quantity) {
-        return price * quantity / base.getMultiplier();
+        return Math.multiplyExact(price , quantity) / base.getMultiplier();
     }
 
 }
