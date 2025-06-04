@@ -7,6 +7,7 @@ import com.cmex.bolt.spot.repository.impl.CurrencyRepository;
 import com.cmex.bolt.spot.repository.impl.SymbolRepository;
 import com.cmex.bolt.spot.util.Result;
 import com.lmax.disruptor.RingBuffer;
+import lombok.Setter;
 
 import java.util.Collections;
 import java.util.Map;
@@ -19,7 +20,9 @@ public class AccountService {
 
     private final SymbolRepository symbolRepository;
 
+    @Setter
     private RingBuffer<Message> responseRingBuffer;
+    @Setter
     private RingBuffer<Message> matchRingBuffer;
 
     public AccountService() {
@@ -170,14 +173,6 @@ public class AccountService {
         Account account = optional.get();
         account.settle(cleared.payCurrencyId.get(), cleared.payAmount.get(), cleared.refundAmount.get(),
                 currencyRepository.get(cleared.incomeCurrencyId.get()).get(), cleared.incomeAmount.get());
-    }
-
-    public void setMatchRingBuffer(RingBuffer<Message> matchRingBuffer) {
-        this.matchRingBuffer = matchRingBuffer;
-    }
-
-    public void setResponseRingBuffer(RingBuffer<Message> responseRingBuffer) {
-        this.responseRingBuffer = responseRingBuffer;
     }
 
 }

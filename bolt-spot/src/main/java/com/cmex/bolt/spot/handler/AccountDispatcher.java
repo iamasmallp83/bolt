@@ -18,6 +18,7 @@ public class AccountDispatcher implements EventHandler<Message>, LifecycleAware 
     private final int partition;
 
     private final AccountService accountService;
+
     @Setter
     private List<MatchService> matchServices;
 
