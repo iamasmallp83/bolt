@@ -17,7 +17,8 @@ public class Message extends Struct {
 
     public final static EventFactory<Message> FACTORY = () -> {
         Message message = new Message();
-        message.setByteBuffer(ByteBuffer.allocate(message.size()), 0);
+        // 使用直接内存提升性能，减少GC压力
+        message.setByteBuffer(ByteBuffer.allocateDirect(message.size()), 0);
         return message;
     };
 

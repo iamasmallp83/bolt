@@ -41,24 +41,44 @@ public class MatchService {
         //start to match
         Optional<OrderBook> optional = orderBookRepository.get(placeOrder.symbolId.get());
         optional.ifPresentOrElse(orderBook -> {
-            Order order = getOrder(orderBook.getSymbol(), placeOrder);
+            // 使用OrderBook的对象池创建Order
+            Order order = orderBook.acquireAndInitOrder(
+                    generator.nextId(placeOrder.symbolId.get()),
+                    placeOrder.accountId.get(),
+                    placeOrder.type.get() == OrderType.LIMIT ? Order.OrderType.LIMIT : Order.OrderType.MARKET,
+                    placeOrder.side.get() == OrderSide.BID ? Order.OrderSide.BID : Order.OrderSide.ASK,
+                    placeOrder.price.get(),
+                    placeOrder.quantity.get(),
+                    placeOrder.volume.get(),
+                    placeOrder.frozen.get(),
+                    placeOrder.takerRate.get(),
+                    placeOrder.makerRate.get()
+            );
+            
             Result<List<Ticket>> result = orderBook.match(order);
             if (result.isSuccess()) {
                 long totalQuantity = 0;
                 long totalVolume = 0;
-                for (Ticket ticket : result.value()) {
+                List<Ticket> tickets = result.value();
+                
+                for (Ticket ticket : tickets) {
                     sequencerRingBuffer.publishEvent((message, sequence) -> {
                         setClearedMessage(ticket.getMaker(), false, ticket.getQuantity(), ticket.getVolume(), message);
                     });
                     totalQuantity += ticket.getQuantity();
                     totalVolume += ticket.getVolume();
                 }
+                
+                // 批量释放Ticket对象回池
+                orderBook.releaseTickets(tickets);
+                
                 long finalTotalQuantity = totalQuantity;
                 long finalTotalVolume = totalVolume;
                 sequencerRingBuffer.publishEvent((message, sequence) -> {
                     setClearedMessage(order, true, finalTotalQuantity, finalTotalVolume, message);
                 });
             }
+            
             responseRingBuffer.publishEvent((message, sequence) -> {
                 message.id.set(messageId);
                 message.type.set(EventType.ORDER_CREATED);
@@ -107,22 +127,6 @@ public class MatchService {
 
     public DepthDto getDepth(int symbolId) {
         return orderBookRepository.get(symbolId).map(OrderBook::getDepth).orElse(DepthDto.builder().build());
-    }
-
-    private Order getOrder(Symbol symbol, PlaceOrder placeOrder) {
-        return Order.builder()
-                .symbol(symbol)
-                .id(generator.nextId(placeOrder.symbolId.get()))
-                .accountId(placeOrder.accountId.get())
-                .type(placeOrder.type.get() == OrderType.LIMIT ? Order.OrderType.LIMIT : Order.OrderType.MARKET)
-                .side(placeOrder.side.get() == OrderSide.BID ? Order.OrderSide.BID : Order.OrderSide.ASK)
-                .price(placeOrder.price.get())
-                .quantity(placeOrder.quantity.get())
-                .volume(placeOrder.volume.get())
-                .frozen(placeOrder.frozen.get())
-                .takerRate(placeOrder.takerRate.get())
-                .makerRate(placeOrder.makerRate.get())
-                .build();
     }
 
     private void setClearedMessage(Order order, boolean isTaker, long quantity, long volume, Message message) {

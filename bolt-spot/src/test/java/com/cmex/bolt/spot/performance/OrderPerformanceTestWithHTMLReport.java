@@ -5,6 +5,8 @@ import com.cmex.bolt.spot.grpc.SpotServiceProto;
 import com.cmex.bolt.spot.util.CompletionTracker;
 import com.cmex.bolt.spot.util.FakeStreamObserver;
 import com.cmex.bolt.spot.util.HTMLReportGenerator;
+import com.cmex.bolt.spot.util.MemoryAnalyzer;
+import com.cmex.bolt.spot.util.MemoryLeakDetector;
 import com.google.common.base.Stopwatch;
 import org.junit.jupiter.api.Test;
 
@@ -32,6 +34,9 @@ public class OrderPerformanceTestWithHTMLReport {
         System.out.println("🚀 开始全面性能测试...");
         System.out.println("📊 将生成详细的HTML性能报告");
         
+        // 初始内存分析
+        MemoryAnalyzer.analyzeMemoryUsage("TEST_START");
+        
         // 预充值账户
         increase(service, 1, 1, "100000");
         increase(service, 1, 2, "100000");
@@ -42,22 +47,26 @@ public class OrderPerformanceTestWithHTMLReport {
         runLoadTest(reportGenerator, "轻负载测试", 1000, 2, 
                    "测试系统在轻负载下的基准性能");
 
-        // 重置系统状态
-        Thread.sleep(2000);
+        // 强制垃圾回收和内存分析
+        System.gc();
+        Thread.sleep(3000); // 给GC更多时间
+        MemoryAnalyzer.analyzeMemoryUsage("AFTER_LIGHT_LOAD_GC");
 
         // 测试2: 中等负载 - 10,000订单
         runLoadTest(reportGenerator, "中等负载测试", 10000, 4, 
                    "测试系统在中等负载下的性能表现");
 
-        // 重置系统状态
-        Thread.sleep(2000);
+        // 强制垃圾回收
+        System.gc();
+        Thread.sleep(3000);
 
         // 测试3: 高负载 - 50,000订单
         runLoadTest(reportGenerator, "高负载测试", 50000, 8, 
                    "测试系统在高负载下的性能极限");
 
-        // 重置系统状态
-        Thread.sleep(2000);
+        // 强制垃圾回收
+        System.gc();
+        Thread.sleep(3000);
 
         // 测试4: 极限负载 - 100,000订单
         runLoadTest(reportGenerator, "极限负载测试", 100000, 10, 

@@ -24,7 +24,18 @@ application {
 
 tasks.withType(Test) {
     useJUnitPlatform()
+    jvmArgs '-Xms4g', '-Xmx8g', '-XX:MaxDirectMemorySize=4g'
 }
+
+tasks.register('specificTest', Test) {
+    // 继承默认的测试配置
+    classpath = sourceSets.main.output + sourceSets.test.output + configurations.testRuntimeClasspath
+    testClassesDirs = sourceSets.test.output.classesDirs
+    // 设置特定 JVM 参数
+    jvmArgs '-Xms32g', '-Xmx32g', '-XX:MaxDirectMemorySize=4g', '-XX:+UseG1GC'
+    include 'com/cmex/bolt/spot/performance/OrderPerformanceTestWithHTMLReport'
+}
+
 
 task fatJar(type: Jar) {
     archiveFileName = 'bolt-spot-all-in-one.jar'
