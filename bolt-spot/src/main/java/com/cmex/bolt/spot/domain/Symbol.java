@@ -1,5 +1,7 @@
 package com.cmex.bolt.spot.domain;
 
+import com.cmex.bolt.spot.dto.DepthDto;
+import com.cmex.bolt.spot.util.OrderIdGenerator;
 import com.google.common.base.Strings;
 import lombok.Builder;
 import lombok.Data;
@@ -16,6 +18,12 @@ public class Symbol {
     private Currency quote;
 
     private boolean quoteSettlement;
+
+    private OrderBook orderBook;
+
+    public void init(){
+        orderBook = new OrderBook(this);
+    }
 
     public Currency getPayCurrency(Order.OrderSide side) {
         return side == Order.OrderSide.BID ? quote : base;
@@ -58,4 +66,7 @@ public class Symbol {
         return Math.multiplyExact(price , quantity) / base.getMultiplier();
     }
 
+    public DepthDto getDepth() {
+        return orderBook.getDepth();
+    }
 }

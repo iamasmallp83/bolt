@@ -8,12 +8,12 @@ public class CurrencyRepository extends HashMapRepository<Integer, Currency> {
         Currency usdt = Currency.builder()
                 .id(1)
                 .name("USDT")
-                .precision(8)
+                .precision(4)
                 .build();
         Currency btc = Currency.builder()
                 .id(2)
                 .name("BTC")
-                .precision(8)
+                .precision(6)
                 .build();
         Currency shib = Currency.builder()
                 .id(3)
@@ -23,7 +23,7 @@ public class CurrencyRepository extends HashMapRepository<Integer, Currency> {
         Currency eth = Currency.builder()
                 .id(4)
                 .name("ETH")
-                .precision(6)
+                .precision(4)
                 .build();
         holder.put(usdt.getId(), usdt);
         holder.put(btc.getId(), btc);

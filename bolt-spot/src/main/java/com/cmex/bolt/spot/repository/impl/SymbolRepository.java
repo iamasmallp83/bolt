@@ -6,26 +6,11 @@ import com.cmex.bolt.spot.domain.Symbol;
 public class SymbolRepository extends HashMapRepository<Integer, Symbol> {
 
     public SymbolRepository() {
-        Currency usdt = Currency.builder()
-                .id(1)
-                .name("USDT")
-                .precision(4)
-                .build();
-        Currency btc = Currency.builder()
-                .id(2)
-                .name("BTC")
-                .precision(6)
-                .build();
-        Currency shib = Currency.builder()
-                .id(3)
-                .name("SHIB")
-                .precision(0)
-                .build();
-        Currency eth = Currency.builder()
-                .id(4)
-                .name("ETH")
-                .precision(4)
-                .build();
+        CurrencyRepository currencyRepository = new CurrencyRepository();
+        Currency usdt = currencyRepository.get(1).get();
+        Currency btc = currencyRepository.get(2).get();
+        Currency shib = currencyRepository.get(3).get();
+        Currency eth = currencyRepository.get(4).get();
         Symbol btcusdt = Symbol.builder()
                 .id(1)
                 .name("BTCUSDT")
@@ -33,6 +18,8 @@ public class SymbolRepository extends HashMapRepository<Integer, Symbol> {
                 .quote(usdt)
                 .quoteSettlement(true)
                 .build();
+        btcusdt.init();
+
         Symbol shibusdt = Symbol.builder()
                 .id(2)
                 .name("SHIBUSDT")
@@ -40,6 +27,8 @@ public class SymbolRepository extends HashMapRepository<Integer, Symbol> {
                 .quote(usdt)
                 .quoteSettlement(true)
                 .build();
+        shibusdt.init();
+
         Symbol ehtusdt = Symbol.builder()
                 .id(3)
                 .name("ETHUSDT")
@@ -47,6 +36,8 @@ public class SymbolRepository extends HashMapRepository<Integer, Symbol> {
                 .quote(usdt)
                 .quoteSettlement(true)
                 .build();
+        ehtusdt.init();
+
         holder.put(btcusdt.getId(), btcusdt);
         holder.put(shibusdt.getId(), shibusdt);
         holder.put(ehtusdt.getId(), ehtusdt);

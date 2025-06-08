@@ -366,7 +366,7 @@ public class SpotServiceImpl extends SpotServiceImplBase {
         public void onEvent(Message message, long sequence, boolean endOfBatch) {
             long id = message.id.get();
             if (id > 0) {
-                StreamObserver<Object> observer = (StreamObserver<Object>) observers.get(id);
+                StreamObserver<Object> observer = (StreamObserver<Object>) observers.remove(id);
                 EventType type = message.type.get();
                 Object response = switch (type) {
                     case ORDER_CREATED -> message.payload.asOrderCreated.get();

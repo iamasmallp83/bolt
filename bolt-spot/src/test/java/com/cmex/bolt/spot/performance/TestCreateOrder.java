@@ -15,18 +15,18 @@ public class TestCreateOrder {
 
     @Test
     public void testCreateOrder() {
-        Stopwatch stopwatch = Stopwatch.createStarted();
-        List<Order> orders = new ArrayList<Order>(times);
-        for (int i = 0; i < times; i++) {
-            Order order = Order.builder().build();
-            orders.add(order);
-        }
-        System.out.println("elapsed : " + stopwatch.elapsed(TimeUnit.MILLISECONDS));
-        List<PlaceOrder> placeOrders = new ArrayList<PlaceOrder>(times);
-        for (int i = 0; i < times; i++) {
-            PlaceOrder order = new PlaceOrder();
-            placeOrders.add(order);
-        }
-        System.out.println("elapsed : " + stopwatch.elapsed(TimeUnit.MILLISECONDS));
+//        Stopwatch stopwatch = Stopwatch.createStarted();
+//        List<Order> orders = new ArrayList<Order>(times);
+//        for (int i = 0; i < times; i++) {
+//            Order order = Order.builder().build();
+//            orders.add(order);
+//        }
+//        System.out.println("elapsed : " + stopwatch.elapsed(TimeUnit.MILLISECONDS));
+//        List<PlaceOrder> placeOrders = new ArrayList<PlaceOrder>(times);
+//        for (int i = 0; i < times; i++) {
+//            PlaceOrder order = new PlaceOrder();
+//            placeOrders.add(order);
+//        }
+//        System.out.println("elapsed : " + stopwatch.elapsed(TimeUnit.MILLISECONDS));
     }
 }

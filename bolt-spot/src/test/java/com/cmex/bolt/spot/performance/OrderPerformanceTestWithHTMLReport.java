@@ -33,10 +33,10 @@ public class OrderPerformanceTestWithHTMLReport {
         System.out.println("📊 将生成详细的HTML性能报告");
         
         // 预充值账户
-        increase(service, 1, 1, "100000");
-        increase(service, 1, 2, "100000");
-        increase(service, 2, 1, "100000");
-        increase(service, 2, 2, "100000");
+        increase(service, 1, 1, "1000000000");  // 10亿
+        increase(service, 1, 2, "1000000000");  // 10亿  
+        increase(service, 2, 1, "1000000000");  // 10亿
+        increase(service, 2, 2, "1000000000");  // 10亿
 
         // 测试1: 轻负载 - 1,000订单
         runLoadTest(reportGenerator, "轻负载测试", 1000, 2, 

@@ -4,7 +4,6 @@ package com.cmex.bolt.spot.service;
 import com.cmex.bolt.spot.api.*;
 import com.cmex.bolt.spot.domain.*;
 import com.cmex.bolt.spot.dto.DepthDto;
-import com.cmex.bolt.spot.repository.impl.OrderBookRepository;
 import com.cmex.bolt.spot.repository.impl.SymbolRepository;
 import com.cmex.bolt.spot.util.OrderIdGenerator;
 import com.cmex.bolt.spot.util.Result;
@@ -25,12 +24,10 @@ public class MatchService {
     private final OrderIdGenerator generator;
 
     private final SymbolRepository symbolRepository;
-    private final OrderBookRepository orderBookRepository;
 
     public MatchService() {
         generator = new OrderIdGenerator();
         symbolRepository = new SymbolRepository();
-        orderBookRepository = new OrderBookRepository();
     }
 
     public Optional<Symbol> getSymbol(int symbolId) {
@@ -39,9 +36,10 @@ public class MatchService {
 
     public void on(long messageId, PlaceOrder placeOrder) {
         //start to match
-        Optional<OrderBook> optional = orderBookRepository.get(placeOrder.symbolId.get());
-        optional.ifPresentOrElse(orderBook -> {
-            Order order = getOrder(orderBook.getSymbol(), placeOrder);
+        Optional<Symbol> symbolOptional = symbolRepository.get(placeOrder.symbolId.get());
+        symbolOptional.ifPresentOrElse(symbol -> {
+            OrderBook orderBook = symbol.getOrderBook();
+            Order order = orderBook.getOrder(placeOrder);
             Result<List<Ticket>> result = orderBook.match(order);
             if (result.isSuccess()) {
                 long totalQuantity = 0;
@@ -74,8 +72,9 @@ public class MatchService {
     public void on(long messageId, CancelOrder cancelOrder) {
         long orderId = cancelOrder.orderId.get();
         int symbolId = OrderIdGenerator.getSymbolId(orderId);
-        Optional<OrderBook> optional = orderBookRepository.get(symbolId);
-        optional.ifPresentOrElse(orderBook -> {
+        Optional<Symbol> symbolOptional = symbolRepository.get(symbolId);
+        symbolOptional.ifPresentOrElse(symbol -> {
+            OrderBook orderBook = symbol.getOrderBook();
             Result<Order> result = orderBook.cancel(orderId);
             if (result.isSuccess()) {
                 sequencerRingBuffer.publishEvent((message, sequence) -> {
@@ -106,22 +105,16 @@ public class MatchService {
     }
 
     public DepthDto getDepth(int symbolId) {
-        return orderBookRepository.get(symbolId).map(OrderBook::getDepth).orElse(DepthDto.builder().build());
+        return symbolRepository.get(symbolId)
+                .map(Symbol::getDepth)
+                .orElse(createEmptyDepth());
     }
 
-    private Order getOrder(Symbol symbol, PlaceOrder placeOrder) {
-        return Order.builder()
-                .symbol(symbol)
-                .id(generator.nextId(placeOrder.symbolId.get()))
-                .accountId(placeOrder.accountId.get())
-                .type(placeOrder.type.get() == OrderType.LIMIT ? Order.OrderType.LIMIT : Order.OrderType.MARKET)
-                .side(placeOrder.side.get() == OrderSide.BID ? Order.OrderSide.BID : Order.OrderSide.ASK)
-                .price(placeOrder.price.get())
-                .quantity(placeOrder.quantity.get())
-                .volume(placeOrder.volume.get())
-                .frozen(placeOrder.frozen.get())
-                .takerRate(placeOrder.takerRate.get())
-                .makerRate(placeOrder.makerRate.get())
+    private DepthDto createEmptyDepth() {
+        return DepthDto.builder()
+                .symbol("")
+                .asks(new java.util.TreeMap<>())
+                .bids(new java.util.TreeMap<>())
                 .build();
     }
 
