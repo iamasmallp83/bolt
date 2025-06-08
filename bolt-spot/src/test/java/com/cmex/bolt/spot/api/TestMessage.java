@@ -8,14 +8,13 @@ public class TestMessage {
     public void testSize(){
         Message message = new Message();
         System.out.println(message.size());
-        PlaceOrder placeOrder = new PlaceOrder();
-        System.out.println(placeOrder.size());
-        CancelOrder cancelOrder = new CancelOrder();
-        System.out.println(cancelOrder.size());
-        Unfreeze unfreeze = new Unfreeze();
-        System.out.println(unfreeze.size());
-        Unfrozen unfrozen = new Unfrozen();
-        System.out.println(unfrozen.size());
+        message.type.set(EventType.PLACE_ORDER);
+        message.id.set(1);
+        Decrease decrease = message.payload.asDecrease;
+        decrease.accountId.set((short) 1);
+        decrease.currencyId.set((short) 1);
+        decrease.amount.set((short) 1);
+        System.out.println(message.size());
     }
 
     @Test

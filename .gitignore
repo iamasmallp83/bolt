@@ -36,3 +36,4 @@ journal.data
 tmp/
 temp/
 logs/
+bolt-spot/*.html
