@@ -48,13 +48,13 @@ public class SpotServiceImpl extends SpotServiceImplBase {
         // 使用2的幂次方大小以优化内存访问模式
         // YieldingWaitStrategy在高吞吐量场景下比BusySpinWaitStrategy更节省CPU
         Disruptor<Message> accountDisruptor =
-                new Disruptor<>(Message.FACTORY, 1024 * 64, DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(Message.FACTORY, 1024 * 512, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new YieldingWaitStrategy());
         Disruptor<Message> matchDisruptor =
-                new Disruptor<>(Message.FACTORY, 1024 * 32, DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(Message.FACTORY, 1024 * 256, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new YieldingWaitStrategy());
         Disruptor<Message> responseDisruptor =
-                new Disruptor<>(Message.FACTORY, 1024 * 16, DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(Message.FACTORY, 1024 * 256, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new YieldingWaitStrategy()); // Response通常是单生产者
         
         List<AccountDispatcher> accountDispatchers = createAccountDispatchers();
