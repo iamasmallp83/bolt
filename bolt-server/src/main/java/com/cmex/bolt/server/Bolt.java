@@ -1,6 +1,6 @@
 package com.cmex.bolt.server;
 
-import com.cmex.bolt.server.grpc.SpotServiceImpl;
+import com.cmex.bolt.server.grpc.EnvoyServer;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.UncaughtExceptionHandlers;
 import io.grpc.Server;
@@ -17,7 +17,7 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinWorkerThread;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class SpotServer {
+public class Bolt {
 
     public static void main(String[] args) throws IOException, InterruptedException {
         nettyServer(9090);
@@ -41,7 +41,7 @@ public class SpotServer {
                 .bossEventLoopGroup(boss)
                 .workerEventLoopGroup(worker)
                 .channelType(NioServerSocketChannel.class)
-                .addService(new SpotServiceImpl())
+                .addService(new EnvoyServer())
                 .flowControlWindow(NettyChannelBuilder.DEFAULT_FLOW_CONTROL_WINDOW);
         //使用worker执行操作
         builder.executor(MoreExecutors.directExecutor());

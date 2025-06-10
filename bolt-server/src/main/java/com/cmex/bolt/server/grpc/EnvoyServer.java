@@ -4,7 +4,7 @@ import com.cmex.bolt.server.api.*;
 import com.cmex.bolt.server.domain.Balance;
 import com.cmex.bolt.server.domain.Symbol;
 import com.cmex.bolt.server.dto.DepthDto;
-import com.cmex.bolt.server.grpc.Bolt.*;
+import com.cmex.bolt.server.grpc.Envoy.*;
 import com.cmex.bolt.server.handler.AccountDispatcher;
 import com.cmex.bolt.server.handler.MatchDispatcher;
 import com.cmex.bolt.server.monitor.RingBufferMonitor;
@@ -29,7 +29,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 
-public class SpotServiceImpl extends BoltServerGrpc.BoltServerImplBase {
+public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
     private final RingBuffer<Message> accountRingBuffer;
     private final AtomicLong requestId = new AtomicLong();
@@ -44,7 +44,7 @@ public class SpotServiceImpl extends BoltServerGrpc.BoltServerImplBase {
     private final BackpressureManager responseBackpressureManager;
     private final RingBufferMonitor ringBufferMonitor;
 
-    public SpotServiceImpl() {
+    public EnvoyServer() {
         observers = new ConcurrentHashMap<>();
         
         // 创建Disruptor - 优化配置以提升性能
@@ -167,13 +167,13 @@ public class SpotServiceImpl extends BoltServerGrpc.BoltServerImplBase {
 
     @Override
     public void getAccount(GetAccountRequest request, StreamObserver<GetAccountResponse> responseObserver) {
-        Map<Integer, Bolt.Balance> balances =
+        Map<Integer, Envoy.Balance> balances =
                 getAccountService(request.getAccountId()).getBalances(request.getAccountId(), request.getCurrencyId()).entrySet().stream()
                         .collect(Collectors.toMap(
                                 Map.Entry::getKey,
                                 entry -> {
                                     Balance balance = entry.getValue();
-                                    return Bolt.Balance.newBuilder()
+                                    return Envoy.Balance.newBuilder()
                                             .setCurrency(balance.getCurrency().getName())
                                             .setFrozen(balance.getFormatFrozen())
                                             .setAvailable(balance.getFormatAvailable())

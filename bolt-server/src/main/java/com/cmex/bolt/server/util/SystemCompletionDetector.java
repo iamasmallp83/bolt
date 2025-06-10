@@ -1,7 +1,6 @@
 package com.cmex.bolt.server.util;
 
-import com.cmex.bolt.server.grpc.SpotServiceImpl;
-import java.util.concurrent.TimeUnit;
+import com.cmex.bolt.server.grpc.EnvoyServer;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.List;
@@ -19,7 +18,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public class SystemCompletionDetector {
     
-    private final SpotServiceImpl service;
+    private final EnvoyServer service;
     private final List<BackpressureManager> backpressureManagers;
     
     // 核心计数器
@@ -45,12 +44,12 @@ public class SystemCompletionDetector {
     // 系统状态快照
     private volatile SystemStateSnapshot lastSnapshot;
     
-    public SystemCompletionDetector(SpotServiceImpl service) {
+    public SystemCompletionDetector(EnvoyServer service) {
         this(service, 120000, 100, 20); // 默认2分钟超时，100ms检查间隔，20次稳定检查
     }
     
-    public SystemCompletionDetector(SpotServiceImpl service, long maxWaitTimeMs, 
-                                   long checkIntervalMs, int stabilityThreshold) {
+    public SystemCompletionDetector(EnvoyServer service, long maxWaitTimeMs,
+                                    long checkIntervalMs, int stabilityThreshold) {
         this.service = service;
         this.maxWaitTimeMs = maxWaitTimeMs;
         this.checkIntervalMs = checkIntervalMs;

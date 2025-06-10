@@ -2,7 +2,7 @@
 
 using Java = import "/capnp/java.capnp";
 $Java.package("com.cmex.bolt.server.schema");
-$Java.outerClassname("Bolt");
+$Java.outerClassname("Nexus");
 
 # 基础枚举类型
 enum OrderSide {

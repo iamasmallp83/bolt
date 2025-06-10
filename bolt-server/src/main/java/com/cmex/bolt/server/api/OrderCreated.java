@@ -1,17 +1,17 @@
 package com.cmex.bolt.server.api;
 
-import com.cmex.bolt.server.grpc.Bolt;
+import com.cmex.bolt.server.grpc.Envoy;
 import javolution.io.Struct;
 
 import java.util.function.Supplier;
 
-public class OrderCreated extends Struct implements Supplier<Bolt.PlaceOrderResponse> {
+public class OrderCreated extends Struct implements Supplier<Envoy.PlaceOrderResponse> {
     public final Signed64 orderId = new Signed64();
 
     @Override
-    public Bolt.PlaceOrderResponse get() {
-        Bolt.Order order = Bolt.Order.newBuilder().setId(orderId.get()).build();
-        return Bolt.PlaceOrderResponse.newBuilder()
+    public Envoy.PlaceOrderResponse get() {
+        Envoy.Order order = Envoy.Order.newBuilder().setId(orderId.get()).build();
+        return Envoy.PlaceOrderResponse.newBuilder()
                 .setCode(1)
                 .setData(order)
                 .build();

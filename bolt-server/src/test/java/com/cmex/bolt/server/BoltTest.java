@@ -1,23 +1,23 @@
 package com.cmex.bolt.server;
 
-import com.cmex.bolt.server.grpc.SpotServiceImpl;
+import com.cmex.bolt.server.grpc.EnvoyServer;
 import com.cmex.bolt.server.util.BigDecimalUtil;
 import com.cmex.bolt.server.util.FakeStreamObserver;
-import com.cmex.bolt.server.util.SpotServiceUtil;
+import com.cmex.bolt.server.util.EnvoyUtil;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 
 import java.math.BigDecimal;
 import java.util.concurrent.CountDownLatch;
 
-import static com.cmex.bolt.server.grpc.Bolt.GetAccountRequest;
-import static com.cmex.bolt.server.grpc.Bolt.IncreaseRequest;
+import static com.cmex.bolt.server.grpc.Envoy.GetAccountRequest;
+import static com.cmex.bolt.server.grpc.Envoy.IncreaseRequest;
 
 /**
  * Unit test for simple App.
  */
-public class SpotTest {
-    public static SpotServiceImpl service = new SpotServiceImpl();
+public class BoltTest {
+    public static EnvoyServer service = new EnvoyServer();
 
     @BeforeAll
     public static void init() throws InterruptedException {
@@ -82,8 +82,8 @@ public class SpotTest {
             Assertions.assertTrue(BigDecimalUtil.eq(new BigDecimal(response.getData().getAvailable()), new BigDecimal("200000000000")));
             countDownLatch.countDown();
         }));
-        SpotServiceUtil.increase(service, 11, 1, "1");
-        SpotServiceUtil.increase(service, 12, 2, "1");
+        EnvoyUtil.increase(service, 11, 1, "1");
+        EnvoyUtil.increase(service, 12, 2, "1");
         countDownLatch.await();
         service.getAccount(GetAccountRequest.newBuilder().setAccountId(1).build(), FakeStreamObserver.of(response -> {
             Assertions.assertEquals(response.getCode(), 1);

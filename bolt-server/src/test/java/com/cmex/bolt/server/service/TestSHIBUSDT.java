@@ -1,7 +1,7 @@
 package com.cmex.bolt.server.service;
 
-import com.cmex.bolt.server.SpotTest;
-import com.cmex.bolt.server.grpc.Bolt;
+import com.cmex.bolt.server.BoltTest;
+import com.cmex.bolt.server.grpc.Envoy;
 import com.cmex.bolt.server.util.BigDecimalUtil;
 import com.cmex.bolt.server.util.FakeStreamObserver;
 import org.junit.jupiter.api.Assertions;
@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CountDownLatch;
 
-public class TestSHIBUSDT extends SpotTest {
+public class TestSHIBUSDT extends BoltTest {
 
     /**
      * Account 3 初始资产 100 usdt
@@ -24,12 +24,12 @@ public class TestSHIBUSDT extends SpotTest {
     @Test
     public void testShibUsdt() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(2);
-        service.placeOrder(Bolt.PlaceOrderRequest.newBuilder()
+        service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
                 .setRequestId(1)
                 .setSymbolId(2)
                 .setAccountId(4)
-                .setType(Bolt.PlaceOrderRequest.Type.LIMIT)
-                .setSide(Bolt.PlaceOrderRequest.Side.ASK)
+                .setType(Envoy.PlaceOrderRequest.Type.LIMIT)
+                .setSide(Envoy.PlaceOrderRequest.Side.ASK)
                 .setPrice("0.00000860")
                 .setQuantity("10000000")
                 .setTakerRate(200)
@@ -38,12 +38,12 @@ public class TestSHIBUSDT extends SpotTest {
             Assertions.assertTrue(response.getData().getId() > 0);
             latch.countDown();
         }));
-        service.placeOrder(Bolt.PlaceOrderRequest.newBuilder()
+        service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
                 .setRequestId(1)
                 .setSymbolId(2)
                 .setAccountId(3)
-                .setType(Bolt.PlaceOrderRequest.Type.LIMIT)
-                .setSide(Bolt.PlaceOrderRequest.Side.BID)
+                .setType(Envoy.PlaceOrderRequest.Type.LIMIT)
+                .setSide(Envoy.PlaceOrderRequest.Side.BID)
                 .setPrice("0.00000864")
                 .setQuantity("10000000")
                 .setTakerRate(200)
@@ -54,13 +54,13 @@ public class TestSHIBUSDT extends SpotTest {
         }));
         latch.await();
         Thread.sleep(1000);
-        service.getAccount(Bolt.GetAccountRequest.newBuilder().setAccountId(4).build(), FakeStreamObserver.of(response -> {
+        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(4).build(), FakeStreamObserver.of(response -> {
             System.out.println(response.getDataMap().get(1));
             System.out.println(response.getDataMap().get(3));
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "85.914"));
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(3).getAvailable(), "10000000"));
         }));
-        service.getAccount(Bolt.GetAccountRequest.newBuilder().setAccountId(3).build(), FakeStreamObserver.of(response -> {
+        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(3).build(), FakeStreamObserver.of(response -> {
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "13.828"));
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(3).getAvailable(), "10000000"));
         }));
@@ -80,12 +80,12 @@ public class TestSHIBUSDT extends SpotTest {
     @Test
     public void testShibUsdt1() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(2);
-        service.placeOrder(Bolt.PlaceOrderRequest.newBuilder()
+        service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
                 .setRequestId(1)
                 .setSymbolId(2)
                 .setAccountId(6)
-                .setType(Bolt.PlaceOrderRequest.Type.LIMIT)
-                .setSide(Bolt.PlaceOrderRequest.Side.ASK)
+                .setType(Envoy.PlaceOrderRequest.Type.LIMIT)
+                .setSide(Envoy.PlaceOrderRequest.Side.ASK)
                 .setPrice("0.00000860")
                 .setQuantity("10000000000")
                 .setTakerRate(200)
@@ -94,12 +94,12 @@ public class TestSHIBUSDT extends SpotTest {
             Assertions.assertTrue(response.getData().getId() > 0);
             latch.countDown();
         }));
-        service.placeOrder(Bolt.PlaceOrderRequest.newBuilder()
+        service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
                 .setRequestId(1)
                 .setSymbolId(2)
                 .setAccountId(5)
-                .setType(Bolt.PlaceOrderRequest.Type.LIMIT)
-                .setSide(Bolt.PlaceOrderRequest.Side.BID)
+                .setType(Envoy.PlaceOrderRequest.Type.LIMIT)
+                .setSide(Envoy.PlaceOrderRequest.Side.BID)
                 .setPrice("0.00000864")
                 .setQuantity("8000000000")
                 .setTakerRate(200)
@@ -110,13 +110,13 @@ public class TestSHIBUSDT extends SpotTest {
         }));
         latch.await();
         Thread.sleep(1000);
-        service.getAccount(Bolt.GetAccountRequest.newBuilder().setAccountId(5).build(), FakeStreamObserver.of(response -> {
+        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(5).build(), FakeStreamObserver.of(response -> {
             System.out.println(response.getDataMap().get(1));
             System.out.println(response.getDataMap().get(3));
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "9931062.4"));
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(3).getAvailable(), "8000000000"));
         }));
-        service.getAccount(Bolt.GetAccountRequest.newBuilder().setAccountId(6).build(), FakeStreamObserver.of(response -> {
+        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(6).build(), FakeStreamObserver.of(response -> {
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "68731.2"));
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(3).getAvailable(), "190000000000"));
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(3).getFrozen(), "2000000000"));

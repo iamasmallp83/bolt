@@ -1,7 +1,7 @@
 package com.cmex.bolt.server.performance;
 
-import com.cmex.bolt.server.grpc.SpotServiceImpl;
-import com.cmex.bolt.server.grpc.Bolt;
+import com.cmex.bolt.server.grpc.EnvoyServer;
+import com.cmex.bolt.server.grpc.Envoy;
 import com.cmex.bolt.server.util.BigDecimalUtil;
 import com.cmex.bolt.server.util.FakeStreamObserver;
 import com.google.common.base.Stopwatch;
@@ -13,14 +13,14 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static com.cmex.bolt.server.grpc.Bolt.PlaceOrderRequest;
-import static com.cmex.bolt.server.util.SpotServiceUtil.*;
+import static com.cmex.bolt.server.grpc.Envoy.PlaceOrderRequest;
+import static com.cmex.bolt.server.util.EnvoyUtil.*;
 
 /**
  * Unit test for simple App.
  */
-public class TestAccount {
-    private static final SpotServiceImpl service = new SpotServiceImpl();
+public class AccountPerformance {
+    private static final EnvoyServer service = new EnvoyServer();
 
     @Test
     public void testIncrease() throws InterruptedException {
@@ -39,7 +39,7 @@ public class TestAccount {
         AtomicBoolean running = new AtomicBoolean(true);
         while (running.get()) {
             getAccount(service, times, new FakeStreamObserver<>(response -> {
-                Bolt.Balance balance = response.getDataMap().get(1);
+                Envoy.Balance balance = response.getDataMap().get(1);
                 if (balance != null) {
                     running.set(!BigDecimalUtil.eq(balance.getAvailable(), "1"));
                 }
@@ -60,7 +60,7 @@ public class TestAccount {
     }
 
     public static void placeOrder(int symbolId, int accountId, PlaceOrderRequest.Type type, PlaceOrderRequest.Side side,
-                                  String price, String quantity, FakeStreamObserver<Bolt.PlaceOrderResponse> observer) {
+                                  String price, String quantity, FakeStreamObserver<Envoy.PlaceOrderResponse> observer) {
         service.placeOrder(PlaceOrderRequest.newBuilder()
                 .setRequestId(1)
                 .setSymbolId(symbolId)

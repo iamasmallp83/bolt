@@ -1,14 +1,14 @@
 package com.cmex.bolt.server.api;
 
-import com.cmex.bolt.server.grpc.Bolt;
+import com.cmex.bolt.server.grpc.Envoy;
 import javolution.io.Struct;
 
 import java.util.function.Supplier;
 
-public class OrderCanceled extends Struct  implements Supplier<Bolt.CancelOrderResponse> {
+public class OrderCanceled extends Struct  implements Supplier<Envoy.CancelOrderResponse> {
 
     @Override
-    public Bolt.CancelOrderResponse get() {
-        return Bolt.CancelOrderResponse.newBuilder().setCode(1).build();
+    public Envoy.CancelOrderResponse get() {
+        return Envoy.CancelOrderResponse.newBuilder().setCode(1).build();
     }
 }

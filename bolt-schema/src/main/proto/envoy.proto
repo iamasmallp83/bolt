@@ -1,6 +1,6 @@
 syntax = "proto3";
 option java_package = "com.cmex.bolt.server.grpc";
-option java_outer_classname = "Bolt";
+option java_outer_classname = "Envoy";
 
 message Balance{
   string currency = 1;
@@ -125,7 +125,7 @@ message Depth{
   map<string, string> bids = 3;
 }
 
-service BoltServer {
+service EnvoyServer {
   rpc getAccount (GetAccountRequest) returns (GetAccountResponse) {}
   rpc increase (IncreaseRequest) returns (IncreaseResponse) {}
   rpc decrease (DecreaseRequest) returns (DecreaseResponse) {}

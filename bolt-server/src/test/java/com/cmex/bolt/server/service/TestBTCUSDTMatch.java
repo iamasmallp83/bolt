@@ -1,7 +1,7 @@
 package com.cmex.bolt.server.service;
 
-import com.cmex.bolt.server.SpotTest;
-import com.cmex.bolt.server.grpc.Bolt;
+import com.cmex.bolt.server.BoltTest;
+import com.cmex.bolt.server.grpc.Envoy;
 import com.cmex.bolt.server.util.BigDecimalUtil;
 import com.cmex.bolt.server.util.FakeStreamObserver;
 import org.junit.jupiter.api.Assertions;
@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CountDownLatch;
 
-public class TestBTCUSDTMatch extends SpotTest {
+public class TestBTCUSDTMatch extends BoltTest {
 
     /**
      * Account 1 初始资产 10000 usdt
@@ -24,24 +24,24 @@ public class TestBTCUSDTMatch extends SpotTest {
     @Test
     public void testBtcUsdt() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(2);
-        service.placeOrder(Bolt.PlaceOrderRequest.newBuilder()
+        service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
                 .setRequestId(1)
                 .setSymbolId(1)
                 .setAccountId(1)
-                .setType(Bolt.PlaceOrderRequest.Type.LIMIT)
-                .setSide(Bolt.PlaceOrderRequest.Side.BID)
+                .setType(Envoy.PlaceOrderRequest.Type.LIMIT)
+                .setSide(Envoy.PlaceOrderRequest.Side.BID)
                 .setPrice("1")
                 .setQuantity("1")
                 .build(), FakeStreamObserver.of(response -> {
             Assertions.assertTrue(response.getData().getId() > 0);
             latch.countDown();
         }));
-        service.placeOrder(Bolt.PlaceOrderRequest.newBuilder()
+        service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
                 .setRequestId(1)
                 .setSymbolId(1)
                 .setAccountId(2)
-                .setType(Bolt.PlaceOrderRequest.Type.LIMIT)
-                .setSide(Bolt.PlaceOrderRequest.Side.ASK)
+                .setType(Envoy.PlaceOrderRequest.Type.LIMIT)
+                .setSide(Envoy.PlaceOrderRequest.Side.ASK)
                 .setPrice("1")
                 .setQuantity("1")
                 .build(), FakeStreamObserver.of(response -> {
@@ -50,11 +50,11 @@ public class TestBTCUSDTMatch extends SpotTest {
         }));
         latch.await();
         Thread.sleep(1000);
-        service.getAccount(Bolt.GetAccountRequest.newBuilder().setAccountId(1).build(), FakeStreamObserver.of(response -> {
+        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(1).build(), FakeStreamObserver.of(response -> {
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "9999"));
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(2).getAvailable(), "1"));
         }));
-        service.getAccount(Bolt.GetAccountRequest.newBuilder().setAccountId(2).build(), FakeStreamObserver.of(response -> {
+        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(2).build(), FakeStreamObserver.of(response -> {
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "1"));
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(2).getAvailable(), "99"));
         }));
