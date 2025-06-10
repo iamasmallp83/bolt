@@ -1,0 +1,137 @@
+syntax = "proto3";
+option java_package = "com.cmex.bolt";
+option java_outer_classname = "Envoy";
+
+message Balance{
+  string currency = 1;
+  string value = 2;
+  string frozen = 3;
+  string available = 4;
+}
+
+message Order{
+  sint64 id = 1;
+}
+
+message GetAccountRequest {
+  sint32  accountId = 1;
+  sint32  currencyId = 2;
+}
+message GetAccountResponse {
+  sint32  code = 1;
+  optional string  message = 2;
+  map<sint32, Balance> data = 3;
+}
+
+message IncreaseRequest {
+  sint64  requestId = 1;
+  sint32  accountId = 2;
+  sint32  currencyId = 3;
+  string  amount = 4;
+}
+
+message IncreaseResponse{
+  sint32  code = 1;
+  optional string  message = 2;
+  optional Balance data = 3;
+}
+
+message DecreaseRequest {
+  sint64  requestId = 1;
+  sint32  accountId = 2;
+  sint32  currencyId = 3;
+  string  amount = 4;
+}
+
+message DecreaseResponse{
+  sint32  code = 1;
+  optional string  message = 2;
+  optional Balance data = 3;
+}
+
+//message FreezeRequest {
+//  sint64  requestId = 1;
+//  sint32  accountId = 2;
+//  sint32  currencyId = 3;
+//  sint64  amount = 4;
+//}
+//
+//message FreezeResponse{
+//  sint32  code = 1;
+//  optional string  message = 2;
+//  optional Balance data = 3;
+//}
+//
+//message UnfreezeRequest {
+//  sint64  requestId = 1;
+//  sint32  freezeId = 2;
+//  sint64  amount = 3;
+//}
+//message UnfreezeResponse {
+//  sint32  code = 1;
+//  optional string  message = 2;
+//  optional Balance data = 3;
+//}
+
+message PlaceOrderRequest{
+  sint64 requestId = 1;
+  sint32 symbolId = 2;
+  sint32 accountId = 3;
+  enum Type{
+    LIMIT = 0;
+    MARKET = 1;
+  }
+  Type type = 4;
+  enum Side{
+    BID = 0;
+    ASK = 1;
+  }
+  Side side = 5;
+  optional string price = 6;
+  optional string quantity = 7;
+  optional string volume = 8;
+  optional sint32 takerRate = 9;
+  optional sint32 makerRate = 10;
+}
+
+message PlaceOrderResponse{
+  sint32  code = 1;
+  optional string  message = 2;
+  optional Order data = 3;
+}
+
+message CancelOrderRequest{
+  sint64 orderId = 1;
+}
+
+message CancelOrderResponse{
+  sint32 code = 1;
+  optional string  message = 2;
+}
+
+message GetDepthRequest{
+  sint32 symbolId = 1;
+}
+
+message GetDepthResponse{
+  sint32 code = 1;
+  optional string  message = 2;
+  Depth data = 3;
+}
+
+message Depth{
+  string symbol = 1;
+  map<string, string> asks = 2;
+  map<string, string> bids = 3;
+}
+
+service EnvoyServer {
+  rpc getAccount (GetAccountRequest) returns (GetAccountResponse) {}
+  rpc increase (IncreaseRequest) returns (IncreaseResponse) {}
+  rpc decrease (DecreaseRequest) returns (DecreaseResponse) {}
+  //  rpc freeze (FreezeRequest) returns (FreezeResponse) {}
+  //  rpc unfreeze (UnfreezeRequest) returns (UnfreezeResponse) {}
+  rpc placeOrder (PlaceOrderRequest) returns (PlaceOrderResponse) {}
+  rpc cancelOrder (CancelOrderRequest) returns (CancelOrderResponse) {}
+  rpc getDepth (GetDepthRequest) returns (GetDepthResponse) {}
+}

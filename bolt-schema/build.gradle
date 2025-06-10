@@ -7,7 +7,7 @@ dependencies {
     api "io.grpc:grpc-netty-shaded:${versions.grpc}"
     api "io.grpc:grpc-protobuf:${versions.grpc}"
     api "io.grpc:grpc-stub:${versions.grpc}"
-    api 'org.capnproto:runtime:0.1.5'
+    api 'org.capnproto:runtime:0.1.15'
     compileOnly "org.apache.tomcat:annotations-api:${versions.annotationsApi}"
 
     testImplementation "org.junit.jupiter:junit-jupiter-engine:${versions.junit}"
@@ -39,70 +39,61 @@ protobuf {
 
 
 // Cap'n Proto 编译任务
-task compileCapnp(type: Exec) {
+tasks.register('generateCapnp', Exec) {
     description = '编译Cap\'n Proto schema文件生成Java代码'
     group = 'build'
-    
+
     // Cap'n Proto 文件的源目录
     def capnpSrcDir = file('src/main/capnp')
     // 生成 Java 代码的输出目录 - 修正为标准Maven目录结构
     def outputDir = file('build/generated/source/capnp/main/java')
-    
-    // 输入输出声明
+
+    //输入输出声明
     inputs.dir capnpSrcDir
     outputs.dir outputDir
-    
+
     // 确保输出目录存在
     doFirst {
         delete outputDir
         outputDir.mkdirs()
-        
+
         // 获取所有 .capnp 文件
         def capnpFiles = fileTree(capnpSrcDir).include('**/*.capnp').files
         if (capnpFiles.empty) {
             throw new GradleException("没有找到.capnp文件在 ${capnpSrcDir}")
         }
-        
+
         // 切换到项目根目录，使用相对路径
         workingDir project.projectDir
-        
+
         // 构建 capnp 编译命令 - 使用相对路径
         def relativeSrcDir = 'src/main/capnp'
         def relativeFiles = capnpFiles.collect { relativeSrcDir + '/' + it.name }
-        commandLine = ['capnp', 'compile', '-ojava:' + outputDir.absolutePath, '--src-prefix=' + relativeSrcDir] + relativeFiles
-        
-        println "Cap'n Proto 编译命令: ${commandLine.join(' ')}"
-        println "工作目录: ${project.projectDir}"
+        commandLine = ['capnp', 'compile', '-ojava:' + outputDir.absolutePath, '--src-prefix=' + relativeSrcDir] + relativeFiles as List<String>
+
     }
-    
+
     // 错误处理
     ignoreExitValue = false
-    
+
     doLast {
         // 移动生成的文件到正确的包路径
-        def srcFile = new File(outputDir, 'CapnpMessage.java')
-        def targetDir = new File(outputDir, 'com/cmex/bolt/spot')
-        def targetFile = new File(targetDir, 'CapnpMessage.java')
-        
+        def srcFile = new File(outputDir, 'Bolt.java')
+        def targetDir = new File(outputDir, 'com/cmex/bolt/')
+        def targetFile = new File(targetDir, 'Envoy.java')
         if (srcFile.exists()) {
             targetDir.mkdirs()
             if (targetFile.exists()) {
                 targetFile.delete()
             }
             srcFile.renameTo(targetFile)
-            println "移动文件: ${srcFile.absolutePath} -> ${targetFile.absolutePath}"
         }
-        
-        println "Cap'n Proto 编译成功: 生成文件在 ${outputDir}"
     }
 }
 
 // 将生成的 Java 代码目录添加到源集
 sourceSets {
     main {
-        proto {
-            srcDir 'src/main/proto'
-        }
         resources {
             exclude '**/*.proto'  // 关键：禁止复制 proto 文件到资源目录
         }
@@ -115,4 +106,4 @@ sourceSets {
 }
 
 // 确保在 compileJava 任务之前运行编译任务
-compileJava.dependsOn compileCapnp,generateProto
+compileJava.dependsOn generateCapnp,generateProto
