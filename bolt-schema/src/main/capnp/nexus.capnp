@@ -1,7 +1,7 @@
 @0x9eb32e19f86ee174;
 
 using Java = import "/capnp/java.capnp";
-$Java.package("com.cmex.bolt.server.schema");
+$Java.package("com.cmex.bolt");
 $Java.outerClassname("Nexus");
 
 # 基础枚举类型
@@ -36,19 +36,13 @@ enum EventType {
 }
 
 enum RejectionReason {
-  insufficientBalance @0;
-  invalidSymbol @1;
-  invalidPrice @2;
-  invalidQuantity @3;
-  orderNotFound @4;
-  accountNotFound @5;
-  marketClosed @6;
-  systemError @7;
-  riskControlRejection @8;
-  duplicateOrder @9;
-  positionLimitExceeded @10;
-  dailyLimitExceeded @11;
-  blacklistedAccount @12;
+  systemBusy @0;
+  currencyNotExist @1;
+  accountNotFound @2;
+  balanceNotEnough @3;
+  symbolNotExist @4;
+  orderNotExist @5;
+  orderNotMatch @6;
 }
 
 # 订单相关结构

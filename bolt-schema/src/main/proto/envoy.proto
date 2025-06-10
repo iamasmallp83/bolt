@@ -1,5 +1,5 @@
 syntax = "proto3";
-option java_package = "com.cmex.bolt.server.grpc";
+option java_package = "com.cmex.bolt";
 option java_outer_classname = "Envoy";
 
 message Balance{

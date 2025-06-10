@@ -79,7 +79,7 @@ tasks.register('generateCapnp', Exec) {
     doLast {
         // 移动生成的文件到正确的包路径
         def srcFile = new File(outputDir, 'Bolt.java')
-        def targetDir = new File(outputDir, 'com/cmex/bolt/server/schema')
+        def targetDir = new File(outputDir, 'com/cmex/bolt/')
         def targetFile = new File(targetDir, 'Envoy.java')
         if (srcFile.exists()) {
             targetDir.mkdirs()
