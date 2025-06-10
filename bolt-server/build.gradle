@@ -27,6 +27,18 @@ task runSimpleCapnProtoExample(type: JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.cmex.bolt.spot.example.SimpleCapnProtoExample'
 }
+
+task runTransferExample(type: JavaExec) {
+    description = '运行Transfer使用示例'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.cmex.bolt.example.TransferUsageExample'
+}
+
+task runNexusEventExample(type: JavaExec) {
+    description = '运行NexusEvent创建和使用示例'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.cmex.bolt.example.NexusEventExample'
+}
 // 常规测试任务 - 使用默认内存配置
 test {
     useJUnitPlatform()

@@ -4,6 +4,7 @@ import com.cmex.bolt.Envoy;
 import com.cmex.bolt.Nexus;
 import com.cmex.bolt.domain.Balance;
 import com.cmex.bolt.domain.Symbol;
+import com.cmex.bolt.domain.Transfer;
 import com.cmex.bolt.dto.DepthDto;
 import com.cmex.bolt.Envoy.*;
 import com.cmex.bolt.EnvoyServerGrpc;
@@ -41,16 +42,17 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
     private final List<AccountService> accountServices;
     private final List<MatchService> matchServices;
-    
+
     // 背压管理器
     private final BackpressureManager accountBackpressureManager;
     private final BackpressureManager matchBackpressureManager;
     private final BackpressureManager responseBackpressureManager;
     private final RingBufferMonitor ringBufferMonitor;
+    private final Transfer transfer = new Transfer();
 
     public EnvoyServer() {
         observers = new ConcurrentHashMap<>();
-        
+
         // 创建Disruptor - 优化配置以提升性能
         // 使用2的幂次方大小以优化内存访问模式
         // YieldingWaitStrategy在高吞吐量场景下比BusySpinWaitStrategy更节省CPU
@@ -63,29 +65,29 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         Disruptor<NexusWrapper> responseDisruptor =
                 new Disruptor<>(new NexusWrapper.Factory(128), 1024 * 256, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new YieldingWaitStrategy()); // Response通常是单生产者
-        
+
         List<AccountDispatcher> accountDispatchers = createAccountDispatchers();
         List<MatchDispatcher> matchDispatchers = createMatchDispatchers();
         matchDisruptor.handleEventsWith(matchDispatchers.toArray(new MatchDispatcher[0]));
         responseDisruptor.handleEventsWith(new ResponseEventHandler());
         accountDisruptor.handleEventsWith(accountDispatchers.toArray(new AccountDispatcher[0]));
-        
+
         accountRingBuffer = accountDisruptor.start();
         RingBuffer<NexusWrapper> matchRingBuffer = matchDisruptor.start();
         RingBuffer<NexusWrapper> responseRingBuffer = responseDisruptor.start();
-        
+
         // 初始化背压管理器
         accountBackpressureManager = new BackpressureManager("Account", accountRingBuffer);
         matchBackpressureManager = new BackpressureManager("Match", matchRingBuffer);
         responseBackpressureManager = new BackpressureManager("Response", responseRingBuffer);
-        
+
         // 初始化监控器
         ringBufferMonitor = new RingBufferMonitor(5000); // 5秒报告一次
         ringBufferMonitor.addManager(accountBackpressureManager);
         ringBufferMonitor.addManager(matchBackpressureManager);
         ringBufferMonitor.addManager(responseBackpressureManager);
         ringBufferMonitor.startMonitoring();
-        
+
         matchServices = new ArrayList<>(10);
         for (MatchDispatcher dispatcher : matchDispatchers) {
             dispatcher.getMatchService().setSequencerRingBuffer(accountRingBuffer);
@@ -203,10 +205,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
             long id = requestId.incrementAndGet();
             observers.put(id, responseObserver);
             accountRingBuffer.publishEvent((wrapper, sequence) -> {
-                MessageBuilder messageBuilder = new MessageBuilder();
-                Nexus.Increase.Builder increase = messageBuilder.initRoot(Nexus.Increase.factory);
-                increase.setAccountId(request.getAccountId());
-                increase.setAmount(currency.parse(request.getAmount()));
+                transfer.write(request, wrapper.getBuffer());
             });
         }, () -> {
             IncreaseResponse response = IncreaseResponse.newBuilder()
@@ -247,11 +246,11 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
             handleSystemBusy(responseObserver, "PLACE_ORDER");
             return;
         }
-        
+
         // 如果是高负载，输出警告日志
         if (result == BackpressureManager.BackpressureResult.HIGH_LOAD) {
-            System.out.printf("WARNING: Account RingBuffer usage is high: %.2f%%%n", 
-                accountBackpressureManager.getCurrentUsageRate() * 100);
+            System.out.printf("WARNING: Account RingBuffer usage is high: %.2f%%%n",
+                    accountBackpressureManager.getCurrentUsageRate() * 100);
         }
 
         getSymbol(request.getSymbolId()).ifPresentOrElse(symbol -> {

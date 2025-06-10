@@ -14,7 +14,6 @@ public class TestMessage {
         MessageBuilder messageBuilder = new MessageBuilder();
         Nexus.NexusEvent.Builder event = messageBuilder.initRoot(Nexus.NexusEvent.factory);
         event.setId(1);
-        event.setType(Nexus.EventType.CANCEL_ORDER);
         Nexus.Payload.Builder payload = event.getPayload();
         Nexus.CancelOrder.Builder cancel = payload.initCancelOrder();
         cancel.setOrderId(666666);

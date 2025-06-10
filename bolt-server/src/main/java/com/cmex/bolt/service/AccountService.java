@@ -80,7 +80,7 @@ public class AccountService {
         });
     }
 
-    public void on(long messageId, Nexus.Increase increase) {
+    public void on(long messageId, Nexus.Increase.Reader increase) {
         int accountId = 0;
         Account account = accountRepository.getOrCreate(accountId, new Account(accountId));
         //前置已经检查币种存在
@@ -130,7 +130,7 @@ public class AccountService {
         return null;
     }
 
-    private void handleCurrencyPresent(long messageId, Nexus.Increase increase, Account account, Currency currency) {
+    private void handleCurrencyPresent(long messageId, Nexus.Increase.Reader increase, Account account, Currency currency) {
         Result<Balance> result = account.increase(currency, 0);//increase.amount.get());
         publishIncreasedEvent(messageId, result.value());
     }

@@ -163,36 +163,34 @@ struct Cleared {
   version @3 :Int64;
 }
 
-struct TryEvent {
-  # Empty for now
+struct EmptyEvent {
 }
 
 # 联合类型：NexusEvent
 struct Payload {
   union {
-    placeOrder @0 :PlaceOrder;
-    cancelOrder @1 :CancelOrder;
-    orderCreated @2 :OrderCreated;
-    orderCanceled @3 :OrderCanceled;
-    placeOrderRejected @4 :PlaceOrderRejected;
-    cancelOrderRejected @5 :CancelOrderRejected;
-    increase @6 :Increase;
-    increased @7 :Increased;
-    increaseRejected @8 :IncreaseRejected;
-    decrease @9 :Decrease;
-    decreased @10 :Decreased;
-    decreaseRejected @11 :DecreaseRejected;
-    freeze @12 :Freeze;
-    unfreeze @13 :Unfreeze;
-    unfrozen @14 :Unfrozen;
-    cleared @15 :Cleared;
-    tryEvent @16 :TryEvent;
+    empty @0 :EmptyEvent;
+    placeOrder @1 :PlaceOrder;
+    cancelOrder @2 :CancelOrder;
+    orderCreated @3 :OrderCreated;
+    orderCanceled @4 :OrderCanceled;
+    placeOrderRejected @5 :PlaceOrderRejected;
+    cancelOrderRejected @6 :CancelOrderRejected;
+    increase @7 :Increase;
+    increased @8 :Increased;
+    increaseRejected @9 :IncreaseRejected;
+    decrease @10 :Decrease;
+    decreased @11 :Decreased;
+    decreaseRejected @12 :DecreaseRejected;
+    freeze @13 :Freeze;
+    unfreeze @14 :Unfreeze;
+    unfrozen @15 :Unfrozen;
+    cleared @16 :Cleared;
   }
 }
 
 # 顶层消息结构
 struct NexusEvent {
-  type @0 :EventType;
-  id @1 :Int64;
-  payload @2 :Payload;
+  id @0 :Int64;
+  payload @1 :Payload;
 }

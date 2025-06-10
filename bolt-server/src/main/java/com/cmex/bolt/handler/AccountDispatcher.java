@@ -1,6 +1,8 @@
 package com.cmex.bolt.handler;
 
+import com.cmex.bolt.Nexus;
 import com.cmex.bolt.core.NexusWrapper;
+import com.cmex.bolt.domain.Transfer;
 import com.cmex.bolt.service.AccountService;
 import com.cmex.bolt.service.MatchService;
 import com.cmex.bolt.util.OrderIdGenerator;
@@ -8,6 +10,7 @@ import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
 import lombok.Getter;
 import lombok.Setter;
+import org.capnproto.StructReader;
 
 import java.util.List;
 
@@ -21,21 +24,25 @@ public class AccountDispatcher implements EventHandler<NexusWrapper>, LifecycleA
     @Setter
     private List<MatchService> matchServices;
 
+    private final Transfer transfer;
+
     public AccountDispatcher(int amount, int partition) {
         this.amount = amount;
         this.partition = partition;
         this.accountService = new AccountService();
+        this.transfer = new Transfer();
     }
 
     public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) {
-//        EventType type = message.type.get();
-//        switch (type) {
-//            case INCREASE:
-//                Increase increase = message.payload.asIncrease;
-//                if (partition == increase.accountId.get() % 10) {
-//                    accountService.on(message.id.get(), increase);
-//                }
-//                break;
+        Nexus.NexusEvent.Reader reader = transfer.to(wrapper.getBuffer());
+        Nexus.Payload.Reader payload = reader.getPayload();
+        switch (payload.which()) {
+            case INCREASE:
+                Nexus.Increase.Reader increase = reader.getPayload().getIncrease();
+                if (partition == increase.getAccountId() % 10) {
+                    accountService.on(0L, increase);
+                }
+                break;
 //            case DECREASE:
 //                Decrease decrease = message.payload.asDecrease;
 //                if (partition == decrease.accountId.get() % 10) {
@@ -64,9 +71,9 @@ public class AccountDispatcher implements EventHandler<NexusWrapper>, LifecycleA
 //                int symbolId = OrderIdGenerator.getSymbolId(message.payload.asCancelOrder.orderId.get());
 //                matchServices.get(symbolId % 10).on(message.id.get(), message.payload.asCancelOrder);
 //                break;
-//            default:
-//                break;
-//        }
+            default:
+                break;
+        }
     }
 
     @Override
