@@ -167,8 +167,8 @@ struct TryEvent {
   # Empty for now
 }
 
-# 联合类型：SpotEvent
-struct SpotEvent {
+# 联合类型：NexusEvent
+struct Payload {
   union {
     placeOrder @0 :PlaceOrder;
     cancelOrder @1 :CancelOrder;
@@ -191,9 +191,8 @@ struct SpotEvent {
 }
 
 # 顶层消息结构
-struct Event {
+struct NexusEvent {
   type @0 :EventType;
   id @1 :Int64;
-  payload @2 :SpotEvent;
-  timestamp @3 :Int64;  # 添加时间戳
+  payload @2 :Payload;
 }

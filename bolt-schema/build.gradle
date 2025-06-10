@@ -7,7 +7,7 @@ dependencies {
     api "io.grpc:grpc-netty-shaded:${versions.grpc}"
     api "io.grpc:grpc-protobuf:${versions.grpc}"
     api "io.grpc:grpc-stub:${versions.grpc}"
-    api 'org.capnproto:runtime:0.1.5'
+    api 'org.capnproto:runtime:0.1.15'
     compileOnly "org.apache.tomcat:annotations-api:${versions.annotationsApi}"
 
     testImplementation "org.junit.jupiter:junit-jupiter-engine:${versions.junit}"
