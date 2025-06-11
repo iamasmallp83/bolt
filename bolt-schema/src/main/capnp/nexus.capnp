@@ -126,19 +126,14 @@ struct Decrease {
 }
 
 struct Decreased {
-  accountId @0 :Int32;
+  currency @0 :Text;
   amount @1 :Int64;
-  newBalance @2 :Int64;
-  availableBalance @3 :Int64;
-  frozenBalance @4 :Int64;
-  version @5 :Int64;
+  available @2 :Int64;
+  frozen @3 :Int64;
 }
 
 struct DecreaseRejected {
-  accountId @0 :Int32;
-  amount @1 :Int64;
-  reason @2 :RejectionReason;
-  message @3 :Text;
+  reason @0 :RejectionReason;
 }
 
 struct Freeze {

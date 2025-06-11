@@ -42,11 +42,9 @@ public class AccountDispatcher implements EventHandler<NexusWrapper>, LifecycleA
                 Nexus.Increase.Reader increase = reader.getPayload().getIncrease();
                 accountService.on(wrapper.getId(), increase);
                 break;
-//            case DECREASE:
-//                Decrease decrease = message.payload.asDecrease;
-//                if (partition == decrease.accountId.get() % 10) {
-//                    accountService.on(message.id.get(), decrease);
-//                }
+            case DECREASE:
+                Nexus.Decrease.Reader decrease = reader.getPayload().getDecrease();
+                accountService.on(wrapper.getId(), decrease);
 //                break;
 //            case CLEARED:
 //                Cleared cleared = message.payload.asCleared;

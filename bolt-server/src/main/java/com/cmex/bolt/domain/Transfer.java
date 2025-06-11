@@ -90,21 +90,25 @@ public class Transfer {
     }
 
     //
-    public void write(Envoy.CancelOrderRequest request, ByteBuf buffer) {
+    public void write(Nexus.EventType failed, Nexus.RejectionReason reason, ByteBuf buffer) {
         MessageBuilder messageBuilder = new MessageBuilder();
         Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
-        Nexus.CancelOrder.Builder cancelOrder = builder.getPayload().initCancelOrder();
-
-        cancelOrder.setOrderId(request.getOrderId());
-
+        switch (failed) {
+            case DECREASE_REJECTED -> {
+                Nexus.DecreaseRejected.Builder decreaseRejected = builder.getPayload().initDecreaseRejected();
+                decreaseRejected.setReason(reason);
+            }
+            default -> {
+            }
+        }
         serialize(messageBuilder, buffer);
     }
 
     public void write(Balance balance, Nexus.EventType type, ByteBuf buffer) {
         MessageBuilder messageBuilder = new MessageBuilder();
+        Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
         switch (type) {
             case INCREASED -> {
-                Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
                 Nexus.Increased.Builder increased = builder.getPayload().initIncreased();
                 increased.setCurrency(balance.getCurrency().getName());
                 increased.setAmount(balance.getValue());
@@ -121,6 +125,7 @@ public class Transfer {
         }
         serialize(messageBuilder, buffer);
     }
+
 
     public Nexus.NexusEvent.Reader from(ByteBuf buffer) {
         if (buffer == null) {
@@ -153,8 +158,22 @@ public class Transfer {
                                 .setFrozen(currency.format(increased.getFrozen())).build()
                 ).build();
             }
-//                    case DECREASED -> message.payload.asDecreased.get();
-//                    case DECREASE_REJECTED -> message.payload.asDecreaseRejected.get();
+            case DECREASED -> {
+                Nexus.Decreased.Reader decreased = payload.getDecreased();
+                return Envoy.IncreaseResponse.newBuilder().setCode(1).setData(
+                        Envoy.Balance.newBuilder()
+                                .setCurrency(decreased.getCurrency().toString())
+                                .setValue(currency.format(decreased.getAmount()))
+                                .setAvailable(currency.format(decreased.getAvailable()))
+                                .setFrozen(currency.format(decreased.getFrozen())).build()
+                ).build();
+            }
+            case DECREASE_REJECTED -> {
+                Nexus.DecreaseRejected.Reader rejected = payload.getDecreaseRejected();
+                return Envoy.DecreaseResponse.newBuilder()
+                        .setCode(rejected.getReason().ordinal())
+                        .setMessage(rejected.getReason().name()).build();
+            }
             default -> throw new RuntimeException();
         }
     }

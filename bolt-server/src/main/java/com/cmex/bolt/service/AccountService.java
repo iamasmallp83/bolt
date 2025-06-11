@@ -91,9 +91,9 @@ public class AccountService {
     }
 
     public void on(long messageId, Nexus.Decrease.Reader decrease) {
-        int accountId = 0;
+        int accountId = decrease.getAccountId();
         Result<Balance> result = accountRepository.get(accountId)
-                .map(account -> account.decrease(0, 0))
+                .map(account -> account.decrease(decrease.getCurrencyId(), decrease.getAmount()))
                 .orElse(Result.fail(Nexus.RejectionReason.BALANCE_NOT_ENOUGH));
         if (result.isSuccess()) {
             publishDecreasedEvent(messageId, result.value());
@@ -112,6 +112,7 @@ public class AccountService {
     private void publishDecreasedEvent(long messageId, Balance balance) {
         responseRingBuffer.publishEvent((message, sequence) -> {
             message.setId(messageId);
+            transfer.write(balance, Nexus.EventType.DECREASED, message.getBuffer());
         });
     }
 
@@ -141,8 +142,9 @@ public class AccountService {
     }
 
     private void publishFailureEvent(long messageId, Nexus.EventType eventType, Nexus.RejectionReason rejectionReason) {
-        responseRingBuffer.publishEvent((message, sequence) -> {
-//            rejectionReason.setMessage(message, messageId, eventType);
+        responseRingBuffer.publishEvent((wrapper, sequence) -> {
+            wrapper.setId(messageId);
+            transfer.write(eventType, rejectionReason, wrapper.getBuffer());
         });
     }
 
