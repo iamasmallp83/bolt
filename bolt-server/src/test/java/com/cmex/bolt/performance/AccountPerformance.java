@@ -24,22 +24,26 @@ public class AccountPerformance {
 
     @Test
     public void testIncrease() throws InterruptedException {
-        int times = 2_000_000;
+        int times = 200_000;
+        int threadCount = 4;
         ExecutorService executor = Executors.newFixedThreadPool(8);
         Stopwatch stopwatch = Stopwatch.createStarted();
-        CountDownLatch latch = new CountDownLatch(1);
-        executor.submit(() -> {
-            for (int i = 1; i <= times; i++) {
-                increase(service, i, 1, "1");
-            }
-            latch.countDown();
-        });
+        CountDownLatch latch = new CountDownLatch(threadCount);
+        for (int count = 1; count <= threadCount; count++) {
+            int finalCount = count;
+            executor.submit(() -> {
+                for (int i = 1; i <= times; i++) {
+                    increase(service, i, finalCount, "1");
+                }
+                latch.countDown();
+            });
+        }
         latch.await();
-        System.out.println("elapsed : " + stopwatch.elapsed(TimeUnit.MILLISECONDS));
+        System.out.println("send elapsed : " + stopwatch.elapsed(TimeUnit.MILLISECONDS));
         AtomicBoolean running = new AtomicBoolean(true);
         while (running.get()) {
             getAccount(service, times, new FakeStreamObserver<>(response -> {
-                Envoy.Balance balance = response.getDataMap().get(1);
+                Envoy.Balance balance = response.getDataMap().get(threadCount);
                 if (balance != null) {
                     running.set(!BigDecimalUtil.eq(balance.getAvailable(), "1"));
                 }
@@ -50,7 +54,7 @@ public class AccountPerformance {
                 }
             }));
         }
-        System.out.println("elapsed : " + stopwatch.elapsed(TimeUnit.MILLISECONDS));
+        System.out.println("total elapsed : " + stopwatch.elapsed(TimeUnit.MILLISECONDS));
         executor.shutdown();
     }
 
