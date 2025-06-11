@@ -24,8 +24,9 @@ public class AccountPerformance {
 
     @Test
     public void testIncrease() throws InterruptedException {
-        int times = 200_000;
-        int threadCount = 4;
+        int times = 500_000;
+        int threadCount = 10;
+        System.out.println("total request : " + times * threadCount + " threads :" + threadCount);
         ExecutorService executor = Executors.newFixedThreadPool(8);
         Stopwatch stopwatch = Stopwatch.createStarted();
         CountDownLatch latch = new CountDownLatch(threadCount);
@@ -33,7 +34,7 @@ public class AccountPerformance {
             int finalCount = count;
             executor.submit(() -> {
                 for (int i = 1; i <= times; i++) {
-                    increase(service, i, finalCount, "1");
+                    increase(service, i, (finalCount % 4) + 1, "1");
                 }
                 latch.countDown();
             });
@@ -43,9 +44,9 @@ public class AccountPerformance {
         AtomicBoolean running = new AtomicBoolean(true);
         while (running.get()) {
             getAccount(service, times, new FakeStreamObserver<>(response -> {
-                Envoy.Balance balance = response.getDataMap().get(threadCount);
+                Envoy.Balance balance = response.getDataMap().get(4);
                 if (balance != null) {
-                    running.set(!BigDecimalUtil.eq(balance.getAvailable(), "1"));
+                    running.set(!BigDecimalUtil.eq(balance.getAvailable(), "2"));
                 }
                 try {
                     TimeUnit.MILLISECONDS.sleep(500);

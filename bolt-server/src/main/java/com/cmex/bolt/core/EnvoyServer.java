@@ -57,13 +57,13 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         // 使用2的幂次方大小以优化内存访问模式
         // YieldingWaitStrategy在高吞吐量场景下比BusySpinWaitStrategy更节省CPU
         Disruptor<NexusWrapper> accountDisruptor =
-                new Disruptor<>(new NexusWrapper.Factory(256), 1024 * 512, DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(new NexusWrapper.Factory(256), 1024 * 1024 * 8, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new BusySpinWaitStrategy());
         Disruptor<NexusWrapper> matchDisruptor =
-                new Disruptor<>(new NexusWrapper.Factory(256), 1024 * 256, DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(new NexusWrapper.Factory(256), 1024 * 1024 * 4, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new BusySpinWaitStrategy());
         Disruptor<NexusWrapper> responseDisruptor =
-                new Disruptor<>(new NexusWrapper.Factory(256), 1024 * 256, DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(new NexusWrapper.Factory(256), 1024 * 1024 * 4, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new BusySpinWaitStrategy()); // Response通常是单生产者
 
         List<AccountDispatcher> accountDispatchers = createAccountDispatchers();

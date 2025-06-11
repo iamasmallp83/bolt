@@ -40,12 +40,9 @@ tasks.register('performanceTest', Test) {
 
     // 高性能测试的专用JVM配置
     jvmArgs = [
-            '-Xmx2g',           // 最大堆内存8GB
-            '-Xms2g',           // 初始堆内存4GB
-            '-XX:MaxDirectMemorySize=1g',  // 最大直接内存4GB
-            '-XX:+UseG1GC',     // 使用G1垃圾收集器
-            '-XX:+UseStringDeduplication',  // 启用字符串去重
-            '-XX:+UnlockExperimentalVMOptions'
+            '-Xmx4g',
+            '-Xms4g',
+            '-XX:MaxDirectMemorySize=6g',
     ]
 
     // 设置测试超时（性能测试需要更长时间）
