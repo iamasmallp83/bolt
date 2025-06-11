@@ -31,7 +31,7 @@ enum EventType {
   freeze @12;
   unfreeze @13;
   unfrozen @14;
-  cleared @15;
+  clear @15;
   tryEvent @16;
 }
 
@@ -54,9 +54,8 @@ struct PlaceOrder {
   price @4 :Int64;
   quantity @5 :Int64;
   volume @6 :Int64;
-  frozen @7 :Int64;
-  takerRate @8 :Int32;
-  makerRate @9 :Int32;
+  takerRate @7 :Int32;
+  makerRate @8 :Int32;
 }
 
 struct CancelOrder {
@@ -65,37 +64,18 @@ struct CancelOrder {
 
 struct OrderCreated {
   orderId @0 :Int64;
-  symbolId @1 :Int32;
-  accountId @2 :Int32;
-  type @3 :OrderType;
-  side @4 :OrderSide;
-  price @5 :Int64;
-  quantity @6 :Int64;
-  volume @7 :Int64;
-  frozen @8 :Int64;
-  takerRate @9 :Int32;
-  makerRate @10 :Int32;
 }
 
 struct OrderCanceled {
   orderId @0 :Int64;
-  symbolId @1 :Int32;
-  accountId @2 :Int32;
-  unfrozen @3 :Int64;
 }
 
 struct PlaceOrderRejected {
-  symbolId @0 :Int32;
-  accountId @1 :Int32;
-  reason @2 :RejectionReason;
-  message @3 :Text;
+  reason @0 :RejectionReason;
 }
 
 struct CancelOrderRejected {
-  orderId @0 :Int64;
-  accountId @1 :Int32;
-  reason @2 :RejectionReason;
-  message @3 :Text;
+  reason @0 :RejectionReason;
 }
 
 # 余额相关结构
@@ -113,10 +93,7 @@ struct Increased {
 }
 
 struct IncreaseRejected {
-  accountId @0 :Int32;
-  amount @1 :Int64;
-  reason @2 :RejectionReason;
-  message @3 :Text;
+  reason @0 :RejectionReason;
 }
 
 struct Decrease {
@@ -143,7 +120,8 @@ struct Freeze {
 
 struct Unfreeze {
   accountId @0 :Int32;
-  amount @1 :Int64;
+  currencyId @1 :Int32;
+  amount @2 :Int64;
 }
 
 struct Unfrozen {
@@ -151,11 +129,13 @@ struct Unfrozen {
   amount @1 :Int64;
 }
 
-struct Cleared {
-  accountId @0 :Int32;
-  availableBalance @1 :Int64;
-  frozenBalance @2 :Int64;
-  version @3 :Int64;
+struct Clear {
+    accountId @0 :Int32;
+    payCurrencyId @1 :Int32;
+    payAmount @2 :Int64;
+    refundAmount @3 :Int64;
+    incomeCurrencyId @4 :Int32;
+    incomeAmount @5 :Int64;
 }
 
 struct EmptyEvent {
@@ -180,7 +160,7 @@ struct Payload {
     freeze @13 :Freeze;
     unfreeze @14 :Unfreeze;
     unfrozen @15 :Unfrozen;
-    cleared @16 :Cleared;
+    clear @16 :Clear;
   }
 }
 

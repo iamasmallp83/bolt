@@ -1,6 +1,5 @@
 package com.cmex.bolt;
 
-import com.cmex.bolt.Envoy;
 import com.cmex.bolt.core.EnvoyServer;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.UncaughtExceptionHandlers;

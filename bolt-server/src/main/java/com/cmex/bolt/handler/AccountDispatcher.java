@@ -5,6 +5,7 @@ import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.domain.Transfer;
 import com.cmex.bolt.service.AccountService;
 import com.cmex.bolt.service.MatchService;
+import com.cmex.bolt.util.OrderIdGenerator;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
 import lombok.Getter;
@@ -14,7 +15,7 @@ import java.util.List;
 
 @Getter
 public class AccountDispatcher implements EventHandler<NexusWrapper>, LifecycleAware {
-    private final int amount;
+    private final int group;
 
     private final int partition;
 
@@ -24,10 +25,10 @@ public class AccountDispatcher implements EventHandler<NexusWrapper>, LifecycleA
 
     private final Transfer transfer;
 
-    public AccountDispatcher(int amount, int partition) {
-        this.amount = amount;
+    public AccountDispatcher(int group, int partition) {
+        this.group = group;
         this.partition = partition;
-        this.accountService = new AccountService();
+        this.accountService = new AccountService(group);
         this.transfer = new Transfer();
     }
 
@@ -45,29 +46,24 @@ public class AccountDispatcher implements EventHandler<NexusWrapper>, LifecycleA
             case DECREASE:
                 Nexus.Decrease.Reader decrease = reader.getPayload().getDecrease();
                 accountService.on(wrapper.getId(), decrease);
-//                break;
-//            case CLEARED:
-//                Cleared cleared = message.payload.asCleared;
-//                if (partition == cleared.accountId.get() % 10) {
-//                    accountService.on(message.id.get(), cleared);
-//                }
-//                break;
-//            case UNFREEZE:
-//                Unfreeze unfreeze = message.payload.asUnfreeze;
-//                if (partition == unfreeze.accountId.get() % 10) {
-//                    accountService.on(message.id.get(), unfreeze);
-//                }
-//                break;
-//            case PLACE_ORDER:
-//                PlaceOrder placeOrder = message.payload.asPlaceOrder;
-//                if (partition == placeOrder.accountId.get() % 10) {
-//                    accountService.on(message.id.get(), placeOrder);
-//                }
-//                break;
-//            case CANCEL_ORDER:
-//                int symbolId = OrderIdGenerator.getSymbolId(message.payload.asCancelOrder.orderId.get());
-//                matchServices.get(symbolId % 10).on(message.id.get(), message.payload.asCancelOrder);
-//                break;
+                break;
+            case CLEAR:
+                Nexus.Clear.Reader clear = reader.getPayload().getClear();
+                accountService.on(clear);
+                break;
+            case UNFREEZE:
+                Nexus.Unfreeze.Reader unfreeze = reader.getPayload().getUnfreeze();
+                accountService.on(unfreeze);
+                break;
+            case PLACE_ORDER:
+                Nexus.PlaceOrder.Reader placeOrder = reader.getPayload().getPlaceOrder();
+                accountService.on(wrapper.getId(), placeOrder);
+                break;
+            case CANCEL_ORDER:
+                Nexus.CancelOrder.Reader cancelOrder = reader.getPayload().getCancelOrder();
+                int symbolId = OrderIdGenerator.getSymbolId(cancelOrder.getOrderId());
+                matchServices.get(symbolId % group).on(wrapper.getId(), cancelOrder);
+                break;
             default:
                 break;
         }

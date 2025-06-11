@@ -1,7 +1,7 @@
 package com.cmex.bolt.performance;
 
-import com.cmex.bolt.core.EnvoyServer;
 import com.cmex.bolt.Envoy;
+import com.cmex.bolt.core.EnvoyServer;
 import com.cmex.bolt.util.BigDecimalUtil;
 import com.cmex.bolt.util.FakeStreamObserver;
 import com.google.common.base.Stopwatch;
@@ -24,10 +24,10 @@ public class AccountPerformance {
 
     @Test
     public void testIncrease() throws InterruptedException {
-        int times = 500_000;
-        int threadCount = 10;
+        int times = 50_000;
+        int threadCount = 16;
         System.out.println("total request : " + times * threadCount + " threads :" + threadCount);
-        ExecutorService executor = Executors.newFixedThreadPool(8);
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
         Stopwatch stopwatch = Stopwatch.createStarted();
         CountDownLatch latch = new CountDownLatch(threadCount);
         for (int count = 1; count <= threadCount; count++) {
@@ -46,7 +46,7 @@ public class AccountPerformance {
             getAccount(service, times, new FakeStreamObserver<>(response -> {
                 Envoy.Balance balance = response.getDataMap().get(4);
                 if (balance != null) {
-                    running.set(!BigDecimalUtil.eq(balance.getAvailable(), "2"));
+                    running.set(!BigDecimalUtil.eq(balance.getAvailable(), "4"));
                 }
                 try {
                     TimeUnit.MILLISECONDS.sleep(500);
@@ -57,23 +57,5 @@ public class AccountPerformance {
         }
         System.out.println("total elapsed : " + stopwatch.elapsed(TimeUnit.MILLISECONDS));
         executor.shutdown();
-    }
-
-    public static void placeOrder(int symbolId, int accountId, Envoy.PlaceOrderRequest.Type type, Envoy.PlaceOrderRequest.Side side,
-                                  String price, String quantity) {
-        placeOrder(symbolId, accountId, type, side, price, quantity, FakeStreamObserver.noop());
-    }
-
-    public static void placeOrder(int symbolId, int accountId, Envoy.PlaceOrderRequest.Type type, Envoy.PlaceOrderRequest.Side side,
-                                  String price, String quantity, FakeStreamObserver<Envoy.PlaceOrderResponse> observer) {
-        service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
-                .setRequestId(1)
-                .setSymbolId(symbolId)
-                .setAccountId(accountId)
-                .setType(type)
-                .setSide(side)
-                .setPrice(price)
-                .setQuantity(quantity)
-                .build(), observer);
     }
 }

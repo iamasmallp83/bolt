@@ -42,7 +42,7 @@ tasks.register('performanceTest', Test) {
     jvmArgs = [
             '-Xmx4g',
             '-Xms4g',
-            '-XX:MaxDirectMemorySize=6g',
+            '-XX:MaxDirectMemorySize=8g',
     ]
 
     // 设置测试超时（性能测试需要更长时间）

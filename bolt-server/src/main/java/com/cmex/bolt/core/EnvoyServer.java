@@ -3,7 +3,6 @@ package com.cmex.bolt.core;
 import com.cmex.bolt.Envoy;
 import com.cmex.bolt.Nexus;
 import com.cmex.bolt.domain.Balance;
-import com.cmex.bolt.domain.Currency;
 import com.cmex.bolt.domain.Symbol;
 import com.cmex.bolt.domain.Transfer;
 import com.cmex.bolt.dto.DepthDto;
@@ -33,7 +32,7 @@ import java.util.stream.Collectors;
 
 public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
-    private final RingBuffer<NexusWrapper> accountRingBuffer;
+    private final RingBuffer<NexusWrapper> sequencerRingBuffer;
     private final AtomicLong requestId = new AtomicLong();
     private final ConcurrentHashMap<Long, StreamObserver<?>> observers;
 
@@ -41,14 +40,14 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     private final List<MatchService> matchServices;
 
     // 背压管理器
-    private final BackpressureManager accountBackpressureManager;
+    private final BackpressureManager sequencerBackpressureManager;
     private final BackpressureManager matchBackpressureManager;
     private final BackpressureManager responseBackpressureManager;
     private final RingBufferMonitor ringBufferMonitor;
     private final Transfer transfer = new Transfer();
 
     //分组数量
-    private int group = 10;
+    private int group = 4;
 
     public EnvoyServer() {
         observers = new ConcurrentHashMap<>();
@@ -72,25 +71,25 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         responseDisruptor.handleEventsWith(new ResponseEventHandler());
         accountDisruptor.handleEventsWith(accountDispatchers.toArray(new AccountDispatcher[0]));
 
-        accountRingBuffer = accountDisruptor.start();
+        sequencerRingBuffer = accountDisruptor.start();
         RingBuffer<NexusWrapper> matchRingBuffer = matchDisruptor.start();
         RingBuffer<NexusWrapper> responseRingBuffer = responseDisruptor.start();
 
         // 初始化背压管理器
-        accountBackpressureManager = new BackpressureManager("Account", accountRingBuffer);
+        sequencerBackpressureManager = new BackpressureManager("Account", sequencerRingBuffer);
         matchBackpressureManager = new BackpressureManager("Match", matchRingBuffer);
         responseBackpressureManager = new BackpressureManager("Response", responseRingBuffer);
 
         // 初始化监控器
         ringBufferMonitor = new RingBufferMonitor(5000); // 5秒报告一次
-        ringBufferMonitor.addManager(accountBackpressureManager);
+        ringBufferMonitor.addManager(sequencerBackpressureManager);
         ringBufferMonitor.addManager(matchBackpressureManager);
         ringBufferMonitor.addManager(responseBackpressureManager);
         ringBufferMonitor.startMonitoring();
 
         matchServices = new ArrayList<>(group);
         for (MatchDispatcher dispatcher : matchDispatchers) {
-            dispatcher.getMatchService().setSequencerRingBuffer(accountRingBuffer);
+            dispatcher.getMatchService().setSequencerRingBuffer(sequencerRingBuffer);
             dispatcher.getMatchService().setResponseRingBuffer(responseRingBuffer);
             matchServices.add(dispatcher.getMatchService());
         }
@@ -200,7 +199,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
     public void increase(IncreaseRequest request, StreamObserver<IncreaseResponse> responseObserver) {
         // 检查背压状态
-        if (!accountBackpressureManager.canAcceptRequest()) {
+        if (!sequencerBackpressureManager.canAcceptRequest()) {
             handleSystemBusy(responseObserver, "INCREASE");
             return;
         }
@@ -209,7 +208,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
             long id = requestId.incrementAndGet();
             int partition = getPartition(request.getAccountId());
             observers.put(id, responseObserver);
-            accountRingBuffer.publishEvent((wrapper, sequence) -> {
+            sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
                 wrapper.setId(id);
                 wrapper.setPartition(partition);
                 transfer.write(request, currency, wrapper.getBuffer());
@@ -226,16 +225,18 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
     public void decrease(DecreaseRequest request, StreamObserver<DecreaseResponse> responseObserver) {
         // 检查背压状态
-        if (!accountBackpressureManager.canAcceptRequest()) {
+        if (!sequencerBackpressureManager.canAcceptRequest()) {
             handleSystemBusy(responseObserver, "DECREASE");
             return;
         }
 
         getAccountService(request.getAccountId()).getCurrency(request.getCurrencyId()).ifPresentOrElse(currency -> {
             long id = requestId.incrementAndGet();
+            int partition = getPartition(request.getAccountId());
             observers.put(id, responseObserver);
-            accountRingBuffer.publishEvent((wrapper, sequence) -> {
+            sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
                 wrapper.setId(id);
+                wrapper.setPartition(partition);
                 transfer.write(request, currency, wrapper.getBuffer());
             });
         }, () -> {
@@ -250,7 +251,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
     public void placeOrder(PlaceOrderRequest request, StreamObserver<PlaceOrderResponse> responseObserver) {
         // 检查背压状态
-        BackpressureManager.BackpressureResult result = accountBackpressureManager.checkCapacity();
+        BackpressureManager.BackpressureResult result = sequencerBackpressureManager.checkCapacity();
         if (result == BackpressureManager.BackpressureResult.CRITICAL_REJECT) {
             handleSystemBusy(responseObserver, "PLACE_ORDER");
             return;
@@ -259,13 +260,17 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         // 如果是高负载，输出警告日志
         if (result == BackpressureManager.BackpressureResult.HIGH_LOAD) {
             System.out.printf("WARNING: Account RingBuffer usage is high: %.2f%%%n",
-                    accountBackpressureManager.getCurrentUsageRate() * 100);
+                    sequencerBackpressureManager.getCurrentUsageRate() * 100);
         }
 
         getSymbol(request.getSymbolId()).ifPresentOrElse(symbol -> {
             long id = requestId.incrementAndGet();
+            int partition = getPartition(request.getAccountId());
             observers.put(id, responseObserver);
-            accountRingBuffer.publishEvent((message, sequence) -> {
+            sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
+                wrapper.setId(id);
+                wrapper.setPartition(partition);
+                transfer.write(request, symbol, wrapper.getBuffer());
             });
         }, () -> {
             PlaceOrderResponse response = PlaceOrderResponse.newBuilder()
@@ -280,14 +285,15 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     @Override
     public void cancelOrder(CancelOrderRequest request, StreamObserver<CancelOrderResponse> responseObserver) {
         // 检查背压状态
-        if (!accountBackpressureManager.canAcceptRequest()) {
+        if (!sequencerBackpressureManager.canAcceptRequest()) {
             handleSystemBusy(responseObserver, "CANCEL_ORDER");
             return;
         }
 
         long id = requestId.incrementAndGet();
         observers.put(id, responseObserver);
-        accountRingBuffer.publishEvent((message, sequence) -> {
+        sequencerRingBuffer.publishEvent((message, sequence) -> {
+            //TODO 是否可以直接走MatchRingBuffer
         });
     }
 
@@ -308,7 +314,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
      * 获取背压统计信息 - 用于外部监控
      */
     public BackpressureManager.BackpressureStats getAccountBackpressureStats() {
-        return accountBackpressureManager.getStats();
+        return sequencerBackpressureManager.getStats();
     }
 
     public BackpressureManager.BackpressureStats getMatchBackpressureStats() {
@@ -337,7 +343,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
      * 重置所有统计信息
      */
     public void resetAllStats() {
-        accountBackpressureManager.resetStats();
+        sequencerBackpressureManager.resetStats();
         matchBackpressureManager.resetStats();
         responseBackpressureManager.resetStats();
     }

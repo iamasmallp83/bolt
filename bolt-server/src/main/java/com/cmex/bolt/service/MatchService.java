@@ -10,6 +10,7 @@ import com.cmex.bolt.util.OrderIdGenerator;
 import com.cmex.bolt.util.Result;
 import com.lmax.disruptor.RingBuffer;
 import lombok.Setter;
+import org.capnproto.MessageBuilder;
 
 import java.util.List;
 import java.util.Optional;
@@ -26,63 +27,90 @@ public class MatchService {
 
     private final SymbolRepository symbolRepository;
 
-    public MatchService() {
+    private final Transfer transfer;
+
+    private final int group;
+
+    public MatchService(int group) {
         generator = new OrderIdGenerator();
         symbolRepository = SymbolRepository.getInstance();
+        transfer = new Transfer();
+        this.group = group;
     }
 
     public Optional<Symbol> getSymbol(int symbolId) {
         return symbolRepository.get(symbolId);
     }
 
-    public void on(long messageId, Nexus.PlaceOrder placeOrder) {
+    public void on(long messageId, Nexus.PlaceOrder.Reader placeOrder) {
         //start to match
         Optional<Symbol> symbolOptional = symbolRepository.get(0);
         symbolOptional.ifPresentOrElse(symbol -> {
             OrderBook orderBook = symbol.getOrderBook();
-            Order order = orderBook.getOrder(placeOrder);
+            Order order = getOrder(symbol, placeOrder);
             Result<List<Ticket>> result = orderBook.match(order);
             if (result.isSuccess()) {
                 long totalQuantity = 0;
                 long totalVolume = 0;
                 for (Ticket ticket : result.value()) {
                     sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
-                        setClearedMessage(ticket.getMaker(), false, ticket.getQuantity(), ticket.getVolume(), null);
+                        MessageBuilder builder = createClearMessage(ticket.getMaker(), false,
+                                ticket.getQuantity(), ticket.getVolume());
+                        wrapper.setPartition(ticket.getMaker().getAccountId());
+                        transfer.serialize(builder, wrapper.getBuffer());
                     });
                     totalQuantity += ticket.getQuantity();
                     totalVolume += ticket.getVolume();
                 }
                 long finalTotalQuantity = totalQuantity;
                 long finalTotalVolume = totalVolume;
-                sequencerRingBuffer.publishEvent((message, sequence) -> {
-                    setClearedMessage(order, true, finalTotalQuantity, finalTotalVolume, message);
+                sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
+                    MessageBuilder builder = createClearMessage(order, true, finalTotalQuantity,
+                            finalTotalVolume);
+                    wrapper.setPartition(order.getAccountId());
+                    transfer.serialize(builder, wrapper.getBuffer());
                 });
             }
-            responseRingBuffer.publishEvent((message, sequence) -> {
+            responseRingBuffer.publishEvent((wrapper, sequence) -> {
+                wrapper.setId(messageId);
+                transfer.write(order, wrapper.getBuffer());
             });
-        }, () -> responseRingBuffer.publishEvent((message, sequence) -> {
+        }, () -> responseRingBuffer.publishEvent((wrapper, sequence) -> {
+            wrapper.setId(messageId);
+            transfer.write(Nexus.EventType.PLACE_ORDER_REJECTED, Nexus.RejectionReason.SYMBOL_NOT_EXIST,
+                    wrapper.getBuffer());
         }));
     }
 
-    public void on(long messageId, Nexus.CancelOrder cancelOrder) {
-//        long orderId = cancelOrder.orderId.get();
-        long orderId = 0;
+    public void on(long messageId, Nexus.CancelOrder.Reader cancelOrder) {
+        long orderId = cancelOrder.getOrderId();
         int symbolId = OrderIdGenerator.getSymbolId(orderId);
         Optional<Symbol> symbolOptional = symbolRepository.get(symbolId);
         symbolOptional.ifPresentOrElse(symbol -> {
             OrderBook orderBook = symbol.getOrderBook();
             Result<Order> result = orderBook.cancel(orderId);
             if (result.isSuccess()) {
-                sequencerRingBuffer.publishEvent((message, sequence) -> {
+                sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
+                    wrapper.setId(messageId);
+                    Order order = result.value();
+                    wrapper.setPartition(order.getAccountId() % group);
+                    transfer.writeUnfreeze(order, wrapper.getBuffer());
                 });
-                responseRingBuffer.publishEvent((message, sequence) -> {
+                responseRingBuffer.publishEvent((wrapper, sequence) -> {
+                    wrapper.setId(messageId);
+                    transfer.write(cancelOrder, wrapper.getBuffer());
                 });
             } else {
-                responseRingBuffer.publishEvent((message, sequence) -> {
+                responseRingBuffer.publishEvent((wrapper, sequence) -> {
+                    wrapper.setId(messageId);
+                    transfer.write(Nexus.EventType.CANCEL_ORDER_REJECTED, Nexus.RejectionReason.ORDER_NOT_EXIST,
+                            wrapper.getBuffer());
                 });
             }
-
-        }, () -> responseRingBuffer.publishEvent((message, sequence) -> {
+        }, () -> responseRingBuffer.publishEvent((wrapper, sequence) -> {
+            wrapper.setId(messageId);
+            transfer.write(Nexus.EventType.CANCEL_ORDER_REJECTED, Nexus.RejectionReason.ORDER_NOT_EXIST,
+                    wrapper.getBuffer());
         }));
     }
 
@@ -100,28 +128,45 @@ public class MatchService {
                 .build();
     }
 
-    private void setClearedMessage(Order order, boolean isTaker, long quantity, long volume, NexusWrapper wrapper) {
-//        Symbol symbol = order.getSymbol();
-//        message.type.set(EventType.CLEARED);
-//        Order.OrderSide side = order.getSide();
-//        Cleared cleared = message.payload.asCleared;
-//        cleared.accountId.set(order.getAccountId());
-//        //支付
-//        cleared.payCurrencyId.set(symbol.getPayCurrency(side).getId());
-//        //得到
-//        cleared.incomeCurrencyId.set(symbol.getIncomeCurrency(side).getId());
-//        if (side == Order.OrderSide.BID) {
-//            cleared.payAmount.set(
-//                    Math.round(volume * (1 + (symbol.isQuoteSettlement() ? order.getRate(isTaker) / Rate.BASE_RATE : 0))));
-//            cleared.incomeAmount.set(
-//                    Math.round(quantity * (1 - (symbol.isQuoteSettlement() ? 0 : order.getRate(isTaker) / Rate.BASE_RATE))));
-//            if (order.isDone() && order.getSide() == Order.OrderSide.BID && order.left() > 0) {
-//                cleared.refundAmount.set(order.left());
-//            }
-//        } else {
-//            cleared.payAmount.set(quantity);
-//            cleared.incomeAmount.set(Math.round(volume * (1 - (order.getRate(isTaker) / Rate.BASE_RATE))));
-//        }
+    private MessageBuilder createClearMessage(Order order, boolean isTaker, long quantity, long volume) {
+        MessageBuilder messageBuilder = new MessageBuilder();
+        Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
+        Nexus.Clear.Builder clear = builder.getPayload().initClear();
+        Symbol symbol = order.getSymbol();
+        Order.OrderSide side = order.getSide();
+        clear.setAccountId(order.getAccountId());
+        //支付
+        clear.setPayCurrencyId(symbol.getPayCurrency(side).getId());
+        //得到
+        clear.setIncomeCurrencyId(symbol.getIncomeCurrency(side).getId());
+        if (side == Order.OrderSide.BID) {
+            clear.setPayAmount(
+                    Math.round(volume * (1 + (symbol.isQuoteSettlement() ? order.getRate(isTaker) / Rate.BASE_RATE : 0))));
+            clear.setIncomeAmount(
+                    Math.round(quantity * (1 - (symbol.isQuoteSettlement() ? 0 : order.getRate(isTaker) / Rate.BASE_RATE))));
+            if (order.isDone() && order.getSide() == Order.OrderSide.BID && order.left() > 0) {
+                clear.setRefundAmount(order.left());
+            }
+        } else {
+            clear.setPayAmount(quantity);
+            clear.setIncomeAmount(Math.round(volume * (1 - (order.getRate(isTaker) / Rate.BASE_RATE))));
+        }
+        return messageBuilder;
+    }
+
+    private Order getOrder(Symbol symbol, Nexus.PlaceOrder.Reader placeOrder) {
+        return Order.builder()
+                .symbol(symbol)
+                .id(generator.nextId(placeOrder.getSymbolId()))
+                .accountId(placeOrder.getAccountId())
+                .type(placeOrder.getType() == Nexus.OrderType.LIMIT ? Order.OrderType.LIMIT : Order.OrderType.MARKET)
+                .side(placeOrder.getSide() == Nexus.OrderSide.BID ? Order.OrderSide.BID : Order.OrderSide.ASK)
+                .price(placeOrder.getPrice())
+                .quantity(placeOrder.getQuantity())
+                .volume(placeOrder.getVolume())
+                .takerRate(placeOrder.getTakerRate())
+                .makerRate(placeOrder.getMakerRate())
+                .build();
     }
 
 }

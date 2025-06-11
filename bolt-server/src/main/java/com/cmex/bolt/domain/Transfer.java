@@ -2,11 +2,9 @@ package com.cmex.bolt.domain;
 
 import com.cmex.bolt.Envoy;
 import com.cmex.bolt.Nexus;
-import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.repository.impl.CurrencyRepository;
 import io.grpc.netty.shaded.io.netty.buffer.ByteBuf;
 import io.grpc.netty.shaded.io.netty.buffer.ByteBufAllocator;
-import io.grpc.stub.StreamObserver;
 import org.capnproto.MessageBuilder;
 import org.capnproto.MessageReader;
 import org.capnproto.Serialize;
@@ -23,7 +21,7 @@ import java.nio.channels.WritableByteChannel;
  */
 public class Transfer {
 
-    private void serialize(MessageBuilder messageBuilder, ByteBuf buffer) {
+    public void serialize(MessageBuilder messageBuilder, ByteBuf buffer) {
         try {
             ByteBufWritableChannel channel = new ByteBufWritableChannel(buffer);
             Serialize.write(channel, messageBuilder);
@@ -53,12 +51,13 @@ public class Transfer {
         Nexus.Decrease.Builder decrease = builder.getPayload().initDecrease();
 
         decrease.setAccountId(request.getAccountId());
+        decrease.setCurrencyId(currency.getId());
         decrease.setAmount(currency.parse(request.getAmount()));
 
         serialize(messageBuilder, buffer);
     }
 
-    public void write(Envoy.PlaceOrderRequest request, ByteBuf buffer) {
+    public void write(Envoy.PlaceOrderRequest request, Symbol symbol, ByteBuf buffer) {
         MessageBuilder messageBuilder = new MessageBuilder();
         Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
         Nexus.PlaceOrder.Builder placeOrder = builder.getPayload().initPlaceOrder();
@@ -70,23 +69,11 @@ public class Transfer {
         placeOrder.setSide(request.getSide() == Envoy.PlaceOrderRequest.Side.BID ?
                 Nexus.OrderSide.BID : Nexus.OrderSide.ASK);
 
-        // 处理可选字段
-        // TODO
-        if (request.hasPrice()) {
-//            placeOrder.setPrice(NumberUtils.parseDecimal(request.getPrice()));
-        }
-        if (request.hasQuantity()) {
-//            placeOrder.setQuantity(NumberUtils.parseDecimal(request.getQuantity()));
-        }
-        if (request.hasVolume()) {
-//            placeOrder.setVolume(NumberUtils.parseDecimal(request.getVolume()));
-        }
-        if (request.hasTakerRate()) {
-            placeOrder.setTakerRate(request.getTakerRate());
-        }
-        if (request.hasMakerRate()) {
-            placeOrder.setMakerRate(request.getMakerRate());
-        }
+        placeOrder.setPrice(symbol.formatPrice(request.getPrice()));
+        placeOrder.setQuantity(symbol.formatQuantity(request.getQuantity()));
+        placeOrder.setVolume(symbol.formatPrice(request.getVolume()));
+        placeOrder.setTakerRate(request.getTakerRate());
+        placeOrder.setMakerRate(request.getMakerRate());
         serialize(messageBuilder, buffer);
     }
 
@@ -98,6 +85,10 @@ public class Transfer {
             case DECREASE_REJECTED -> {
                 Nexus.DecreaseRejected.Builder decreaseRejected = builder.getPayload().initDecreaseRejected();
                 decreaseRejected.setReason(reason);
+            }
+            case PLACE_ORDER_REJECTED -> {
+                Nexus.PlaceOrderRejected.Builder placeOrderRejected = builder.getPayload().initPlaceOrderRejected();
+                placeOrderRejected.setReason(reason);
             }
             default -> {
             }
@@ -118,7 +109,12 @@ public class Transfer {
                 serialize(messageBuilder, buffer);
             }
             case DECREASED -> {
-
+                Nexus.Decreased.Builder decreased = builder.getPayload().initDecreased();
+                decreased.setCurrencyId(balance.getCurrency().getId());
+                decreased.setAmount(balance.getValue());
+                decreased.setAvailable(balance.getValue());
+                decreased.setFrozen(balance.getFrozen());
+                serialize(messageBuilder, buffer);
             }
             default -> {
                 //TODO
@@ -127,6 +123,37 @@ public class Transfer {
         serialize(messageBuilder, buffer);
     }
 
+    public void write(Order order, ByteBuf buffer) {
+        MessageBuilder messageBuilder = new MessageBuilder();
+        Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
+        Nexus.OrderCreated.Builder orderCreated = builder.getPayload().initOrderCreated();
+        orderCreated.setOrderId(order.getId());
+        serialize(messageBuilder, buffer);
+    }
+
+
+    public void write(Nexus.PlaceOrder.Reader reader, ByteBuf buffer) {
+        MessageBuilder messageBuilder = new MessageBuilder();
+        Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
+        Nexus.PlaceOrder.Builder placeOrder = builder.getPayload().initPlaceOrder();
+        placeOrder.setAccountId(reader.getAccountId());
+        placeOrder.setType(reader.getType());
+        placeOrder.setSide(reader.getSide());
+        placeOrder.setPrice(reader.getPrice());
+        placeOrder.setQuantity(reader.getQuantity());
+        placeOrder.setVolume(reader.getVolume());
+        placeOrder.setTakerRate(reader.getTakerRate());
+        placeOrder.setMakerRate(reader.getMakerRate());
+        serialize(messageBuilder, buffer);
+    }
+
+    public void write(Nexus.CancelOrder.Reader cancelOrder, ByteBuf buffer) {
+        MessageBuilder messageBuilder = new MessageBuilder();
+        Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
+        Nexus.OrderCanceled.Builder orderCanceled = builder.getPayload().initOrderCanceled();
+        orderCanceled.setOrderId(cancelOrder.getOrderId());
+        serialize(messageBuilder, buffer);
+    }
 
     public Nexus.NexusEvent.Reader from(ByteBuf buffer) {
         if (buffer == null) {
@@ -146,9 +173,6 @@ public class Transfer {
         Nexus.NexusEvent.Reader reader = from(buffer);
         Nexus.Payload.Reader payload = reader.getPayload();
         switch (payload.which()) {
-//                    case ORDER_CREATED -> message.payload.asOrderCreated.get();
-//                    case PLACE_ORDER_REJECTED -> message.payload.asPlaceOrderRejected.get();
-//                    case ORDER_CANCELED -> message.payload.asOrderCanceled.get();
             case INCREASED -> {
                 Nexus.Increased.Reader increased = payload.getIncreased();
                 Currency currency = repository.get(increased.getCurrencyId()).get();
@@ -179,6 +203,16 @@ public class Transfer {
             }
             default -> throw new RuntimeException();
         }
+    }
+
+    public void writeUnfreeze(Order order, ByteBuf buffer) {
+        MessageBuilder messageBuilder = new MessageBuilder();
+        Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
+        Nexus.Unfreeze.Builder unfreeze = builder.getPayload().initUnfreeze();
+        unfreeze.setAccountId(order.getAccountId());
+        unfreeze.setCurrencyId(order.getPayCurrency().getId());
+        unfreeze.setAmount(order.getUnfreezeAmount());
+        serialize(messageBuilder, buffer);
     }
 
     private static class ByteBufWritableChannel implements WritableByteChannel {
@@ -232,16 +266,9 @@ public class Transfer {
             if (bytesToRead == 0) {
                 return buffer.readableBytes() == 0 ? -1 : 0;
             }
-            // 关键修复：限制 ByteBuffer 的读取范围
-            int originalLimit = dst.limit();
             dst.limit(dst.position() + bytesToRead);
-
-            try {
-                buffer.readBytes(dst);
-                return bytesToRead;
-            } finally {
-                dst.limit(originalLimit);
-            }
+            buffer.readBytes(dst);
+            return bytesToRead;
         }
 
         @Override

@@ -2,13 +2,13 @@ package com.cmex.bolt.service;
 
 import com.cmex.bolt.Nexus;
 import com.cmex.bolt.core.NexusWrapper;
-import com.cmex.bolt.domain.Symbol;
 import com.cmex.bolt.domain.*;
 import com.cmex.bolt.repository.impl.AccountRepository;
 import com.cmex.bolt.repository.impl.CurrencyRepository;
 import com.cmex.bolt.repository.impl.SymbolRepository;
 import com.cmex.bolt.util.Result;
 import com.lmax.disruptor.RingBuffer;
+import lombok.Setter;
 
 import java.util.Collections;
 import java.util.Map;
@@ -16,16 +16,20 @@ import java.util.Optional;
 
 public class AccountService {
 
+    private final int group;
     private final AccountRepository accountRepository;
     private final CurrencyRepository currencyRepository;
 
     private final SymbolRepository symbolRepository;
 
+    @Setter
     private RingBuffer<NexusWrapper> responseRingBuffer;
+    @Setter
     private RingBuffer<NexusWrapper> matchRingBuffer;
     private final Transfer transfer = new Transfer();
 
-    public AccountService() {
+    public AccountService(int group) {
+        this.group = group;
         this.accountRepository = new AccountRepository();
         this.currencyRepository = CurrencyRepository.getInstance();
         this.symbolRepository = SymbolRepository.getInstance();
@@ -43,27 +47,27 @@ public class AccountService {
                 .orElse(Collections.emptyMap());
     }
 
-    public void on(long messageId, Nexus.PlaceOrder placeOrder) {
-        int symbolId = 0;
+    public void on(long messageId, Nexus.PlaceOrder.Reader placeOrder) {
+        int symbolId = placeOrder.getSymbolId();
         symbolRepository.get(symbolId).ifPresentOrElse(
                 symbol -> handleSymbolPresent(messageId, symbol, placeOrder),
-                () -> handleSymbolAbsent(messageId, Nexus.EventType.PLACE_ORDER_REJECTED)
+                () -> handleSymbolAbsent(messageId)
         );
     }
 
-    private void handleSymbolPresent(long messageId, Symbol symbol, Nexus.PlaceOrder placeOrder) {
-        int accountId = 0;
+    private void handleSymbolPresent(long messageId, Symbol symbol, Nexus.PlaceOrder.Reader placeOrder) {
+        int accountId = placeOrder.getAccountId();
         accountRepository.get(accountId).ifPresentOrElse(
                 account -> handleAccountPresent(messageId, symbol, account, placeOrder),
-                () -> handleAccountAbsent(messageId, Nexus.EventType.PLACE_ORDER_REJECTED)
+                () -> handleAccountAbsent(messageId)
         );
     }
 
-    private void handleSymbolAbsent(long messageId, Nexus.EventType eventType) {
-        publishFailureEvent(messageId, eventType, Nexus.RejectionReason.SYMBOL_NOT_EXIST);
+    private void handleSymbolAbsent(long messageId) {
+        publishFailureEvent(messageId, Nexus.EventType.PLACE_ORDER_REJECTED, Nexus.RejectionReason.SYMBOL_NOT_EXIST);
     }
 
-    private void handleAccountPresent(long messageId, Symbol symbol, Account account, Nexus.PlaceOrder placeOrder) {
+    private void handleAccountPresent(long messageId, Symbol symbol, Account account, Nexus.PlaceOrder.Reader placeOrder) {
         Result<Balance> result = calculateAndFreezeAmount(symbol, account, placeOrder);
         if (result.isSuccess()) {
             publishPlaceOrderEvent(messageId, placeOrder);
@@ -72,12 +76,15 @@ public class AccountService {
         }
     }
 
-    private void handleAccountAbsent(long messageId, Nexus.EventType eventType) {
-        publishFailureEvent(messageId, eventType, Nexus.RejectionReason.BALANCE_NOT_ENOUGH);
+    private void handleAccountAbsent(long messageId) {
+        publishFailureEvent(messageId, Nexus.EventType.PLACE_ORDER_REJECTED, Nexus.RejectionReason.BALANCE_NOT_ENOUGH);
     }
 
-    private void publishPlaceOrderEvent(long messageId, Nexus.PlaceOrder placeOrder) {
-        matchRingBuffer.publishEvent((message, sequence) -> {
+    private void publishPlaceOrderEvent(long messageId, Nexus.PlaceOrder.Reader placeOrder) {
+        matchRingBuffer.publishEvent((wrapper, sequence) -> {
+            wrapper.setId(messageId);
+            wrapper.setPartition(placeOrder.getSymbolId() % group);
+            transfer.write(placeOrder, wrapper.getBuffer());
         });
     }
 
@@ -116,24 +123,21 @@ public class AccountService {
         });
     }
 
-    private Result<Balance> calculateAndFreezeAmount(Symbol symbol, Account account, Nexus.PlaceOrder placeOrder) {
-//        if (placeOrder.side.get() == Nexus.OrderSide.BID) {
-//            long volume;
-//            if (placeOrder.volume.get() > 0) {
-//                volume = placeOrder.volume.get();
-//            } else {
-//                volume = symbol.getVolume(placeOrder.price.get(), placeOrder.quantity.get());
-//            }
-//            if (symbol.isQuoteSettlement()) {
-//                volume += Rate.getRate(volume, placeOrder.takerRate.get());
-//            }
-//            placeOrder.frozen.set(volume);
-//            return account.freeze(symbol.getQuote().getId(), volume);
-//        } else {
-//            placeOrder.frozen.set(placeOrder.quantity.get());
-//            return account.freeze(symbol.getBase().getId(), placeOrder.quantity.get());
-//        }
-        return null;
+    private Result<Balance> calculateAndFreezeAmount(Symbol symbol, Account account, Nexus.PlaceOrder.Reader placeOrder) {
+        if (placeOrder.getSide() == Nexus.OrderSide.BID) {
+            long volume;
+            if (placeOrder.getVolume() > 0) {
+                volume = placeOrder.getVolume();
+            } else {
+                volume = symbol.getVolume(placeOrder.getPrice(), placeOrder.getQuantity());
+            }
+            if (symbol.isQuoteSettlement()) {
+                volume += Rate.getRate(volume, placeOrder.getTakerRate());
+            }
+            return account.freeze(symbol.getQuote().getId(), volume);
+        } else {
+            return account.freeze(symbol.getBase().getId(), placeOrder.getQuantity());
+        }
     }
 
     private void doIncrease(long messageId, Nexus.Increase.Reader increase, Account account, Currency currency) {
@@ -149,29 +153,19 @@ public class AccountService {
     }
 
 
-    public void on(long messageId, Nexus.Unfreeze unfreeze) {
-        int accountId = 0;
+    public void on(Nexus.Unfreeze.Reader unfreeze) {
+        int accountId = unfreeze.getAccountId();
         Optional<Account> optional = accountRepository.get(accountId);
         Account account = optional.get();
-//        account.unfreeze(unfreeze.currencyId.get(), unfreeze.amount.get());
-        account.unfreeze(0, 0);
+        account.unfreeze(unfreeze.getCurrencyId(), unfreeze.getAmount());
     }
 
-    public void on(long messageId, Nexus.Cleared cleared) {
-//        int accountId = cleared.accountId.get();
-        int accountId = 0;
+    public void on(Nexus.Clear.Reader clear) {
+        int accountId = clear.getAccountId();
         Optional<Account> optional = accountRepository.get(accountId);
         Account account = optional.get();
-//        account.settle(cleared.payCurrencyId.get(), cleared.payAmount.get(), cleared.refundAmount.get(),
-//                currencyRepository.get(cleared.incomeCurrencyId.get()).get(), cleared.incomeAmount.get());
-    }
-
-    public void setMatchRingBuffer(RingBuffer<NexusWrapper> matchRingBuffer) {
-        this.matchRingBuffer = matchRingBuffer;
-    }
-
-    public void setResponseRingBuffer(RingBuffer<NexusWrapper> responseRingBuffer) {
-        this.responseRingBuffer = responseRingBuffer;
+        account.settle(clear.getPayCurrencyId(), clear.getPayAmount(), clear.getRefundAmount(),
+                currencyRepository.get(clear.getIncomeCurrencyId()).get(), clear.getIncomeAmount());
     }
 
 }
