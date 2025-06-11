@@ -101,16 +101,15 @@ struct CancelOrderRejected {
 # 余额相关结构
 struct Increase {
   accountId @0 :Int32;
-  amount @1 :Int64;
+  currencyId @1 :Int32;
+  amount @2 :Int64;
 }
 
 struct Increased {
-  accountId @0 :Int32;
+  currency @0 :Text;
   amount @1 :Int64;
-  newBalance @2 :Int64;
-  availableBalance @3 :Int64;
-  frozenBalance @4 :Int64;
-  version @5 :Int64;
+  available @2 :Int64;
+  frozen @3 :Int64;
 }
 
 struct IncreaseRejected {
@@ -122,7 +121,8 @@ struct IncreaseRejected {
 
 struct Decrease {
   accountId @0 :Int32;
-  amount @1 :Int64;
+  currencyId @1 :Int32;
+  amount @2 :Int64;
 }
 
 struct Decreased {
@@ -191,6 +191,5 @@ struct Payload {
 
 # 顶层消息结构
 struct NexusEvent {
-  id @0 :Int64;
-  payload @1 :Payload;
+  payload @0 :Payload;
 }

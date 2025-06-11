@@ -3,6 +3,7 @@ package com.cmex.bolt.core;
 import com.cmex.bolt.Envoy;
 import com.cmex.bolt.Nexus;
 import com.cmex.bolt.domain.Balance;
+import com.cmex.bolt.domain.Currency;
 import com.cmex.bolt.domain.Symbol;
 import com.cmex.bolt.domain.Transfer;
 import com.cmex.bolt.dto.DepthDto;
@@ -14,17 +15,12 @@ import com.cmex.bolt.monitor.RingBufferMonitor;
 import com.cmex.bolt.service.AccountService;
 import com.cmex.bolt.service.MatchService;
 import com.cmex.bolt.util.BackpressureManager;
-import com.lmax.disruptor.EventHandler;
-import com.lmax.disruptor.LifecycleAware;
-import com.lmax.disruptor.RingBuffer;
-import com.lmax.disruptor.YieldingWaitStrategy;
+import com.lmax.disruptor.*;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
 import com.lmax.disruptor.util.DaemonThreadFactory;
 import io.grpc.stub.StreamObserver;
-import org.capnproto.MessageBuilder;
 
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +46,9 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     private final RingBufferMonitor ringBufferMonitor;
     private final Transfer transfer = new Transfer();
 
+    //分组数量
+    private int group = 10;
+
     public EnvoyServer() {
         observers = new ConcurrentHashMap<>();
 
@@ -57,14 +56,14 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         // 使用2的幂次方大小以优化内存访问模式
         // YieldingWaitStrategy在高吞吐量场景下比BusySpinWaitStrategy更节省CPU
         Disruptor<NexusWrapper> accountDisruptor =
-                new Disruptor<>(new NexusWrapper.Factory(128), 1024 * 512, DaemonThreadFactory.INSTANCE,
-                        ProducerType.MULTI, new YieldingWaitStrategy());
+                new Disruptor<>(new NexusWrapper.Factory(256), 1024 * 512, DaemonThreadFactory.INSTANCE,
+                        ProducerType.MULTI, new BusySpinWaitStrategy());
         Disruptor<NexusWrapper> matchDisruptor =
-                new Disruptor<>(new NexusWrapper.Factory(128), 1024 * 256, DaemonThreadFactory.INSTANCE,
-                        ProducerType.MULTI, new YieldingWaitStrategy());
+                new Disruptor<>(new NexusWrapper.Factory(256), 1024 * 256, DaemonThreadFactory.INSTANCE,
+                        ProducerType.MULTI, new BusySpinWaitStrategy());
         Disruptor<NexusWrapper> responseDisruptor =
-                new Disruptor<>(new NexusWrapper.Factory(128), 1024 * 256, DaemonThreadFactory.INSTANCE,
-                        ProducerType.MULTI, new YieldingWaitStrategy()); // Response通常是单生产者
+                new Disruptor<>(new NexusWrapper.Factory(256), 1024 * 256, DaemonThreadFactory.INSTANCE,
+                        ProducerType.MULTI, new BusySpinWaitStrategy()); // Response通常是单生产者
 
         List<AccountDispatcher> accountDispatchers = createAccountDispatchers();
         List<MatchDispatcher> matchDispatchers = createMatchDispatchers();
@@ -88,13 +87,13 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         ringBufferMonitor.addManager(responseBackpressureManager);
         ringBufferMonitor.startMonitoring();
 
-        matchServices = new ArrayList<>(10);
+        matchServices = new ArrayList<>(group);
         for (MatchDispatcher dispatcher : matchDispatchers) {
             dispatcher.getMatchService().setSequencerRingBuffer(accountRingBuffer);
             dispatcher.getMatchService().setResponseRingBuffer(responseRingBuffer);
             matchServices.add(dispatcher.getMatchService());
         }
-        accountServices = new ArrayList<>(10);
+        accountServices = new ArrayList<>(group);
         for (AccountDispatcher dispatcher : accountDispatchers) {
             dispatcher.getAccountService().setMatchRingBuffer(matchRingBuffer);
             dispatcher.getAccountService().setResponseRingBuffer(responseRingBuffer);
@@ -105,22 +104,26 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
     private List<AccountDispatcher> createAccountDispatchers() {
         List<AccountDispatcher> dispatchers = new ArrayList<>();
-        for (int i = 0; i < 10; i++) {
-            dispatchers.add(new AccountDispatcher(10, i));
+        for (int i = 0; i < group; i++) {
+            dispatchers.add(new AccountDispatcher(group, i));
         }
         return dispatchers;
     }
 
     private List<MatchDispatcher> createMatchDispatchers() {
         List<MatchDispatcher> dispatchers = new ArrayList<>();
-        for (int i = 0; i < 10; i++) {
-            dispatchers.add(new MatchDispatcher(10, i));
+        for (int i = 0; i < group; i++) {
+            dispatchers.add(new MatchDispatcher(group, i));
         }
         return dispatchers;
     }
 
     private AccountService getAccountService(int accountId) {
-        return accountServices.get(accountId % 10);
+        return accountServices.get(getPartition(accountId));
+    }
+
+    private int getPartition(int accountId) {
+        return accountId % group;
     }
 
     /**
@@ -203,9 +206,12 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
         getAccountService(request.getAccountId()).getCurrency(request.getCurrencyId()).ifPresentOrElse(currency -> {
             long id = requestId.incrementAndGet();
+            int partition = getPartition(request.getAccountId());
             observers.put(id, responseObserver);
             accountRingBuffer.publishEvent((wrapper, sequence) -> {
-                transfer.write(request, wrapper.getBuffer());
+                wrapper.setId(id);
+                wrapper.setPartition(partition);
+                transfer.write(request, currency, wrapper.getBuffer());
             });
         }, () -> {
             IncreaseResponse response = IncreaseResponse.newBuilder()
@@ -227,7 +233,9 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         getAccountService(request.getAccountId()).getCurrency(request.getCurrencyId()).ifPresentOrElse(currency -> {
             long id = requestId.incrementAndGet();
             observers.put(id, responseObserver);
-            accountRingBuffer.publishEvent((message, sequence) -> {
+            accountRingBuffer.publishEvent((wrapper, sequence) -> {
+                wrapper.setId(id);
+                transfer.write(request, currency, wrapper.getBuffer());
             });
         }, () -> {
             DecreaseResponse response = DecreaseResponse.newBuilder()
@@ -285,7 +293,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     @Override
     public void getDepth(Envoy.GetDepthRequest request, StreamObserver<Envoy.GetDepthResponse> responseObserver) {
         int symbolId = request.getSymbolId();
-        MatchService matchService = matchServices.get(symbolId % 10);
+        MatchService matchService = matchServices.get(symbolId % group);
         DepthDto dto = matchService.getDepth(symbolId);
         GetDepthResponse response = GetDepthResponse.newBuilder()
                 .setCode(1)
@@ -345,21 +353,15 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         @SuppressWarnings("unchecked")
         @Override
         public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) {
-//            long id = message.id.get();
-            long id = 0;
+            long id = wrapper.getId();
             if (id > 0) {
-                StreamObserver<Object> observer = (StreamObserver<Object>) observers.remove(id);
-//                EventType type = message.type.get();
-//                Object response = switch (type) {
-//                    case ORDER_CREATED -> message.payload.asOrderCreated.get();
-//                    case PLACE_ORDER_REJECTED -> message.payload.asPlaceOrderRejected.get();
-//                    case ORDER_CANCELED -> message.payload.asOrderCanceled.get();
-//                    case INCREASED -> message.payload.asIncreased.get();
-//                    case DECREASED -> message.payload.asDecreased.get();
-//                    case DECREASE_REJECTED -> message.payload.asDecreaseRejected.get();
-//                    default -> throw new RuntimeException();
-//                };
-                observer.onNext(null);
+                //TODO
+                StreamObserver<Object> observer = (StreamObserver<Object>) observers.get(id);
+                Object object = transfer.to(Currency.builder()
+                        .id(1)
+                        .name("USDT")
+                        .precision(4).build(), wrapper.getBuffer());
+                observer.onNext(object);
                 observer.onCompleted();
             }
         }

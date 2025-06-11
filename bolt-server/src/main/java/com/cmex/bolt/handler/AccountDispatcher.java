@@ -5,12 +5,10 @@ import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.domain.Transfer;
 import com.cmex.bolt.service.AccountService;
 import com.cmex.bolt.service.MatchService;
-import com.cmex.bolt.util.OrderIdGenerator;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
 import lombok.Getter;
 import lombok.Setter;
-import org.capnproto.StructReader;
 
 import java.util.List;
 
@@ -34,14 +32,15 @@ public class AccountDispatcher implements EventHandler<NexusWrapper>, LifecycleA
     }
 
     public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) {
-        Nexus.NexusEvent.Reader reader = transfer.to(wrapper.getBuffer());
+        if (partition != wrapper.getPartition()) {
+            return;
+        }
+        Nexus.NexusEvent.Reader reader = transfer.from(wrapper.getBuffer());
         Nexus.Payload.Reader payload = reader.getPayload();
         switch (payload.which()) {
             case INCREASE:
                 Nexus.Increase.Reader increase = reader.getPayload().getIncrease();
-                if (partition == increase.getAccountId() % 10) {
-                    accountService.on(0L, increase);
-                }
+                accountService.on(wrapper.getId(), increase);
                 break;
 //            case DECREASE:
 //                Decrease decrease = message.payload.asDecrease;
