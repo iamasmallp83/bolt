@@ -23,11 +23,12 @@ public class AccountService {
 
     private RingBuffer<NexusWrapper> responseRingBuffer;
     private RingBuffer<NexusWrapper> matchRingBuffer;
+    private final Transfer transfer = new Transfer();
 
     public AccountService() {
         this.accountRepository = new AccountRepository();
-        this.currencyRepository = new CurrencyRepository();
-        this.symbolRepository = new SymbolRepository();
+        this.currencyRepository = CurrencyRepository.getInstance();
+        this.symbolRepository = SymbolRepository.getInstance();
     }
 
     public Optional<Currency> getCurrency(int currencyId) {
@@ -81,17 +82,18 @@ public class AccountService {
     }
 
     public void on(long messageId, Nexus.Increase.Reader increase) {
-        int accountId = 0;
+        int accountId = increase.getAccountId();
+        int currencyId = increase.getCurrencyId();
         Account account = accountRepository.getOrCreate(accountId, new Account(accountId));
         //前置已经检查币种存在
-        currencyRepository.get(0).ifPresent(
-                currency -> handleCurrencyPresent(messageId, increase, account, currency));
+        currencyRepository.get(currencyId).ifPresent(
+                currency -> doIncrease(messageId, increase, account, currency));
     }
 
-    public void on(long messageId, Nexus.Decrease decrease) {
-        int accountId = 0;
+    public void on(long messageId, Nexus.Decrease.Reader decrease) {
+        int accountId = decrease.getAccountId();
         Result<Balance> result = accountRepository.get(accountId)
-                .map(account -> account.decrease(0, 0))
+                .map(account -> account.decrease(decrease.getCurrencyId(), decrease.getAmount()))
                 .orElse(Result.fail(Nexus.RejectionReason.BALANCE_NOT_ENOUGH));
         if (result.isSuccess()) {
             publishDecreasedEvent(messageId, result.value());
@@ -102,11 +104,15 @@ public class AccountService {
 
     private void publishIncreasedEvent(long messageId, Balance balance) {
         responseRingBuffer.publishEvent((message, sequence) -> {
+            message.setId(messageId);
+            transfer.write(balance, Nexus.EventType.INCREASED, message.getBuffer());
         });
     }
 
     private void publishDecreasedEvent(long messageId, Balance balance) {
         responseRingBuffer.publishEvent((message, sequence) -> {
+            message.setId(messageId);
+            transfer.write(balance, Nexus.EventType.DECREASED, message.getBuffer());
         });
     }
 
@@ -130,15 +136,15 @@ public class AccountService {
         return null;
     }
 
-    private void handleCurrencyPresent(long messageId, Nexus.Increase.Reader increase, Account account, Currency currency) {
-        Result<Balance> result = account.increase(currency, 0);//increase.amount.get());
+    private void doIncrease(long messageId, Nexus.Increase.Reader increase, Account account, Currency currency) {
+        Result<Balance> result = account.increase(currency, increase.getAmount());//increase.amount.get());
         publishIncreasedEvent(messageId, result.value());
     }
 
-
     private void publishFailureEvent(long messageId, Nexus.EventType eventType, Nexus.RejectionReason rejectionReason) {
-        responseRingBuffer.publishEvent((message, sequence) -> {
-//            rejectionReason.setMessage(message, messageId, eventType);
+        responseRingBuffer.publishEvent((wrapper, sequence) -> {
+            wrapper.setId(messageId);
+            transfer.write(eventType, rejectionReason, wrapper.getBuffer());
         });
     }
 
@@ -148,7 +154,7 @@ public class AccountService {
         Optional<Account> optional = accountRepository.get(accountId);
         Account account = optional.get();
 //        account.unfreeze(unfreeze.currencyId.get(), unfreeze.amount.get());
-        account.unfreeze(0,0);
+        account.unfreeze(0, 0);
     }
 
     public void on(long messageId, Nexus.Cleared cleared) {

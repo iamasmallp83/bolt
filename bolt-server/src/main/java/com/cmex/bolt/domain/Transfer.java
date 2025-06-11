@@ -2,14 +2,14 @@ package com.cmex.bolt.domain;
 
 import com.cmex.bolt.Envoy;
 import com.cmex.bolt.Nexus;
+import com.cmex.bolt.core.NexusWrapper;
+import com.cmex.bolt.repository.impl.CurrencyRepository;
 import io.grpc.netty.shaded.io.netty.buffer.ByteBuf;
 import io.grpc.netty.shaded.io.netty.buffer.ByteBufAllocator;
-import io.grpc.netty.shaded.io.netty.buffer.Unpooled;
-import lombok.Getter;
+import io.grpc.stub.StreamObserver;
 import org.capnproto.MessageBuilder;
 import org.capnproto.MessageReader;
 import org.capnproto.Serialize;
-import org.capnproto.StructReader;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -23,9 +23,9 @@ import java.nio.channels.WritableByteChannel;
  */
 public class Transfer {
 
-    private void serialize(MessageBuilder messageBuilder, ByteBuf byteBuf) {
+    private void serialize(MessageBuilder messageBuilder, ByteBuf buffer) {
         try {
-            ByteBufWritableChannel channel = new ByteBufWritableChannel(byteBuf);
+            ByteBufWritableChannel channel = new ByteBufWritableChannel(buffer);
             Serialize.write(channel, messageBuilder);
         } catch (IOException e) {
         }
@@ -35,52 +35,38 @@ public class Transfer {
         return ByteBufAllocator.DEFAULT.buffer();
     }
 
-    public void write(Envoy.IncreaseRequest request, ByteBuf byteBuf) {
-        if (request == null) {
-            throw new IllegalArgumentException("IncreaseRequest cannot be null");
-        }
-
+    public void write(Envoy.IncreaseRequest request, Currency currency, ByteBuf buffer) {
         MessageBuilder messageBuilder = new MessageBuilder();
-        Nexus.Increase.Builder increase = messageBuilder.initRoot(Nexus.Increase.factory);
+        Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
+        Nexus.Increase.Builder increase = builder.getPayload().initIncrease();
 
         increase.setAccountId(request.getAccountId());
-        //TODO
-//        increase.setAmount(NumberUtils.parseDecimal(request.getAmount()));
+        increase.setCurrencyId(currency.getId());
+        increase.setAmount(currency.parse(request.getAmount()));
 
-        serialize(messageBuilder, byteBuf);
+        serialize(messageBuilder, buffer);
     }
 
-    public void write(Envoy.DecreaseRequest request, ByteBuf byteBuf){
-        if (request == null) {
-            throw new IllegalArgumentException("DecreaseRequest cannot be null");
-        }
-
+    public void write(Envoy.DecreaseRequest request, Currency currency, ByteBuf buffer) {
         MessageBuilder messageBuilder = new MessageBuilder();
-        Nexus.Decrease.Builder decrease = messageBuilder.initRoot(Nexus.Decrease.factory);
+        Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
+        Nexus.Decrease.Builder decrease = builder.getPayload().initDecrease();
 
         decrease.setAccountId(request.getAccountId());
-        //TODO
-//        decrease.setAmount(NumberUtils.parseDecimal(request.getAmount()));
+        decrease.setAmount(currency.parse(request.getAmount()));
 
-        serialize(messageBuilder, byteBuf);
+        serialize(messageBuilder, buffer);
     }
 
-    public void write(Envoy.PlaceOrderRequest request, ByteBuf byteBuf){
-        if (request == null) {
-            throw new IllegalArgumentException("PlaceOrderRequest cannot be null");
-        }
-
+    public void write(Envoy.PlaceOrderRequest request, ByteBuf buffer) {
         MessageBuilder messageBuilder = new MessageBuilder();
-        Nexus.PlaceOrder.Builder placeOrder = messageBuilder.initRoot(Nexus.PlaceOrder.factory);
+        Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
+        Nexus.PlaceOrder.Builder placeOrder = builder.getPayload().initPlaceOrder();
 
         placeOrder.setSymbolId(request.getSymbolId());
         placeOrder.setAccountId(request.getAccountId());
-
-        // 转换订单类型
         placeOrder.setType(request.getType() == Envoy.PlaceOrderRequest.Type.LIMIT ?
                 Nexus.OrderType.LIMIT : Nexus.OrderType.MARKET);
-
-        // 转换订单方向
         placeOrder.setSide(request.getSide() == Envoy.PlaceOrderRequest.Side.BID ?
                 Nexus.OrderSide.BID : Nexus.OrderSide.ASK);
 
@@ -101,100 +87,106 @@ public class Transfer {
         if (request.hasMakerRate()) {
             placeOrder.setMakerRate(request.getMakerRate());
         }
-        serialize(messageBuilder, byteBuf);
+        serialize(messageBuilder, buffer);
     }
 
     //
-    public void write(Envoy.CancelOrderRequest request, ByteBuf byteBuf){
-        if (request == null) {
-            throw new IllegalArgumentException("CancelOrderRequest cannot be null");
-        }
+    public void write(Nexus.EventType failed, Nexus.RejectionReason reason, ByteBuf buffer) {
         MessageBuilder messageBuilder = new MessageBuilder();
         Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
-        builder.setId(123456789);
-        Nexus.CancelOrder.Builder cancelOrder = builder.getPayload().initCancelOrder();
-        cancelOrder.setOrderId(request.getOrderId());
-        serialize(messageBuilder, byteBuf);
+        switch (failed) {
+            case DECREASE_REJECTED -> {
+                Nexus.DecreaseRejected.Builder decreaseRejected = builder.getPayload().initDecreaseRejected();
+                decreaseRejected.setReason(reason);
+            }
+            default -> {
+            }
+        }
+        serialize(messageBuilder, buffer);
     }
 
-    public Nexus.NexusEvent.Reader to(ByteBuf byteBuf) {
-        if (byteBuf == null) {
+    public void write(Balance balance, Nexus.EventType type, ByteBuf buffer) {
+        MessageBuilder messageBuilder = new MessageBuilder();
+        Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
+        switch (type) {
+            case INCREASED -> {
+                Nexus.Increased.Builder increased = builder.getPayload().initIncreased();
+                increased.setCurrencyId(balance.getCurrency().getId());
+                increased.setAmount(balance.getValue());
+                increased.setAvailable(balance.getValue());
+                increased.setFrozen(balance.getFrozen());
+                serialize(messageBuilder, buffer);
+            }
+            case DECREASED -> {
+
+            }
+            default -> {
+                //TODO
+            }
+        }
+        serialize(messageBuilder, buffer);
+    }
+
+
+    public Nexus.NexusEvent.Reader from(ByteBuf buffer) {
+        if (buffer == null) {
             throw new IllegalArgumentException("CancelOrderRequest cannot be null");
         }
-        ByteBufReadableChannel channel = new ByteBufReadableChannel(byteBuf);
-        MessageReader messageReader = null;
+        ByteBufReadableChannel channel = new ByteBufReadableChannel(buffer);
+        MessageReader messageReader;
         try {
             messageReader = Serialize.read(channel);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-        Nexus.NexusEvent.Reader reader = messageReader.getRoot(Nexus.NexusEvent.factory);
-        return reader;
-//        Nexus.Payload.Reader payloadReader = reader.getPayload();
-//        switch (payloadReader.which()) {
-//            case PLACE_ORDER -> {
-//                return payloadReader.getPlaceOrder();
-//            }
-//            case CANCEL_ORDER -> {
-//                return payloadReader.getCancelOrder();
-//            }
-//            case ORDER_CREATED -> {
-//                return payloadReader.getOrderCreated();
-//            }
-//            case ORDER_CANCELED -> {
-//                return payloadReader.getOrderCanceled();
-//            }
-//            case PLACE_ORDER_REJECTED -> {
-//                return payloadReader.getPlaceOrderRejected();
-//            }
-//            case CANCEL_ORDER_REJECTED -> {
-//                return payloadReader.getCancelOrderRejected();
-//            }
-//            case INCREASE -> {
-//                return payloadReader.getIncrease();
-//            }
-//            case INCREASED -> {
-//                return payloadReader.getIncreased();
-//            }
-//            case INCREASE_REJECTED -> {
-//                return payloadReader.getIncreaseRejected();
-//            }
-//            case DECREASE -> {
-//                return payloadReader.getDecrease();
-//            }
-//            case DECREASED -> {
-//                return payloadReader.getDecreased();
-//            }
-//            case DECREASE_REJECTED -> {
-//                return payloadReader.getDecreaseRejected();
-//            }
-//            case FREEZE -> {
-//                return payloadReader.getFreeze();
-//            }
-//            case UNFREEZE -> {
-//                return payloadReader.getUnfreeze();
-//            }
-//            case UNFROZEN -> {
-//                return payloadReader.getUnfrozen();
-//            }
-//            case CLEARED -> {
-//                return payloadReader.getCleared();
-//            }
-//            case _NOT_IN_SCHEMA -> {
-//                throw new IllegalArgumentException("Event type _NOT_IN_SCHEMA is not supported");
-//            }
-//            default -> {
-//                throw new IllegalArgumentException("Unsupported event type: " + payloadReader.which());
-//            }
-//        }
+        return messageReader.getRoot(Nexus.NexusEvent.factory);
+    }
+
+    public Object to(CurrencyRepository repository, ByteBuf buffer) {
+        Nexus.NexusEvent.Reader reader = from(buffer);
+        Nexus.Payload.Reader payload = reader.getPayload();
+        switch (payload.which()) {
+//                    case ORDER_CREATED -> message.payload.asOrderCreated.get();
+//                    case PLACE_ORDER_REJECTED -> message.payload.asPlaceOrderRejected.get();
+//                    case ORDER_CANCELED -> message.payload.asOrderCanceled.get();
+            case INCREASED -> {
+                Nexus.Increased.Reader increased = payload.getIncreased();
+                Currency currency = repository.get(increased.getCurrencyId()).get();
+                return Envoy.IncreaseResponse.newBuilder().setCode(1).setData(
+                        Envoy.Balance.newBuilder()
+                                .setCurrency(currency.getName())
+                                .setValue(currency.format(increased.getAmount()))
+                                .setAvailable(currency.format(increased.getAvailable()))
+                                .setFrozen(currency.format(increased.getFrozen())).build()
+                ).build();
+            }
+            case DECREASED -> {
+                Nexus.Decreased.Reader decreased = payload.getDecreased();
+                Currency currency = repository.get(decreased.getCurrencyId()).get();
+                return Envoy.IncreaseResponse.newBuilder().setCode(1).setData(
+                        Envoy.Balance.newBuilder()
+                                .setCurrency(currency.getName())
+                                .setValue(currency.format(decreased.getAmount()))
+                                .setAvailable(currency.format(decreased.getAvailable()))
+                                .setFrozen(currency.format(decreased.getFrozen())).build()
+                ).build();
+            }
+            case DECREASE_REJECTED -> {
+                Nexus.DecreaseRejected.Reader rejected = payload.getDecreaseRejected();
+                return Envoy.DecreaseResponse.newBuilder()
+                        .setCode(rejected.getReason().ordinal())
+                        .setMessage(rejected.getReason().name()).build();
+            }
+            default -> throw new RuntimeException();
+        }
     }
 
     private static class ByteBufWritableChannel implements WritableByteChannel {
         private boolean open = true;
-        private ByteBuf byteBuf;
+        private ByteBuf buffer;
 
-        public ByteBufWritableChannel(ByteBuf byteBuf) {
-            this.byteBuf = byteBuf;
+        public ByteBufWritableChannel(ByteBuf buffer) {
+            this.buffer = buffer;
         }
 
         @Override
@@ -205,7 +197,7 @@ public class Transfer {
 
             int remaining = src.remaining();
             if (remaining > 0) {
-                byteBuf.writeBytes(src);  // 正确的方式：考虑position和limit
+                buffer.writeBytes(src);  // 正确的方式：考虑position和limit
             }
             return remaining;
         }
@@ -223,11 +215,11 @@ public class Transfer {
     }
 
     private static class ByteBufReadableChannel implements ReadableByteChannel {
-        private final ByteBuf byteBuf;
+        private final ByteBuf buffer;
         private boolean open = true;
 
-        public ByteBufReadableChannel(ByteBuf byteBuf) {
-            this.byteBuf = byteBuf;
+        public ByteBufReadableChannel(ByteBuf buffer) {
+            this.buffer = buffer;
         }
 
         @Override
@@ -236,13 +228,20 @@ public class Transfer {
                 throw new IOException("Channel is closed");
             }
 
-            int bytesToRead = Math.min(dst.remaining(), byteBuf.readableBytes());
+            int bytesToRead = Math.min(dst.remaining(), buffer.readableBytes());
             if (bytesToRead == 0) {
-                return byteBuf.readableBytes() == 0 ? -1 : 0;
+                return buffer.readableBytes() == 0 ? -1 : 0;
             }
+            // 关键修复：限制 ByteBuffer 的读取范围
+            int originalLimit = dst.limit();
+            dst.limit(dst.position() + bytesToRead);
 
-            byteBuf.readBytes(dst);
-            return bytesToRead;
+            try {
+                buffer.readBytes(dst);
+                return bytesToRead;
+            } finally {
+                dst.limit(originalLimit);
+            }
         }
 
         @Override

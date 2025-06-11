@@ -4,11 +4,20 @@ import com.lmax.disruptor.EventFactory;
 import io.grpc.netty.shaded.io.netty.buffer.ByteBuf;
 import io.grpc.netty.shaded.io.netty.buffer.PooledByteBufAllocator;
 import lombok.Getter;
+import lombok.Setter;
 
 public class NexusWrapper {
 
     @Getter
     private final ByteBuf buffer;
+
+    @Getter
+    @Setter
+    private long id;
+
+    @Getter
+    @Setter
+    private int partition;
 
     public NexusWrapper(PooledByteBufAllocator allocator, int bufferSize) {
         // 预分配ByteBuf

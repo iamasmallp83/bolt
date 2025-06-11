@@ -19,26 +19,9 @@ dependencies {
 }
 
 application {
-    mainClass = 'com.cmex.bolt.spot.SpotServer'
+    mainClass = 'com.cmex.bolt.Bolt'
 }
 
-task runSimpleCapnProtoExample(type: JavaExec) {
-    description = '运行简单的Cap\'n Proto示例'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.cmex.bolt.spot.example.SimpleCapnProtoExample'
-}
-
-task runTransferExample(type: JavaExec) {
-    description = '运行Transfer使用示例'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.cmex.bolt.example.TransferUsageExample'
-}
-
-task runNexusEventExample(type: JavaExec) {
-    description = '运行NexusEvent创建和使用示例'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.cmex.bolt.example.NexusEventExample'
-}
 // 常规测试任务 - 使用默认内存配置
 test {
     useJUnitPlatform()
@@ -47,32 +30,27 @@ test {
     exclude '**/*OrderPerformanceTestWithHTMLReport*'
 }
 
-// 专门的性能测试任务 - 只对OrderPerformanceTestWithHTMLReport生效
-task performanceTest(type: Test) {
-    group = 'verification'
-    
+tasks.register('performanceTest', Test) {
+    group = 'performance'
+
     useJUnitPlatform()
-    // 使用filter来指定测试类
     filter {
-        includeTestsMatching "com.cmex.bolt.spot.performance.EnhancedOrderPerformanceTest"
+        includeTestsMatching "com.cmex.bolt.performance.AccountPerformance"
     }
-    
+
     // 高性能测试的专用JVM配置
     jvmArgs = [
-        '-Xmx16g',           // 最大堆内存8GB
-        '-Xms16g',           // 初始堆内存4GB
-        '-XX:MaxDirectMemorySize=4g',  // 最大直接内存4GB
-        '-XX:+UseG1GC',     // 使用G1垃圾收集器
-        '-XX:+UseStringDeduplication',  // 启用字符串去重
-        '-XX:+UnlockExperimentalVMOptions'
+            '-Xmx4g',
+            '-Xms4g',
+            '-XX:MaxDirectMemorySize=6g',
     ]
-    
+
     // 设置测试超时（性能测试需要更长时间）
     systemProperty 'junit.jupiter.execution.timeout.default', '600s'
-    
+
 }
 
-task fatJar(type: Jar) {
+tasks.register('fatJar', Jar) {
     archiveFileName = 'bolt-spot-all-in-one.jar'
     manifest {
         attributes 'Main-Class': 'com.cmex.bolt.spot.SpotServer'

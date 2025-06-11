@@ -5,8 +5,14 @@ import com.cmex.bolt.domain.Symbol;
 
 public class SymbolRepository extends HashMapRepository<Integer, Symbol> {
 
-    public SymbolRepository() {
-        CurrencyRepository currencyRepository = new CurrencyRepository();
+    private static SymbolRepository INSTANCE = new SymbolRepository();
+
+    public static SymbolRepository getInstance() {
+        return INSTANCE;
+    }
+
+    private SymbolRepository() {
+        CurrencyRepository currencyRepository = CurrencyRepository.getInstance();
         Currency usdt = currencyRepository.get(1).get();
         Currency btc = currencyRepository.get(2).get();
         Currency shib = currencyRepository.get(3).get();

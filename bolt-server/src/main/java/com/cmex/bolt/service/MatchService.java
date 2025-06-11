@@ -28,7 +28,7 @@ public class MatchService {
 
     public MatchService() {
         generator = new OrderIdGenerator();
-        symbolRepository = new SymbolRepository();
+        symbolRepository = SymbolRepository.getInstance();
     }
 
     public Optional<Symbol> getSymbol(int symbolId) {
