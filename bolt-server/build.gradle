@@ -35,7 +35,7 @@ tasks.register('performanceTest', Test) {
 
     useJUnitPlatform()
     filter {
-        includeTestsMatching "com.cmex.bolt.spot.performance.EnhancedOrderPerformanceTest"
+        includeTestsMatching "com.cmex.bolt.performance.AccountPerformance"
     }
 
     // 高性能测试的专用JVM配置

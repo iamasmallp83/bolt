@@ -106,7 +106,7 @@ struct Increase {
 }
 
 struct Increased {
-  currency @0 :Text;
+  currencyId @0 :Int32;
   amount @1 :Int64;
   available @2 :Int64;
   frozen @3 :Int64;
@@ -126,7 +126,7 @@ struct Decrease {
 }
 
 struct Decreased {
-  currency @0 :Text;
+  currencyId @0 :Int32;
   amount @1 :Int64;
   available @2 :Int64;
   frozen @3 :Int64;

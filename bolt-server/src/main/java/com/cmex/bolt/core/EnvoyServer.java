@@ -12,6 +12,7 @@ import com.cmex.bolt.EnvoyServerGrpc;
 import com.cmex.bolt.handler.AccountDispatcher;
 import com.cmex.bolt.handler.MatchDispatcher;
 import com.cmex.bolt.monitor.RingBufferMonitor;
+import com.cmex.bolt.repository.impl.CurrencyRepository;
 import com.cmex.bolt.service.AccountService;
 import com.cmex.bolt.service.MatchService;
 import com.cmex.bolt.util.BackpressureManager;
@@ -355,12 +356,8 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) {
             long id = wrapper.getId();
             if (id > 0) {
-                //TODO
                 StreamObserver<Object> observer = (StreamObserver<Object>) observers.get(id);
-                Object object = transfer.to(Currency.builder()
-                        .id(1)
-                        .name("USDT")
-                        .precision(4).build(), wrapper.getBuffer());
+                Object object = transfer.to(CurrencyRepository.getInstance(), wrapper.getBuffer());
                 observer.onNext(object);
                 observer.onCompleted();
             }

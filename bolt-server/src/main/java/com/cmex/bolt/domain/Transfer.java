@@ -3,6 +3,7 @@ package com.cmex.bolt.domain;
 import com.cmex.bolt.Envoy;
 import com.cmex.bolt.Nexus;
 import com.cmex.bolt.core.NexusWrapper;
+import com.cmex.bolt.repository.impl.CurrencyRepository;
 import io.grpc.netty.shaded.io.netty.buffer.ByteBuf;
 import io.grpc.netty.shaded.io.netty.buffer.ByteBufAllocator;
 import io.grpc.stub.StreamObserver;
@@ -110,7 +111,7 @@ public class Transfer {
         switch (type) {
             case INCREASED -> {
                 Nexus.Increased.Builder increased = builder.getPayload().initIncreased();
-                increased.setCurrency(balance.getCurrency().getName());
+                increased.setCurrencyId(balance.getCurrency().getId());
                 increased.setAmount(balance.getValue());
                 increased.setAvailable(balance.getValue());
                 increased.setFrozen(balance.getFrozen());
@@ -141,7 +142,7 @@ public class Transfer {
         return messageReader.getRoot(Nexus.NexusEvent.factory);
     }
 
-    public Object to(Currency currency, ByteBuf buffer) {
+    public Object to(CurrencyRepository repository, ByteBuf buffer) {
         Nexus.NexusEvent.Reader reader = from(buffer);
         Nexus.Payload.Reader payload = reader.getPayload();
         switch (payload.which()) {
@@ -150,9 +151,10 @@ public class Transfer {
 //                    case ORDER_CANCELED -> message.payload.asOrderCanceled.get();
             case INCREASED -> {
                 Nexus.Increased.Reader increased = payload.getIncreased();
+                Currency currency = repository.get(increased.getCurrencyId()).get();
                 return Envoy.IncreaseResponse.newBuilder().setCode(1).setData(
                         Envoy.Balance.newBuilder()
-                                .setCurrency(increased.getCurrency().toString())
+                                .setCurrency(currency.getName())
                                 .setValue(currency.format(increased.getAmount()))
                                 .setAvailable(currency.format(increased.getAvailable()))
                                 .setFrozen(currency.format(increased.getFrozen())).build()
@@ -160,9 +162,10 @@ public class Transfer {
             }
             case DECREASED -> {
                 Nexus.Decreased.Reader decreased = payload.getDecreased();
+                Currency currency = repository.get(decreased.getCurrencyId()).get();
                 return Envoy.IncreaseResponse.newBuilder().setCode(1).setData(
                         Envoy.Balance.newBuilder()
-                                .setCurrency(decreased.getCurrency().toString())
+                                .setCurrency(currency.getName())
                                 .setValue(currency.format(decreased.getAmount()))
                                 .setAvailable(currency.format(decreased.getAvailable()))
                                 .setFrozen(currency.format(decreased.getFrozen())).build()

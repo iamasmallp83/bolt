@@ -27,8 +27,8 @@ public class AccountService {
 
     public AccountService() {
         this.accountRepository = new AccountRepository();
-        this.currencyRepository = new CurrencyRepository();
-        this.symbolRepository = new SymbolRepository();
+        this.currencyRepository = CurrencyRepository.getInstance();
+        this.symbolRepository = SymbolRepository.getInstance();
     }
 
     public Optional<Currency> getCurrency(int currencyId) {
