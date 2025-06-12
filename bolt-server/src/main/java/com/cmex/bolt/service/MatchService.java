@@ -43,8 +43,7 @@ public class MatchService {
     }
 
     public void on(long messageId, Nexus.PlaceOrder.Reader placeOrder) {
-        //start to match
-        Optional<Symbol> symbolOptional = symbolRepository.get(0);
+        Optional<Symbol> symbolOptional = symbolRepository.get(placeOrder.getSymbolId());
         symbolOptional.ifPresentOrElse(symbol -> {
             OrderBook orderBook = symbol.getOrderBook();
             Order order = getOrder(symbol, placeOrder);
@@ -73,11 +72,11 @@ public class MatchService {
             }
             responseRingBuffer.publishEvent((wrapper, sequence) -> {
                 wrapper.setId(messageId);
-                transfer.write(order, wrapper.getBuffer());
+                transfer.writeOrder(order, wrapper.getBuffer());
             });
         }, () -> responseRingBuffer.publishEvent((wrapper, sequence) -> {
             wrapper.setId(messageId);
-            transfer.write(Nexus.EventType.PLACE_ORDER_REJECTED, Nexus.RejectionReason.SYMBOL_NOT_EXIST,
+            transfer.writeFailed(Nexus.EventType.PLACE_ORDER_REJECTED, Nexus.RejectionReason.SYMBOL_NOT_EXIST,
                     wrapper.getBuffer());
         }));
     }
@@ -98,18 +97,18 @@ public class MatchService {
                 });
                 responseRingBuffer.publishEvent((wrapper, sequence) -> {
                     wrapper.setId(messageId);
-                    transfer.write(cancelOrder, wrapper.getBuffer());
+                    transfer.writeCancelOrder(cancelOrder, wrapper.getBuffer());
                 });
             } else {
                 responseRingBuffer.publishEvent((wrapper, sequence) -> {
                     wrapper.setId(messageId);
-                    transfer.write(Nexus.EventType.CANCEL_ORDER_REJECTED, Nexus.RejectionReason.ORDER_NOT_EXIST,
+                    transfer.writeFailed(Nexus.EventType.CANCEL_ORDER_REJECTED, Nexus.RejectionReason.ORDER_NOT_EXIST,
                             wrapper.getBuffer());
                 });
             }
         }, () -> responseRingBuffer.publishEvent((wrapper, sequence) -> {
             wrapper.setId(messageId);
-            transfer.write(Nexus.EventType.CANCEL_ORDER_REJECTED, Nexus.RejectionReason.ORDER_NOT_EXIST,
+            transfer.writeFailed(Nexus.EventType.CANCEL_ORDER_REJECTED, Nexus.RejectionReason.ORDER_NOT_EXIST,
                     wrapper.getBuffer());
         }));
     }

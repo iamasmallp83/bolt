@@ -59,11 +59,6 @@ public class AccountDispatcher implements EventHandler<NexusWrapper>, LifecycleA
                 Nexus.PlaceOrder.Reader placeOrder = reader.getPayload().getPlaceOrder();
                 accountService.on(wrapper.getId(), placeOrder);
                 break;
-            case CANCEL_ORDER:
-                Nexus.CancelOrder.Reader cancelOrder = reader.getPayload().getCancelOrder();
-                int symbolId = OrderIdGenerator.getSymbolId(cancelOrder.getOrderId());
-                matchServices.get(symbolId % group).on(wrapper.getId(), cancelOrder);
-                break;
             default:
                 break;
         }

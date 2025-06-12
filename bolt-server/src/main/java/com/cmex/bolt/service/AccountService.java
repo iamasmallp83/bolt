@@ -84,7 +84,7 @@ public class AccountService {
         matchRingBuffer.publishEvent((wrapper, sequence) -> {
             wrapper.setId(messageId);
             wrapper.setPartition(placeOrder.getSymbolId() % group);
-            transfer.write(placeOrder, wrapper.getBuffer());
+            transfer.writePlaceOrder(placeOrder, wrapper.getBuffer());
         });
     }
 
@@ -112,14 +112,14 @@ public class AccountService {
     private void publishIncreasedEvent(long messageId, Balance balance) {
         responseRingBuffer.publishEvent((message, sequence) -> {
             message.setId(messageId);
-            transfer.write(balance, Nexus.EventType.INCREASED, message.getBuffer());
+            transfer.writeBalance(balance, Nexus.EventType.INCREASED, message.getBuffer());
         });
     }
 
     private void publishDecreasedEvent(long messageId, Balance balance) {
         responseRingBuffer.publishEvent((message, sequence) -> {
             message.setId(messageId);
-            transfer.write(balance, Nexus.EventType.DECREASED, message.getBuffer());
+            transfer.writeBalance(balance, Nexus.EventType.DECREASED, message.getBuffer());
         });
     }
 
@@ -148,7 +148,7 @@ public class AccountService {
     private void publishFailureEvent(long messageId, Nexus.EventType eventType, Nexus.RejectionReason rejectionReason) {
         responseRingBuffer.publishEvent((wrapper, sequence) -> {
             wrapper.setId(messageId);
-            transfer.write(eventType, rejectionReason, wrapper.getBuffer());
+            transfer.writeFailed(eventType, rejectionReason, wrapper.getBuffer());
         });
     }
 

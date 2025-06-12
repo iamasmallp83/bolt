@@ -127,6 +127,6 @@ public class OrderBook {
 
     @Override
     public String toString() {
-        return "OrderBook{" + "symbol=" + symbol + ", bids=" + bids + ", asks=" + asks + '}';
+        return "OrderBook{" + "symbol=" + symbol.getName() + ", bids=" + bids + ", asks=" + asks + '}';
     }
 }
