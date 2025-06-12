@@ -115,16 +115,7 @@ public class MatchService {
 
     public DepthDto getDepth(int symbolId) {
         return symbolRepository.get(symbolId)
-                .map(Symbol::getDepth)
-                .orElse(createEmptyDepth());
-    }
-
-    private DepthDto createEmptyDepth() {
-        return DepthDto.builder()
-                .symbol("")
-                .asks(new java.util.TreeMap<>())
-                .bids(new java.util.TreeMap<>())
-                .build();
+                .map(Symbol::getDepth).get();
     }
 
     private MessageBuilder createClearMessage(Order order, boolean isTaker, long quantity, long volume) {
@@ -162,7 +153,6 @@ public class MatchService {
                 .side(placeOrder.getSide() == Nexus.OrderSide.BID ? Order.OrderSide.BID : Order.OrderSide.ASK)
                 .price(placeOrder.getPrice())
                 .quantity(placeOrder.getQuantity())
-                .volume(placeOrder.getVolume())
                 .takerRate(placeOrder.getTakerRate())
                 .makerRate(placeOrder.getMakerRate())
                 .build();
