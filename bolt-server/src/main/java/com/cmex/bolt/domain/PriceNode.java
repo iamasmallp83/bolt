@@ -18,7 +18,7 @@ public class PriceNode {
         this.price = price;
         this.orders = new LinkedHashSet<>();
         this.orders.add(order);
-        this.quantity += order.getQuantity();
+        this.quantity += order.getAvailableQuantity();
     }
 
     public void add(Order order) {

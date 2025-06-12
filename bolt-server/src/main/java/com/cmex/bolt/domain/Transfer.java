@@ -63,16 +63,38 @@ public class Transfer {
         Nexus.PlaceOrder.Builder placeOrder = builder.getPayload().initPlaceOrder();
         placeOrder.setSymbolId(request.getSymbolId());
         placeOrder.setAccountId(request.getAccountId());
-        placeOrder.setType(request.getType() == Envoy.PlaceOrderRequest.Type.LIMIT ?
+        placeOrder.setType(request.getType() == Envoy.Type.LIMIT ?
                 Nexus.OrderType.LIMIT : Nexus.OrderType.MARKET);
-        placeOrder.setSide(request.getSide() == Envoy.PlaceOrderRequest.Side.BID ?
+        placeOrder.setSide(request.getSide() == Envoy.Side.BID ?
                 Nexus.OrderSide.BID : Nexus.OrderSide.ASK);
-        placeOrder.setPrice(symbol.formatPrice(request.getPrice()));
-        placeOrder.setQuantity(symbol.formatQuantity(request.getQuantity()));
-        placeOrder.setVolume(symbol.formatPrice(request.getVolume()));
+        long price = symbol.formatPrice(request.getPrice());
+        placeOrder.setPrice(price);
+        long quantity = symbol.formatQuantity(request.getQuantity());
+        placeOrder.setQuantity(quantity);
+        long volume = symbol.formatPrice(request.getVolume());
+        placeOrder.setVolume(volume);
+        placeOrder.setFrozen(calculateFrozen(symbol, request.getSide(), volume, price, quantity, request.getTakerRate()));
         placeOrder.setTakerRate(request.getTakerRate());
         placeOrder.setMakerRate(request.getMakerRate());
         serialize(messageBuilder, buffer);
+    }
+
+    private long calculateFrozen(Symbol symbol, Envoy.Side side, long volume,
+                                 long price, long quantity, int takerRate) {
+        long amount;
+        if (side == Envoy.Side.BID) {
+            if (volume > 0) {
+                amount = volume;
+            } else {
+                amount = symbol.getVolume(price, quantity);
+            }
+            if (symbol.isQuoteSettlement()) {
+                amount += Rate.getRate(amount, takerRate);
+            }
+        } else {
+            amount = quantity;
+        }
+        return amount;
     }
 
     public void writeCancelOrderRequest(Envoy.CancelOrderRequest request, ByteBuf buffer) {
@@ -150,6 +172,7 @@ public class Transfer {
         placeOrder.setPrice(reader.getPrice());
         placeOrder.setQuantity(reader.getQuantity());
         placeOrder.setVolume(reader.getVolume());
+        placeOrder.setFrozen(reader.getFrozen());
         placeOrder.setTakerRate(reader.getTakerRate());
         placeOrder.setMakerRate(reader.getMakerRate());
         serialize(messageBuilder, buffer);
@@ -244,7 +267,7 @@ public class Transfer {
         Nexus.Unfreeze.Builder unfreeze = builder.getPayload().initUnfreeze();
         unfreeze.setAccountId(order.getAccountId());
         unfreeze.setCurrencyId(order.getPayCurrency().getId());
-        unfreeze.setAmount(order.getUnfreezeAmount());
+        unfreeze.setAmount(order.left());
         serialize(messageBuilder, buffer);
     }
 

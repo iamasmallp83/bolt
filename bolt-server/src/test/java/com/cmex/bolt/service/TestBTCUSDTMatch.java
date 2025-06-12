@@ -28,8 +28,8 @@ public class TestBTCUSDTMatch extends BoltTest {
                 .setRequestId(1)
                 .setSymbolId(1)
                 .setAccountId(1)
-                .setType(Envoy.PlaceOrderRequest.Type.LIMIT)
-                .setSide(Envoy.PlaceOrderRequest.Side.BID)
+                .setType(Envoy.Type.LIMIT)
+                .setSide(Envoy.Side.BID)
                 .setPrice("1")
                 .setQuantity("1")
                 .build(), FakeStreamObserver.of(response -> {
@@ -40,8 +40,8 @@ public class TestBTCUSDTMatch extends BoltTest {
                 .setRequestId(1)
                 .setSymbolId(1)
                 .setAccountId(2)
-                .setType(Envoy.PlaceOrderRequest.Type.LIMIT)
-                .setSide(Envoy.PlaceOrderRequest.Side.ASK)
+                .setType(Envoy.Type.LIMIT)
+                .setSide(Envoy.Side.ASK)
                 .setPrice("1")
                 .setQuantity("1")
                 .build(), FakeStreamObserver.of(response -> {

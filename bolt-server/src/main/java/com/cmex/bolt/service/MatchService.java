@@ -55,7 +55,7 @@ public class MatchService {
                     sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
                         MessageBuilder builder = createClearMessage(ticket.getMaker(), false,
                                 ticket.getQuantity(), ticket.getVolume());
-                        wrapper.setPartition(ticket.getMaker().getAccountId());
+                        wrapper.setPartition(ticket.getMaker().getAccountId() % group);
                         transfer.serialize(builder, wrapper.getBuffer());
                     });
                     totalQuantity += ticket.getQuantity();
@@ -66,7 +66,7 @@ public class MatchService {
                 sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
                     MessageBuilder builder = createClearMessage(order, true, finalTotalQuantity,
                             finalTotalVolume);
-                    wrapper.setPartition(order.getAccountId());
+                    wrapper.setPartition(order.getAccountId() % group);
                     transfer.serialize(builder, wrapper.getBuffer());
                 });
             }
@@ -153,6 +153,7 @@ public class MatchService {
                 .side(placeOrder.getSide() == Nexus.OrderSide.BID ? Order.OrderSide.BID : Order.OrderSide.ASK)
                 .price(placeOrder.getPrice())
                 .quantity(placeOrder.getQuantity())
+                .frozen(placeOrder.getFrozen())
                 .takerRate(placeOrder.getTakerRate())
                 .makerRate(placeOrder.getMakerRate())
                 .build();

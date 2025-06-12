@@ -38,7 +38,7 @@ public class Order {
 
     @Builder
     public Order(Symbol symbol, long id, int accountId, OrderType type, OrderSide side, long price, long quantity,
-                 int takerRate, int makerRate) {
+                 long frozen, int takerRate, int makerRate) {
         this.symbol = symbol;
         this.id = id;
         this.accountId = accountId;
@@ -49,6 +49,7 @@ public class Order {
         this.availableQuantity = this.quantity;
         this.volume = symbol.getVolume(this.price, this.quantity);
         this.availableVolume = this.volume;
+        this.frozen = frozen;
         this.takerRate = takerRate;
         this.makerRate = makerRate;
     }
@@ -109,14 +110,6 @@ public class Order {
 
     public Currency getIncomeCurrency() {
         return symbol.getIncomeCurrency(side);
-    }
-
-    public long getUnfreezeAmount() {
-        if (side == OrderSide.BID) {
-            return availableVolume;
-        } else {
-            return availableQuantity;
-        }
     }
 
     public int getRate(boolean isTaker) {

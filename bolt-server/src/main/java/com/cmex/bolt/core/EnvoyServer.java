@@ -2,9 +2,8 @@ package com.cmex.bolt.core;
 
 import com.cmex.bolt.Envoy;
 import com.cmex.bolt.Nexus;
+import com.cmex.bolt.domain.*;
 import com.cmex.bolt.domain.Balance;
-import com.cmex.bolt.domain.Symbol;
-import com.cmex.bolt.domain.Transfer;
 import com.cmex.bolt.dto.DepthDto;
 import com.cmex.bolt.Envoy.*;
 import com.cmex.bolt.EnvoyServerGrpc;
@@ -16,6 +15,7 @@ import com.cmex.bolt.service.AccountService;
 import com.cmex.bolt.service.MatchService;
 import com.cmex.bolt.util.BackpressureManager;
 import com.cmex.bolt.util.OrderIdGenerator;
+import com.cmex.bolt.util.Result;
 import com.lmax.disruptor.*;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
@@ -35,7 +35,6 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
     private final RingBuffer<NexusWrapper> sequencerRingBuffer;
     private final RingBuffer<NexusWrapper> matchRingBuffer;
-    private final RingBuffer<NexusWrapper> responseRingBuffer;
     private final AtomicLong requestId = new AtomicLong();
     private final ConcurrentHashMap<Long, StreamObserver<?>> observers;
 
@@ -59,13 +58,13 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         // 使用2的幂次方大小以优化内存访问模式
         // YieldingWaitStrategy在高吞吐量场景下比BusySpinWaitStrategy更节省CPU
         Disruptor<NexusWrapper> accountDisruptor =
-                new Disruptor<>(new NexusWrapper.Factory(256), 1024 * 1024 * 8, DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(new NexusWrapper.Factory(256), 1024 * 16, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new BusySpinWaitStrategy());
         Disruptor<NexusWrapper> matchDisruptor =
-                new Disruptor<>(new NexusWrapper.Factory(256), 1024 * 1024 * 4, DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(new NexusWrapper.Factory(256), 1024 * 8, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new BusySpinWaitStrategy());
         Disruptor<NexusWrapper> responseDisruptor =
-                new Disruptor<>(new NexusWrapper.Factory(256), 1024 * 1024 * 4, DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(new NexusWrapper.Factory(256), 1024 * 8, DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, new BusySpinWaitStrategy()); // Response通常是单生产者
 
         List<AccountDispatcher> accountDispatchers = createAccountDispatchers();
@@ -76,7 +75,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
         sequencerRingBuffer = accountDisruptor.start();
         matchRingBuffer = matchDisruptor.start();
-        responseRingBuffer = responseDisruptor.start();
+        RingBuffer<NexusWrapper> responseRingBuffer = responseDisruptor.start();
 
         // 初始化背压管理器
         sequencerBackpressureManager = new BackpressureManager("Account", sequencerRingBuffer);

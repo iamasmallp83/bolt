@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class TestBTCUSDT extends BoltTest {
 
@@ -22,14 +23,74 @@ public class TestBTCUSDT extends BoltTest {
      * @throws InterruptedException
      */
     @Test
+    public void testSimple() throws InterruptedException {
+        AtomicLong orderId = new AtomicLong();
+        service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
+                .setRequestId(1)
+                .setSymbolId(1)
+                .setAccountId(1001)
+                .setType(Envoy.Type.LIMIT)
+                .setSide(Envoy.Side.ASK)
+                .setPrice("10000")
+                .setQuantity("0.5")
+                .build(), FakeStreamObserver.of(response -> {
+            Assertions.assertTrue(response.getData().getId() > 0);
+        }));
+        Thread.sleep(1000);
+        service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
+                .setRequestId(1)
+                .setSymbolId(1)
+                .setAccountId(1000)
+                .setType(Envoy.Type.LIMIT)
+                .setSide(Envoy.Side.BID)
+                .setPrice("10000")
+                .setQuantity("1")
+                .build(), FakeStreamObserver.of(response -> {
+            Assertions.assertTrue(response.getData().getId() > 0);
+            orderId.set(response.getData().getId());
+        }));
+        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(1000).build(), FakeStreamObserver.of(response -> {
+            System.out.println("account 1000:");
+            System.out.println(response.getDataMap());
+//            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "5000"));
+//            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(2).getAvailable(), "0.5"));
+        }));
+        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(1001).build(), FakeStreamObserver.of(response -> {
+            System.out.println("account 1001:");
+            System.out.println(response.getDataMap());
+//            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "5000"));
+//            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(2).getAvailable(), "0.5"));
+        }));
+        Thread.sleep(1000);
+        service.getDepth(Envoy.GetDepthRequest.newBuilder().setSymbolId(1).build(), FakeStreamObserver.of(System.out::println));
+        Thread.sleep(1000);
+        service.cancelOrder(Envoy.CancelOrderRequest.newBuilder().setOrderId(orderId.get()).build(), FakeStreamObserver.noop());
+        Thread.sleep(1000);
+        service.getDepth(Envoy.GetDepthRequest.newBuilder().setSymbolId(1).build(), FakeStreamObserver.of(
+                response -> {
+                    System.out.println("after cancel:");
+                    System.out.println(response.getData());
+                }));
+        Thread.sleep(1000);
+        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(1000).build(), FakeStreamObserver.of(response -> {
+            System.out.println("account 1000:");
+            System.out.println(response.getDataMap());
+        }));
+        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(1001).build(), FakeStreamObserver.of(response -> {
+            System.out.println("account 1001:");
+            System.out.println(response.getDataMap());
+        }));
+    }
+
+    @Test
     public void testBtcUsdt() throws InterruptedException {
         final CountDownLatch latch = new CountDownLatch(1);
         service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
                 .setRequestId(1)
                 .setSymbolId(1)
                 .setAccountId(1)
-                .setType(Envoy.PlaceOrderRequest.Type.LIMIT)
-                .setSide(Envoy.PlaceOrderRequest.Side.BID)
+                .setType(Envoy.Type.LIMIT)
+                .setSide(Envoy.Side.BID)
                 .setPrice("10")
                 .setQuantity("1")
                 .setTakerRate(200)
@@ -44,8 +105,8 @@ public class TestBTCUSDT extends BoltTest {
                 .setRequestId(1)
                 .setSymbolId(1)
                 .setAccountId(2)
-                .setType(Envoy.PlaceOrderRequest.Type.LIMIT)
-                .setSide(Envoy.PlaceOrderRequest.Side.ASK)
+                .setType(Envoy.Type.LIMIT)
+                .setSide(Envoy.Side.ASK)
                 .setPrice("10")
                 .setQuantity("1")
                 .setTakerRate(200)

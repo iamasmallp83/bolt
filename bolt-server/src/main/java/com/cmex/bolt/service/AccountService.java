@@ -68,7 +68,8 @@ public class AccountService {
     }
 
     private void handleAccountPresent(long messageId, Symbol symbol, Account account, Nexus.PlaceOrder.Reader placeOrder) {
-        Result<Long> result = calculateAndFreezeAmount(symbol, account, placeOrder);
+        Currency currency = placeOrder.getSide() == Nexus.OrderSide.BID ? symbol.getQuote() : symbol.getBase();
+        Result<Balance> result = account.freeze(currency.getId(), placeOrder.getFrozen());
         if (result.isSuccess()) {
             publishPlaceOrderEvent(messageId, placeOrder);
         } else {
@@ -121,29 +122,6 @@ public class AccountService {
             message.setId(messageId);
             transfer.writeBalance(balance, Nexus.EventType.DECREASED, message.getBuffer());
         });
-    }
-
-    private Result<Long> calculateAndFreezeAmount(Symbol symbol, Account account, Nexus.PlaceOrder.Reader placeOrder) {
-        Result<Balance> freezeResult;
-        long amount = 0;
-        if (placeOrder.getSide() == Nexus.OrderSide.BID) {
-            if (placeOrder.getVolume() > 0) {
-                amount = placeOrder.getVolume();
-            } else {
-                amount = symbol.getVolume(placeOrder.getPrice(), placeOrder.getQuantity());
-            }
-            if (symbol.isQuoteSettlement()) {
-                amount += Rate.getRate(amount, placeOrder.getTakerRate());
-            }
-            freezeResult = account.freeze(symbol.getQuote().getId(), amount);
-        } else {
-            freezeResult = account.freeze(symbol.getBase().getId(), placeOrder.getQuantity());
-        }
-        if (freezeResult.isSuccess()) {
-            return Result.success(amount);
-        } else {
-            return Result.fail(freezeResult.reason());
-        }
     }
 
     private void doIncrease(long messageId, Nexus.Increase.Reader increase, Account account, Currency currency) {

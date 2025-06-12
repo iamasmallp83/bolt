@@ -1,5 +1,6 @@
 package com.cmex.bolt.performance;
 
+import com.cmex.bolt.Envoy;
 import com.cmex.bolt.Envoy.PlaceOrderRequest;
 import com.cmex.bolt.Envoy.PlaceOrderResponse;
 import com.cmex.bolt.core.EnvoyServer;
@@ -97,7 +98,7 @@ public class CorePerformance {
         PlaceOrderRequest request = PlaceOrderRequest.newBuilder()
                 .setAccountId(((orderSequence % 2) == 1) ? 1 : 2)
                 .setSymbolId(1)
-                .setSide(((orderSequence % 2) == 1) ? PlaceOrderRequest.Side.BID : PlaceOrderRequest.Side.ASK)
+                .setSide(((orderSequence % 2) == 1) ? Envoy.Side.BID : Envoy.Side.ASK)
                 .setPrice("1.0")
                 .setQuantity("1.0")
                 .build();
@@ -208,7 +209,7 @@ public class CorePerformance {
         PlaceOrderRequest request = PlaceOrderRequest.newBuilder()
                 .setAccountId(((orderSequence % 2) == 1) ? 1 : 2)
                 .setSymbolId(1)
-                .setSide(((orderSequence % 2) == 1) ? PlaceOrderRequest.Side.BID : PlaceOrderRequest.Side.ASK)
+                .setSide(((orderSequence % 2) == 1) ? Envoy.Side.BID : Envoy.Side.ASK)
                 .setPrice("1.0")
                 .setQuantity("1.0")
                 .build();

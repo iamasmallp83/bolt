@@ -73,19 +73,21 @@ message DecreaseResponse{
 //  optional Balance data = 3;
 //}
 
+enum Type{
+  LIMIT = 0;
+  MARKET = 1;
+}
+
+enum Side{
+  BID = 0;
+  ASK = 1;
+}
+
 message PlaceOrderRequest{
   sint64 requestId = 1;
   sint32 symbolId = 2;
   sint32 accountId = 3;
-  enum Type{
-    LIMIT = 0;
-    MARKET = 1;
-  }
   Type type = 4;
-  enum Side{
-    BID = 0;
-    ASK = 1;
-  }
   Side side = 5;
   optional string price = 6;
   optional string quantity = 7;

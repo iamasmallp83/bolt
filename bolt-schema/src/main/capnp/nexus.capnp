@@ -54,8 +54,9 @@ struct PlaceOrder {
   price @4 :Int64;
   quantity @5 :Int64;
   volume @6 :Int64;
-  takerRate @7 :Int32;
-  makerRate @8 :Int32;
+  frozen @7 :Int64;
+  takerRate @8 :Int32;
+  makerRate @9 :Int32;
 }
 
 struct CancelOrder {
