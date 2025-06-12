@@ -95,7 +95,7 @@ public class OrderBook {
     }
 
     public Result<Order> cancel(long orderId) {
-        Order order = orders.get(orderId);
+        Order order = orders.remove(orderId);
         if (order == null) {
             return Result.fail(Nexus.RejectionReason.ORDER_NOT_EXIST);
         }
@@ -127,6 +127,6 @@ public class OrderBook {
 
     @Override
     public String toString() {
-        return "OrderBook{" + "symbol=" + symbol + ", bids=" + bids + ", asks=" + asks + '}';
+        return "OrderBook{" + "symbol=" + symbol.getName() + ", bids=" + bids + ", asks=" + asks + '}';
     }
 }

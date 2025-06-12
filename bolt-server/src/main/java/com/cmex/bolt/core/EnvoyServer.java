@@ -15,6 +15,7 @@ import com.cmex.bolt.repository.impl.CurrencyRepository;
 import com.cmex.bolt.service.AccountService;
 import com.cmex.bolt.service.MatchService;
 import com.cmex.bolt.util.BackpressureManager;
+import com.cmex.bolt.util.OrderIdGenerator;
 import com.lmax.disruptor.*;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
@@ -33,6 +34,8 @@ import java.util.stream.Collectors;
 public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
     private final RingBuffer<NexusWrapper> sequencerRingBuffer;
+    private final RingBuffer<NexusWrapper> matchRingBuffer;
+    private final RingBuffer<NexusWrapper> responseRingBuffer;
     private final AtomicLong requestId = new AtomicLong();
     private final ConcurrentHashMap<Long, StreamObserver<?>> observers;
 
@@ -72,8 +75,8 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         accountDisruptor.handleEventsWith(accountDispatchers.toArray(new AccountDispatcher[0]));
 
         sequencerRingBuffer = accountDisruptor.start();
-        RingBuffer<NexusWrapper> matchRingBuffer = matchDisruptor.start();
-        RingBuffer<NexusWrapper> responseRingBuffer = responseDisruptor.start();
+        matchRingBuffer = matchDisruptor.start();
+        responseRingBuffer = responseDisruptor.start();
 
         // 初始化背压管理器
         sequencerBackpressureManager = new BackpressureManager("Account", sequencerRingBuffer);
@@ -211,7 +214,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
             sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
                 wrapper.setId(id);
                 wrapper.setPartition(partition);
-                transfer.write(request, currency, wrapper.getBuffer());
+                transfer.writeIncreaseRequest(request, currency, wrapper.getBuffer());
             });
         }, () -> {
             IncreaseResponse response = IncreaseResponse.newBuilder()
@@ -237,7 +240,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
             sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
                 wrapper.setId(id);
                 wrapper.setPartition(partition);
-                transfer.write(request, currency, wrapper.getBuffer());
+                transfer.writeDecreaseRequest(request, currency, wrapper.getBuffer());
             });
         }, () -> {
             DecreaseResponse response = DecreaseResponse.newBuilder()
@@ -270,7 +273,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
             sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
                 wrapper.setId(id);
                 wrapper.setPartition(partition);
-                transfer.write(request, symbol, wrapper.getBuffer());
+                transfer.writePlaceOrderRequest(request, symbol, wrapper.getBuffer());
             });
         }, () -> {
             PlaceOrderResponse response = PlaceOrderResponse.newBuilder()
@@ -292,8 +295,10 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
         long id = requestId.incrementAndGet();
         observers.put(id, responseObserver);
-        sequencerRingBuffer.publishEvent((message, sequence) -> {
-            //TODO 是否可以直接走MatchRingBuffer
+        matchRingBuffer.publishEvent((wrapper, sequence) -> {
+            wrapper.setId(id);
+            wrapper.setPartition(OrderIdGenerator.getSymbolId(request.getOrderId()) % group);
+            transfer.writeCancelOrderRequest(request, wrapper.getBuffer());
         });
     }
 

@@ -38,7 +38,7 @@ public class Order {
 
     @Builder
     public Order(Symbol symbol, long id, int accountId, OrderType type, OrderSide side, long price, long quantity,
-                 long volume, int takerRate, int makerRate) {
+                 int takerRate, int makerRate) {
         this.symbol = symbol;
         this.id = id;
         this.accountId = accountId;
@@ -47,8 +47,8 @@ public class Order {
         this.price = price;
         this.quantity = quantity;
         this.availableQuantity = this.quantity;
-        this.volume = volume;
-        this.availableVolume = volume;
+        this.volume = symbol.getVolume(this.price, this.quantity);
+        this.availableVolume = this.volume;
         this.takerRate = takerRate;
         this.makerRate = makerRate;
     }

@@ -28,7 +28,7 @@ public class TestTransfer {
         NexusWrapper wrapper = new NexusWrapper(PooledByteBufAllocator.DEFAULT, 512);
         ByteBuf buffer = wrapper.getBuffer();
         Transfer transfer = new Transfer();
-        transfer.write(request, currency, buffer);
+        transfer.writeIncreaseRequest(request, currency, buffer);
         Nexus.NexusEvent.Reader reader = transfer.from(buffer);
         Assertions.assertEquals(reader.getPayload().which(), Nexus.Payload.Which.INCREASE);
     }

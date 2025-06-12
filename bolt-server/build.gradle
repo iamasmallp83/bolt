@@ -7,7 +7,6 @@ dependencies {
     implementation project(':bolt-schema')
     
     implementation "com.lmax:disruptor:${versions.disruptor}"
-    implementation "org.javolution:javolution-core-java:${versions.javolution}"
     implementation "io.aeron:aeron-driver:${versions.aeron}"
     implementation "io.aeron:aeron-client:${versions.aeron}"
     

@@ -33,7 +33,7 @@ public class Transfer {
         return ByteBufAllocator.DEFAULT.buffer();
     }
 
-    public void write(Envoy.IncreaseRequest request, Currency currency, ByteBuf buffer) {
+    public void writeIncreaseRequest(Envoy.IncreaseRequest request, Currency currency, ByteBuf buffer) {
         MessageBuilder messageBuilder = new MessageBuilder();
         Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
         Nexus.Increase.Builder increase = builder.getPayload().initIncrease();
@@ -45,7 +45,7 @@ public class Transfer {
         serialize(messageBuilder, buffer);
     }
 
-    public void write(Envoy.DecreaseRequest request, Currency currency, ByteBuf buffer) {
+    public void writeDecreaseRequest(Envoy.DecreaseRequest request, Currency currency, ByteBuf buffer) {
         MessageBuilder messageBuilder = new MessageBuilder();
         Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
         Nexus.Decrease.Builder decrease = builder.getPayload().initDecrease();
@@ -57,18 +57,16 @@ public class Transfer {
         serialize(messageBuilder, buffer);
     }
 
-    public void write(Envoy.PlaceOrderRequest request, Symbol symbol, ByteBuf buffer) {
+    public void writePlaceOrderRequest(Envoy.PlaceOrderRequest request, Symbol symbol, ByteBuf buffer) {
         MessageBuilder messageBuilder = new MessageBuilder();
         Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
         Nexus.PlaceOrder.Builder placeOrder = builder.getPayload().initPlaceOrder();
-
         placeOrder.setSymbolId(request.getSymbolId());
         placeOrder.setAccountId(request.getAccountId());
         placeOrder.setType(request.getType() == Envoy.PlaceOrderRequest.Type.LIMIT ?
                 Nexus.OrderType.LIMIT : Nexus.OrderType.MARKET);
         placeOrder.setSide(request.getSide() == Envoy.PlaceOrderRequest.Side.BID ?
                 Nexus.OrderSide.BID : Nexus.OrderSide.ASK);
-
         placeOrder.setPrice(symbol.formatPrice(request.getPrice()));
         placeOrder.setQuantity(symbol.formatQuantity(request.getQuantity()));
         placeOrder.setVolume(symbol.formatPrice(request.getVolume()));
@@ -77,8 +75,15 @@ public class Transfer {
         serialize(messageBuilder, buffer);
     }
 
-    //
-    public void write(Nexus.EventType failed, Nexus.RejectionReason reason, ByteBuf buffer) {
+    public void writeCancelOrderRequest(Envoy.CancelOrderRequest request, ByteBuf buffer) {
+        MessageBuilder messageBuilder = new MessageBuilder();
+        Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
+        Nexus.CancelOrder.Builder cancelOrder = builder.getPayload().initCancelOrder();
+        cancelOrder.setOrderId(request.getOrderId());
+        serialize(messageBuilder, buffer);
+    }
+
+    public void writeFailed(Nexus.EventType failed, Nexus.RejectionReason reason, ByteBuf buffer) {
         MessageBuilder messageBuilder = new MessageBuilder();
         Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
         switch (failed) {
@@ -90,13 +95,15 @@ public class Transfer {
                 Nexus.PlaceOrderRejected.Builder placeOrderRejected = builder.getPayload().initPlaceOrderRejected();
                 placeOrderRejected.setReason(reason);
             }
-            default -> {
+            case CANCEL_ORDER_REJECTED -> {
+                Nexus.CancelOrderRejected.Builder cancelOrderRejected = builder.getPayload().initCancelOrderRejected();
+                cancelOrderRejected.setReason(reason);
             }
         }
         serialize(messageBuilder, buffer);
     }
 
-    public void write(Balance balance, Nexus.EventType type, ByteBuf buffer) {
+    public void writeBalance(Balance balance, Nexus.EventType type, ByteBuf buffer) {
         MessageBuilder messageBuilder = new MessageBuilder();
         Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
         switch (type) {
@@ -123,7 +130,7 @@ public class Transfer {
         serialize(messageBuilder, buffer);
     }
 
-    public void write(Order order, ByteBuf buffer) {
+    public void writeOrder(Order order, ByteBuf buffer) {
         MessageBuilder messageBuilder = new MessageBuilder();
         Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
         Nexus.OrderCreated.Builder orderCreated = builder.getPayload().initOrderCreated();
@@ -132,10 +139,11 @@ public class Transfer {
     }
 
 
-    public void write(Nexus.PlaceOrder.Reader reader, ByteBuf buffer) {
+    public void writePlaceOrder(Nexus.PlaceOrder.Reader reader, ByteBuf buffer) {
         MessageBuilder messageBuilder = new MessageBuilder();
         Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
         Nexus.PlaceOrder.Builder placeOrder = builder.getPayload().initPlaceOrder();
+        placeOrder.setSymbolId(reader.getSymbolId());
         placeOrder.setAccountId(reader.getAccountId());
         placeOrder.setType(reader.getType());
         placeOrder.setSide(reader.getSide());
@@ -147,7 +155,7 @@ public class Transfer {
         serialize(messageBuilder, buffer);
     }
 
-    public void write(Nexus.CancelOrder.Reader cancelOrder, ByteBuf buffer) {
+    public void writeCancelOrder(Nexus.CancelOrder.Reader cancelOrder, ByteBuf buffer) {
         MessageBuilder messageBuilder = new MessageBuilder();
         Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
         Nexus.OrderCanceled.Builder orderCanceled = builder.getPayload().initOrderCanceled();
@@ -201,7 +209,32 @@ public class Transfer {
                         .setCode(rejected.getReason().ordinal())
                         .setMessage(rejected.getReason().name()).build();
             }
-            default -> throw new RuntimeException();
+            case ORDER_CREATED -> {
+                Nexus.OrderCreated.Reader orderCreated = payload.getOrderCreated();
+                return Envoy.PlaceOrderResponse.newBuilder()
+                        .setCode(1)
+                        .setData(Envoy.Order.newBuilder().setId(orderCreated.getOrderId()).build()).build();
+            }
+            case PLACE_ORDER_REJECTED -> {
+                Nexus.PlaceOrderRejected.Reader rejected = payload.getPlaceOrderRejected();
+                return Envoy.PlaceOrderResponse.newBuilder()
+                        .setCode(rejected.getReason().ordinal())
+                        .setMessage(rejected.getReason().name()).build();
+            }
+            case ORDER_CANCELED -> {
+                return Envoy.CancelOrderResponse.newBuilder()
+                        .setCode(1)
+                        .build();
+            }
+            case CANCEL_ORDER_REJECTED -> {
+                Nexus.CancelOrderRejected.Reader rejected = payload.getCancelOrderRejected();
+                return Envoy.CancelOrderResponse.newBuilder()
+                        .setCode(rejected.getReason().ordinal())
+                        .setMessage(rejected.getReason().name()).build();
+            }
+            default -> {
+                throw new IllegalArgumentException("Unknown event type: " + payload.which());
+            }
         }
     }
 

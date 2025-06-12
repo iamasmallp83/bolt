@@ -12,7 +12,7 @@ public class OrderIdGenerator {
 
     private static final long maxSequence = (1L << SEQUENCE_BITS) - 1;
 
-    // Custom Epoch (May 14, 2015 UTC = 2020-05-14T11:31:00Z)
+    // Custom Epoch (May 14, 2020 UTC = 2020-05-14T11:31:00Z)
     private static final long DEFAULT_CUSTOM_EPOCH = 1589455860000L;
 
     private final long customEpoch = DEFAULT_CUSTOM_EPOCH;

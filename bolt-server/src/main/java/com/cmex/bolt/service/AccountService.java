@@ -68,7 +68,7 @@ public class AccountService {
     }
 
     private void handleAccountPresent(long messageId, Symbol symbol, Account account, Nexus.PlaceOrder.Reader placeOrder) {
-        Result<Balance> result = calculateAndFreezeAmount(symbol, account, placeOrder);
+        Result<Long> result = calculateAndFreezeAmount(symbol, account, placeOrder);
         if (result.isSuccess()) {
             publishPlaceOrderEvent(messageId, placeOrder);
         } else {
@@ -84,7 +84,7 @@ public class AccountService {
         matchRingBuffer.publishEvent((wrapper, sequence) -> {
             wrapper.setId(messageId);
             wrapper.setPartition(placeOrder.getSymbolId() % group);
-            transfer.write(placeOrder, wrapper.getBuffer());
+            transfer.writePlaceOrder(placeOrder, wrapper.getBuffer());
         });
     }
 
@@ -112,31 +112,37 @@ public class AccountService {
     private void publishIncreasedEvent(long messageId, Balance balance) {
         responseRingBuffer.publishEvent((message, sequence) -> {
             message.setId(messageId);
-            transfer.write(balance, Nexus.EventType.INCREASED, message.getBuffer());
+            transfer.writeBalance(balance, Nexus.EventType.INCREASED, message.getBuffer());
         });
     }
 
     private void publishDecreasedEvent(long messageId, Balance balance) {
         responseRingBuffer.publishEvent((message, sequence) -> {
             message.setId(messageId);
-            transfer.write(balance, Nexus.EventType.DECREASED, message.getBuffer());
+            transfer.writeBalance(balance, Nexus.EventType.DECREASED, message.getBuffer());
         });
     }
 
-    private Result<Balance> calculateAndFreezeAmount(Symbol symbol, Account account, Nexus.PlaceOrder.Reader placeOrder) {
+    private Result<Long> calculateAndFreezeAmount(Symbol symbol, Account account, Nexus.PlaceOrder.Reader placeOrder) {
+        Result<Balance> freezeResult;
+        long amount = 0;
         if (placeOrder.getSide() == Nexus.OrderSide.BID) {
-            long volume;
             if (placeOrder.getVolume() > 0) {
-                volume = placeOrder.getVolume();
+                amount = placeOrder.getVolume();
             } else {
-                volume = symbol.getVolume(placeOrder.getPrice(), placeOrder.getQuantity());
+                amount = symbol.getVolume(placeOrder.getPrice(), placeOrder.getQuantity());
             }
             if (symbol.isQuoteSettlement()) {
-                volume += Rate.getRate(volume, placeOrder.getTakerRate());
+                amount += Rate.getRate(amount, placeOrder.getTakerRate());
             }
-            return account.freeze(symbol.getQuote().getId(), volume);
+            freezeResult = account.freeze(symbol.getQuote().getId(), amount);
         } else {
-            return account.freeze(symbol.getBase().getId(), placeOrder.getQuantity());
+            freezeResult = account.freeze(symbol.getBase().getId(), placeOrder.getQuantity());
+        }
+        if (freezeResult.isSuccess()) {
+            return Result.success(amount);
+        } else {
+            return Result.fail(freezeResult.reason());
         }
     }
 
@@ -148,7 +154,7 @@ public class AccountService {
     private void publishFailureEvent(long messageId, Nexus.EventType eventType, Nexus.RejectionReason rejectionReason) {
         responseRingBuffer.publishEvent((wrapper, sequence) -> {
             wrapper.setId(messageId);
-            transfer.write(eventType, rejectionReason, wrapper.getBuffer());
+            transfer.writeFailed(eventType, rejectionReason, wrapper.getBuffer());
         });
     }
 
