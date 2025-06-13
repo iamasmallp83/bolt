@@ -80,8 +80,8 @@ public class BoltTest {
             Assertions.assertTrue(BigDecimalUtil.eq(new BigDecimal(response.getData().getAvailable()), new BigDecimal("200000000000")));
             countDownLatch.countDown();
         }));
-        EnvoyUtil.increase(service, 1000, 1, "10000");
-        EnvoyUtil.increase(service, 1001, 2, "1");
+        EnvoyUtil.increase(service, 10000, 1, "10000");
+        EnvoyUtil.increase(service, 20000, 2, "10");
         countDownLatch.await();
         service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(1).build(), FakeStreamObserver.of(response -> {
             Assertions.assertEquals(response.getCode(), 1);

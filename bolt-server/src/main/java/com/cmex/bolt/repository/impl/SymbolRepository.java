@@ -5,7 +5,7 @@ import com.cmex.bolt.domain.Symbol;
 
 public class SymbolRepository extends HashMapRepository<Integer, Symbol> {
 
-    private static SymbolRepository INSTANCE = new SymbolRepository();
+    private static final SymbolRepository INSTANCE = new SymbolRepository();
 
     public static SymbolRepository getInstance() {
         return INSTANCE;

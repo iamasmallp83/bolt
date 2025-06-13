@@ -24,8 +24,8 @@ public class Symbol {
         orderBook = new OrderBook(this);
     }
 
-    public Currency getPayCurrency(Order.OrderSide side) {
-        return side == Order.OrderSide.BID ? quote : base;
+    public Currency getPayCurrency(Order.Side side) {
+        return side == Order.Side.BID ? quote : base;
     }
 
     public long formatPrice(String price) {
@@ -39,8 +39,8 @@ public class Symbol {
         return quote.format(price);
     }
 
-    public Currency getIncomeCurrency(Order.OrderSide side) {
-        return side == Order.OrderSide.BID ? base : quote;
+    public Currency getIncomeCurrency(Order.Side side) {
+        return side == Order.Side.BID ? base : quote;
     }
 
     public long formatQuantity(String quantity) {
@@ -54,7 +54,7 @@ public class Symbol {
         return base.format(quantity);
     }
 
-    public Currency getFeeCurrency(Order.OrderSide side) {
+    public Currency getFeeCurrency(Order.Side side) {
         if (quoteSettlement) {
             return quote;
         }

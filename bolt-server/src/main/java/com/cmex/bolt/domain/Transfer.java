@@ -261,13 +261,13 @@ public class Transfer {
         }
     }
 
-    public void writeUnfreeze(Order order, ByteBuf buffer) {
+    public void writeUnfreeze(Symbol symbol, Order order, ByteBuf buffer) {
         MessageBuilder messageBuilder = new MessageBuilder();
         Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
         Nexus.Unfreeze.Builder unfreeze = builder.getPayload().initUnfreeze();
         unfreeze.setAccountId(order.getAccountId());
-        unfreeze.setCurrencyId(order.getPayCurrency().getId());
-        unfreeze.setAmount(order.left());
+        unfreeze.setCurrencyId(symbol.getPayCurrency(order.getSide()).getId());
+        unfreeze.setAmount(order.calculateUnfreeze());
         serialize(messageBuilder, buffer);
     }
 
