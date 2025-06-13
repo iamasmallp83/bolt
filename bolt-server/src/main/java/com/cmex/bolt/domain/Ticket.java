@@ -19,6 +19,4 @@ public class Ticket {
 
     private long volume;
 
-    private Order.OrderSide takerSide;
-
 }

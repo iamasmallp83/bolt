@@ -12,51 +12,48 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public class TestBTCUSDT extends BoltTest {
 
-    /**
-     * Account 1 初始资产 10000 usdt
-     * Account 2 初始资产 100   btc
-     * 1 买单 10，1  0.1%
-     * 2 卖单 10，1  0.2%
-     * Account 1 资产 btc 1 usdt 9989.99
-     * Account 2 资产 btc 99 usdt 9.98
-     *
-     * @throws InterruptedException
-     */
     @Test
     public void testSimple() throws InterruptedException {
         AtomicLong orderId = new AtomicLong();
         service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
                 .setRequestId(1)
                 .setSymbolId(1)
-                .setAccountId(1001)
+                .setAccountId(20000)
                 .setType(Envoy.Type.LIMIT)
                 .setSide(Envoy.Side.ASK)
-                .setPrice("10000")
-                .setQuantity("0.5")
-                .build(), FakeStreamObserver.of(response -> {
-            Assertions.assertTrue(response.getData().getId() > 0);
-        }));
-        Thread.sleep(1000);
-        service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
-                .setRequestId(1)
-                .setSymbolId(1)
-                .setAccountId(1000)
-                .setType(Envoy.Type.LIMIT)
-                .setSide(Envoy.Side.BID)
-                .setPrice("10000")
-                .setQuantity("1")
+                .setPrice("1000")
+                .setQuantity("2")
                 .build(), FakeStreamObserver.of(response -> {
             Assertions.assertTrue(response.getData().getId() > 0);
             orderId.set(response.getData().getId());
         }));
-        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(1000).build(), FakeStreamObserver.of(response -> {
-            System.out.println("account 1000:");
+        Thread.sleep(100);
+        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(20000).build(), FakeStreamObserver.of(response -> {
+            System.out.println("before match account 20000:");
+            System.out.println(response.getDataMap());
+        }));
+        Thread.sleep(100);
+        service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
+                .setRequestId(1)
+                .setSymbolId(1)
+                .setAccountId(10000)
+                .setType(Envoy.Type.LIMIT)
+                .setSide(Envoy.Side.BID)
+                .setPrice("1000")
+                .setQuantity("1")
+                .build(), FakeStreamObserver.of(response -> {
+            Assertions.assertTrue(response.getData().getId() > 0);
+        }));
+        Thread.sleep(100);
+        System.out.println("after match");
+        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(10000).build(), FakeStreamObserver.of(response -> {
+            System.out.println("account 10000:");
             System.out.println(response.getDataMap());
 //            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "5000"));
 //            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(2).getAvailable(), "0.5"));
         }));
-        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(1001).build(), FakeStreamObserver.of(response -> {
-            System.out.println("account 1001:");
+        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(20000).build(), FakeStreamObserver.of(response -> {
+            System.out.println("account 20000:");
             System.out.println(response.getDataMap());
 //            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "5000"));
 //            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(2).getAvailable(), "0.5"));
@@ -72,12 +69,12 @@ public class TestBTCUSDT extends BoltTest {
                     System.out.println(response.getData());
                 }));
         Thread.sleep(1000);
-        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(1000).build(), FakeStreamObserver.of(response -> {
-            System.out.println("account 1000:");
+        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(10000).build(), FakeStreamObserver.of(response -> {
+            System.out.println("account 10000:");
             System.out.println(response.getDataMap());
         }));
-        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(1001).build(), FakeStreamObserver.of(response -> {
-            System.out.println("account 1001:");
+        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(20000).build(), FakeStreamObserver.of(response -> {
+            System.out.println("account 20000:");
             System.out.println(response.getDataMap());
         }));
     }

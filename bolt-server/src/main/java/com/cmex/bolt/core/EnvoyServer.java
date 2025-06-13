@@ -15,7 +15,9 @@ import com.cmex.bolt.service.AccountService;
 import com.cmex.bolt.service.MatchService;
 import com.cmex.bolt.util.BackpressureManager;
 import com.cmex.bolt.util.OrderIdGenerator;
-import com.cmex.bolt.util.Result;
+import com.cmex.bolt.util.SystemBusyResponseFactory;
+import com.cmex.bolt.util.SystemBusyResponses;
+
 import com.lmax.disruptor.*;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
@@ -29,7 +31,6 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
-
 
 public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
@@ -129,52 +130,34 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     }
 
     /**
-     * 处理系统繁忙的响应
+     * 背压检查
      */
-    private void handleSystemBusy(StreamObserver<?> responseObserver, String operationType) {
-        switch (operationType) {
-            case "PLACE_ORDER" -> {
-                PlaceOrderResponse response = PlaceOrderResponse.newBuilder()
-                        .setCode(Nexus.RejectionReason.SYSTEM_BUSY.ordinal())
-                        .setMessage("System is busy, please try again later")
-                        .build();
-                @SuppressWarnings("unchecked")
-                StreamObserver<PlaceOrderResponse> observer = (StreamObserver<PlaceOrderResponse>) responseObserver;
-                observer.onNext(response);
-                observer.onCompleted();
-            }
-            case "INCREASE" -> {
-                IncreaseResponse response = IncreaseResponse.newBuilder()
-                        .setCode(Nexus.RejectionReason.SYSTEM_BUSY.ordinal())
-                        .setMessage("System is busy, please try again later")
-                        .build();
-                @SuppressWarnings("unchecked")
-                StreamObserver<IncreaseResponse> observer = (StreamObserver<IncreaseResponse>) responseObserver;
-                observer.onNext(response);
-                observer.onCompleted();
-            }
-            case "DECREASE" -> {
-                DecreaseResponse response = DecreaseResponse.newBuilder()
-                        .setCode(Nexus.RejectionReason.SYSTEM_BUSY.ordinal())
-                        .setMessage("System is busy, please try again later")
-                        .build();
-                @SuppressWarnings("unchecked")
-                StreamObserver<DecreaseResponse> observer = (StreamObserver<DecreaseResponse>) responseObserver;
-                observer.onNext(response);
-                observer.onCompleted();
-            }
-            case "CANCEL_ORDER" -> {
-                CancelOrderResponse response = CancelOrderResponse.newBuilder()
-                        .setCode(Nexus.RejectionReason.SYSTEM_BUSY.ordinal())
-                        .setMessage("System is busy, please try again later")
-                        .build();
-                @SuppressWarnings("unchecked")
-                StreamObserver<CancelOrderResponse> observer = (StreamObserver<CancelOrderResponse>) responseObserver;
-                observer.onNext(response);
-                observer.onCompleted();
-            }
+    private <T> boolean handleBackpressure(StreamObserver<T> responseObserver,
+                                           SystemBusyResponseFactory<T> responseFactory,
+                                           BackpressureManager backpressureManager) {
+        BackpressureManager.BackpressureResult result = backpressureManager.checkCapacity();
+
+        if (result == BackpressureManager.BackpressureResult.CRITICAL_REJECT) {
+            sendResponse(responseObserver, responseFactory.createResponse());
+            return true;
         }
+
+        if (result == BackpressureManager.BackpressureResult.HIGH_LOAD) {
+            System.out.printf("WARNING: Account RingBuffer usage is high: %.2f%%%n",
+                    backpressureManager.getCurrentUsageRate() * 100);
+        }
+        return false;
     }
+
+    /**
+     * 通用响应发送方法
+     */
+    private <T> void sendResponse(StreamObserver<T> responseObserver, T response) {
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
+
+    // ==================== 重构后的服务方法 ====================
 
     @Override
     public void getAccount(GetAccountRequest request, StreamObserver<GetAccountResponse> responseObserver) {
@@ -200,9 +183,9 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     }
 
     public void increase(IncreaseRequest request, StreamObserver<IncreaseResponse> responseObserver) {
-        // 检查背压状态
-        if (!sequencerBackpressureManager.canAcceptRequest()) {
-            handleSystemBusy(responseObserver, "INCREASE");
+        // 背压检查
+        if (handleBackpressure(responseObserver, SystemBusyResponses::createIncreaseBusyResponse,
+                sequencerBackpressureManager)) {
             return;
         }
 
@@ -220,51 +203,44 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
                     .setCode(Nexus.RejectionReason.CURRENCY_NOT_EXIST.ordinal())
                     .setMessage(Nexus.RejectionReason.CURRENCY_NOT_EXIST.name())
                     .build();
-            responseObserver.onNext(response);
-            responseObserver.onCompleted();
+            sendResponse(responseObserver, response);
         });
     }
 
     public void decrease(DecreaseRequest request, StreamObserver<DecreaseResponse> responseObserver) {
-        // 检查背压状态
-        if (!sequencerBackpressureManager.canAcceptRequest()) {
-            handleSystemBusy(responseObserver, "DECREASE");
+        // 背压检查
+        if (handleBackpressure(responseObserver, SystemBusyResponses::createDecreaseBusyResponse,
+                sequencerBackpressureManager)) {
             return;
         }
 
-        getAccountService(request.getAccountId()).getCurrency(request.getCurrencyId()).ifPresentOrElse(currency -> {
-            long id = requestId.incrementAndGet();
-            int partition = getPartition(request.getAccountId());
-            observers.put(id, responseObserver);
-            sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
-                wrapper.setId(id);
-                wrapper.setPartition(partition);
-                transfer.writeDecreaseRequest(request, currency, wrapper.getBuffer());
-            });
-        }, () -> {
-            DecreaseResponse response = DecreaseResponse.newBuilder()
-                    .setCode(Nexus.RejectionReason.CURRENCY_NOT_EXIST.ordinal())
-                    .setMessage(Nexus.RejectionReason.CURRENCY_NOT_EXIST.name())
-                    .build();
-            responseObserver.onNext(response);
-            responseObserver.onCompleted();
-        });
+        getAccountService(request.getAccountId()).getCurrency(request.getCurrencyId())
+                .ifPresentOrElse(currency -> {
+                    long id = requestId.incrementAndGet();
+                    int partition = getPartition(request.getAccountId());
+                    observers.put(id, responseObserver);
+                    sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
+                        wrapper.setId(id);
+                        wrapper.setPartition(partition);
+                        transfer.writeDecreaseRequest(request, currency, wrapper.getBuffer());
+                    });
+                }, () -> {
+                    DecreaseResponse response = DecreaseResponse.newBuilder()
+                            .setCode(Nexus.RejectionReason.CURRENCY_NOT_EXIST.ordinal())
+                            .setMessage(Nexus.RejectionReason.CURRENCY_NOT_EXIST.name())
+                            .build();
+                    sendResponse(responseObserver, response);
+                });
     }
 
     public void placeOrder(PlaceOrderRequest request, StreamObserver<PlaceOrderResponse> responseObserver) {
-        // 检查背压状态
-        BackpressureManager.BackpressureResult result = sequencerBackpressureManager.checkCapacity();
-        if (result == BackpressureManager.BackpressureResult.CRITICAL_REJECT) {
-            handleSystemBusy(responseObserver, "PLACE_ORDER");
+        if (handleBackpressure(responseObserver, SystemBusyResponses::createPlaceOrderBusyResponse,
+                sequencerBackpressureManager)) {
             return;
         }
 
-        // 如果是高负载，输出警告日志
-        if (result == BackpressureManager.BackpressureResult.HIGH_LOAD) {
-            System.out.printf("WARNING: Account RingBuffer usage is high: %.2f%%%n",
-                    sequencerBackpressureManager.getCurrentUsageRate() * 100);
-        }
-
+        //TODO
+        //市价单 支持买金额卖数量
         getSymbol(request.getSymbolId()).ifPresentOrElse(symbol -> {
             long id = requestId.incrementAndGet();
             int partition = getPartition(request.getAccountId());
@@ -279,19 +255,12 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
                     .setCode(Nexus.RejectionReason.SYMBOL_NOT_EXIST.ordinal())
                     .setMessage(Nexus.RejectionReason.SYMBOL_NOT_EXIST.name())
                     .build();
-            responseObserver.onNext(response);
-            responseObserver.onCompleted();
+            sendResponse(responseObserver, response);
         });
     }
 
     @Override
     public void cancelOrder(CancelOrderRequest request, StreamObserver<CancelOrderResponse> responseObserver) {
-        // 检查背压状态
-        if (!sequencerBackpressureManager.canAcceptRequest()) {
-            handleSystemBusy(responseObserver, "CANCEL_ORDER");
-            return;
-        }
-
         long id = requestId.incrementAndGet();
         observers.put(id, responseObserver);
         matchRingBuffer.publishEvent((wrapper, sequence) -> {
@@ -317,7 +286,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     /**
      * 获取背压统计信息 - 用于外部监控
      */
-    public BackpressureManager.BackpressureStats getAccountBackpressureStats() {
+    public BackpressureManager.BackpressureStats getSequencerBackpressureStats() {
         return sequencerBackpressureManager.getStats();
     }
 

@@ -14,12 +14,12 @@ public class CurrencyRepository extends HashMapRepository<Integer, Currency> {
         Currency usdt = Currency.builder()
                 .id(1)
                 .name("USDT")
-                .precision(4)
+                .precision(2)
                 .build();
         Currency btc = Currency.builder()
                 .id(2)
                 .name("BTC")
-                .precision(6)
+                .precision(4)
                 .build();
         Currency shib = Currency.builder()
                 .id(3)

@@ -36,7 +36,7 @@ public class OrderBook {
             Iterator<Order> it = priceNode.iterator();
             while (it.hasNext()) {
                 Order maker = it.next();
-                Ticket ticket = taker.match(maker);
+                Ticket ticket = taker.match(symbol, maker);
                 tickets.add(ticket);
                 if (maker.isDone()) {
                     priceNode.remove(maker);
@@ -59,12 +59,12 @@ public class OrderBook {
         //价格不匹配
         if (!taker.isDone()) {
             TreeMap<Long, PriceNode> own = getOwn(taker.getSide());
-            own.compute(taker.getPrice(), (key, existingValue) -> {
+            own.compute(taker.getSpecification().getPrice(), (key, existingValue) -> {
                 if (existingValue != null) {
                     existingValue.add(taker);
                     return existingValue;
                 } else {
-                    return new PriceNode(taker.getPrice(), taker);
+                    return new PriceNode(taker.getSpecification().getPrice(), taker);
                 }
             });
             orders.put(taker.getId(), taker);
@@ -75,22 +75,22 @@ public class OrderBook {
         return Result.success(tickets);
     }
 
-    private TreeMap<Long, PriceNode> getCounter(Order.OrderSide side) {
-        return side == Order.OrderSide.BID ? asks : bids;
+    private TreeMap<Long, PriceNode> getCounter(Order.Side side) {
+        return side == Order.Side.BID ? asks : bids;
     }
 
-    private TreeMap<Long, PriceNode> getOwn(Order.OrderSide side) {
-        return side == Order.OrderSide.BID ? bids : asks;
+    private TreeMap<Long, PriceNode> getOwn(Order.Side side) {
+        return side == Order.Side.BID ? bids : asks;
     }
 
     private boolean tryMatch(TreeMap<Long, PriceNode> counter, Order taker) {
         if (counter.isEmpty()) {
             return false;
         }
-        if (taker.getSide() == Order.OrderSide.BID) {
-            return taker.getPrice() >= counter.firstKey();
+        if (taker.getSide() == Order.Side.BID) {
+            return taker.getSpecification().getPrice() >= counter.firstKey();
         } else {
-            return taker.getPrice() <= counter.firstKey();
+            return taker.getSpecification().getPrice() <= counter.firstKey();
         }
     }
 
@@ -99,8 +99,9 @@ public class OrderBook {
         if (order == null) {
             return Result.fail(Nexus.RejectionReason.ORDER_NOT_EXIST);
         }
+        order.cancel();
         TreeMap<Long, PriceNode> own = getOwn(order.getSide());
-        PriceNode priceNode = own.get(order.getPrice());
+        PriceNode priceNode = own.get(order.getSpecification().getPrice());
         priceNode.remove(order);
         if (priceNode.isDone()) {
             own.remove(priceNode.getPrice());
