@@ -25,7 +25,7 @@ public class TestCorePerformance {
 
     @BeforeEach
     void setUp() {
-        EnvoyServer service = new EnvoyServer(new BoltConfig(9090, true, 10,
+        service = new EnvoyServer(new BoltConfig(9090, true, 10,
                 1024 * 1024 * 2, 1024 * 1024, 1024 * 1024));
         detector = new SystemCompletionDetector(service, 60000, 50, 15);
 
