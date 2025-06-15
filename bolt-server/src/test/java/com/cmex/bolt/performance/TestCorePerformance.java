@@ -3,6 +3,7 @@ package com.cmex.bolt.performance;
 import com.cmex.bolt.Envoy;
 import com.cmex.bolt.Envoy.PlaceOrderRequest;
 import com.cmex.bolt.Envoy.PlaceOrderResponse;
+import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.EnvoyServer;
 import com.cmex.bolt.util.SystemCompletionDetector;
 import io.grpc.stub.StreamObserver;
@@ -17,14 +18,15 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 增强版订单性能测试
  * 使用SystemCompletionDetector来准确判断复杂异步系统的完成状态
  */
-public class CorePerformance {
+public class TestCorePerformance {
 
     private EnvoyServer service;
     private SystemCompletionDetector detector;
 
     @BeforeEach
     void setUp() {
-        service = new EnvoyServer();
+        EnvoyServer service = new EnvoyServer(new BoltConfig(9090, true, 10,
+                1024 * 1024 * 2, 1024 * 1024, 1024 * 1024));
         detector = new SystemCompletionDetector(service, 60000, 50, 15);
 
         // 注册背压管理器（假设可以通过某种方式获取）

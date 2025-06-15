@@ -7,7 +7,7 @@ import com.cmex.bolt.domain.Balance;
 import com.cmex.bolt.dto.DepthDto;
 import com.cmex.bolt.Envoy.*;
 import com.cmex.bolt.EnvoyServerGrpc;
-import com.cmex.bolt.handler.AccountDispatcher;
+import com.cmex.bolt.handler.SequencerDispatcher;
 import com.cmex.bolt.handler.MatchDispatcher;
 import com.cmex.bolt.monitor.RingBufferMonitor;
 import com.cmex.bolt.repository.impl.CurrencyRepository;
@@ -35,7 +35,7 @@ import java.util.stream.Collectors;
 public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
     private final RingBuffer<NexusWrapper> sequencerRingBuffer;
-    private final RingBuffer<NexusWrapper> matchRingBuffer;
+    private final RingBuffer<NexusWrapper> matchingRingBuffer;
     private final AtomicLong requestId = new AtomicLong();
     private final ConcurrentHashMap<Long, StreamObserver<?>> observers;
 
@@ -50,37 +50,40 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     private final Transfer transfer = new Transfer();
 
     //分组数量
-    private int group = 4;
+    private final int group;
 
-    public EnvoyServer() {
+    public EnvoyServer(BoltConfig boltConfig) {
+        this.group = boltConfig.group();
         observers = new ConcurrentHashMap<>();
-
-        // 创建Disruptor - 优化配置以提升性能
-        // 使用2的幂次方大小以优化内存访问模式
-        // YieldingWaitStrategy在高吞吐量场景下比BusySpinWaitStrategy更节省CPU
-        Disruptor<NexusWrapper> accountDisruptor =
-                new Disruptor<>(new NexusWrapper.Factory(256), 1024 * 16, DaemonThreadFactory.INSTANCE,
-                        ProducerType.MULTI, new BusySpinWaitStrategy());
-        Disruptor<NexusWrapper> matchDisruptor =
-                new Disruptor<>(new NexusWrapper.Factory(256), 1024 * 8, DaemonThreadFactory.INSTANCE,
-                        ProducerType.MULTI, new BusySpinWaitStrategy());
+        WaitStrategy waitStrategy;
+        if (boltConfig.isProd()) {
+            waitStrategy = new BusySpinWaitStrategy();
+        } else {
+            waitStrategy = new BusySpinWaitStrategy();
+        }
+        Disruptor<NexusWrapper> sequencerDisruptor =
+                new Disruptor<>(new NexusWrapper.Factory(256), boltConfig.sequencerSize(), DaemonThreadFactory.INSTANCE,
+                        ProducerType.MULTI, waitStrategy);
+        Disruptor<NexusWrapper> matchingDisruptor =
+                new Disruptor<>(new NexusWrapper.Factory(256), boltConfig.matchingSize(), DaemonThreadFactory.INSTANCE,
+                        ProducerType.MULTI, waitStrategy);
         Disruptor<NexusWrapper> responseDisruptor =
-                new Disruptor<>(new NexusWrapper.Factory(256), 1024 * 8, DaemonThreadFactory.INSTANCE,
-                        ProducerType.MULTI, new BusySpinWaitStrategy()); // Response通常是单生产者
+                new Disruptor<>(new NexusWrapper.Factory(256), boltConfig.responseSize(), DaemonThreadFactory.INSTANCE,
+                        ProducerType.MULTI, waitStrategy);// Response通常是单生产者
 
-        List<AccountDispatcher> accountDispatchers = createAccountDispatchers();
-        List<MatchDispatcher> matchDispatchers = createMatchDispatchers();
-        matchDisruptor.handleEventsWith(matchDispatchers.toArray(new MatchDispatcher[0]));
+        List<SequencerDispatcher> sequencerDispatchers = createSequencerDispatchers();
+        List<MatchDispatcher> matchDispatchers = createMatchingDispatchers();
+        matchingDisruptor.handleEventsWith(matchDispatchers.toArray(new MatchDispatcher[0]));
         responseDisruptor.handleEventsWith(new ResponseEventHandler());
-        accountDisruptor.handleEventsWith(accountDispatchers.toArray(new AccountDispatcher[0]));
+        sequencerDisruptor.handleEventsWith(sequencerDispatchers.toArray(new SequencerDispatcher[0]));
 
-        sequencerRingBuffer = accountDisruptor.start();
-        matchRingBuffer = matchDisruptor.start();
+        sequencerRingBuffer = sequencerDisruptor.start();
+        matchingRingBuffer = matchingDisruptor.start();
         RingBuffer<NexusWrapper> responseRingBuffer = responseDisruptor.start();
 
         // 初始化背压管理器
-        sequencerBackpressureManager = new BackpressureManager("Account", sequencerRingBuffer);
-        matchBackpressureManager = new BackpressureManager("Match", matchRingBuffer);
+        sequencerBackpressureManager = new BackpressureManager("Sequencer", sequencerRingBuffer);
+        matchBackpressureManager = new BackpressureManager("Match", matchingRingBuffer);
         responseBackpressureManager = new BackpressureManager("Response", responseRingBuffer);
 
         // 初始化监控器
@@ -97,23 +100,22 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
             matchServices.add(dispatcher.getMatchService());
         }
         accountServices = new ArrayList<>(group);
-        for (AccountDispatcher dispatcher : accountDispatchers) {
-            dispatcher.getAccountService().setMatchRingBuffer(matchRingBuffer);
+        for (SequencerDispatcher dispatcher : sequencerDispatchers) {
+            dispatcher.getAccountService().setMatchingRingBuffer(matchingRingBuffer);
             dispatcher.getAccountService().setResponseRingBuffer(responseRingBuffer);
-            dispatcher.setMatchServices(matchServices);
             accountServices.add(dispatcher.getAccountService());
         }
     }
 
-    private List<AccountDispatcher> createAccountDispatchers() {
-        List<AccountDispatcher> dispatchers = new ArrayList<>();
+    private List<SequencerDispatcher> createSequencerDispatchers() {
+        List<SequencerDispatcher> dispatchers = new ArrayList<>();
         for (int i = 0; i < group; i++) {
-            dispatchers.add(new AccountDispatcher(group, i));
+            dispatchers.add(new SequencerDispatcher(group, i));
         }
         return dispatchers;
     }
 
-    private List<MatchDispatcher> createMatchDispatchers() {
+    private List<MatchDispatcher> createMatchingDispatchers() {
         List<MatchDispatcher> dispatchers = new ArrayList<>();
         for (int i = 0; i < group; i++) {
             dispatchers.add(new MatchDispatcher(group, i));
@@ -263,7 +265,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     public void cancelOrder(CancelOrderRequest request, StreamObserver<CancelOrderResponse> responseObserver) {
         long id = requestId.incrementAndGet();
         observers.put(id, responseObserver);
-        matchRingBuffer.publishEvent((wrapper, sequence) -> {
+        matchingRingBuffer.publishEvent((wrapper, sequence) -> {
             wrapper.setId(id);
             wrapper.setPartition(OrderIdGenerator.getSymbolId(request.getOrderId()) % group);
             transfer.writeCancelOrderRequest(request, wrapper.getBuffer());
