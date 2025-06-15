@@ -1,6 +1,7 @@
 package com.cmex.bolt;
 
 import com.cmex.bolt.Envoy;
+import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.EnvoyServer;
 import com.cmex.bolt.util.EnvoyUtil;
 import com.cmex.bolt.util.BigDecimalUtil;
@@ -15,7 +16,7 @@ import java.util.concurrent.CountDownLatch;
  * Unit test for simple App.
  */
 public class BoltTest {
-    public static EnvoyServer service = new EnvoyServer();
+    public static EnvoyServer service = new EnvoyServer(BoltConfig.DEFAULT);
 
     @BeforeAll
     public static void init() throws InterruptedException {

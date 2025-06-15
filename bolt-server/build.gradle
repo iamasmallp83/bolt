@@ -5,14 +5,14 @@ plugins {
 
 dependencies {
     implementation project(':bolt-schema')
-    
+
     implementation "com.lmax:disruptor:${versions.disruptor}"
     implementation "io.aeron:aeron-driver:${versions.aeron}"
     implementation "io.aeron:aeron-client:${versions.aeron}"
-    
+
     compileOnly "org.projectlombok:lombok:${versions.lombok}"
     annotationProcessor "org.projectlombok:lombok:${versions.lombok}"
-    
+
     testImplementation "org.junit.jupiter:junit-jupiter-engine:${versions.junit}"
     testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:${versions.junit}"
 }
@@ -24,7 +24,7 @@ application {
 // 常规测试任务 - 使用默认内存配置
 test {
     useJUnitPlatform()
-    
+
     // 排除性能测试类，避免普通测试时消耗大量内存
     exclude '**/*OrderPerformanceTestWithHTMLReport*'
 }
@@ -34,7 +34,7 @@ tasks.register('performanceTest', Test) {
 
     useJUnitPlatform()
     filter {
-        includeTestsMatching "com.cmex.bolt.performance.AccountPerformance"
+        includeTestsMatching "com.cmex.bolt.performance.*"
     }
 
     // 高性能测试的专用JVM配置

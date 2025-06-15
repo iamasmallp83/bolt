@@ -1,10 +1,12 @@
 package com.cmex.bolt.performance;
 
 import com.cmex.bolt.Envoy;
+import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.EnvoyServer;
 import com.cmex.bolt.util.BigDecimalUtil;
 import com.cmex.bolt.util.FakeStreamObserver;
 import com.google.common.base.Stopwatch;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CountDownLatch;
@@ -19,8 +21,14 @@ import static com.cmex.bolt.util.EnvoyUtil.increase;
 /**
  * Unit test for simple App.
  */
-public class AccountPerformance {
-    private static final EnvoyServer service = new EnvoyServer();
+public class TestAccountPerformance {
+    private EnvoyServer service;
+
+    @BeforeEach
+    void setUp() {
+        service = new EnvoyServer(new BoltConfig(9090, true, 10,
+                1024 * 1024 * 2, 1024 * 1024, 1024 * 1024));
+    }
 
     @Test
     public void testIncrease() throws InterruptedException {
