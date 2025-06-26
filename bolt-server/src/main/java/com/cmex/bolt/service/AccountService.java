@@ -25,7 +25,7 @@ public class AccountService {
     @Setter
     private RingBuffer<NexusWrapper> responseRingBuffer;
     @Setter
-    private RingBuffer<NexusWrapper> matchRingBuffer;
+    private RingBuffer<NexusWrapper> matchingRingBuffer;
     private final Transfer transfer = new Transfer();
 
     public AccountService(int group) {
@@ -82,7 +82,7 @@ public class AccountService {
     }
 
     private void publishPlaceOrderEvent(long messageId, Nexus.PlaceOrder.Reader placeOrder) {
-        matchRingBuffer.publishEvent((wrapper, sequence) -> {
+        matchingRingBuffer.publishEvent((wrapper, sequence) -> {
             wrapper.setId(messageId);
             wrapper.setPartition(placeOrder.getSymbolId() % group);
             transfer.writePlaceOrder(placeOrder, wrapper.getBuffer());

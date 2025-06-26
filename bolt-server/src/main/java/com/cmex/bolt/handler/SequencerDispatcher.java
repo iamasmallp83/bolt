@@ -4,28 +4,21 @@ import com.cmex.bolt.Nexus;
 import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.domain.Transfer;
 import com.cmex.bolt.service.AccountService;
-import com.cmex.bolt.service.MatchService;
-import com.cmex.bolt.util.OrderIdGenerator;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
 import lombok.Getter;
-import lombok.Setter;
-
-import java.util.List;
 
 @Getter
-public class AccountDispatcher implements EventHandler<NexusWrapper>, LifecycleAware {
+public class SequencerDispatcher implements EventHandler<NexusWrapper>, LifecycleAware {
     private final int group;
 
     private final int partition;
 
     private final AccountService accountService;
-    @Setter
-    private List<MatchService> matchServices;
 
     private final Transfer transfer;
 
-    public AccountDispatcher(int group, int partition) {
+    public SequencerDispatcher(int group, int partition) {
         this.group = group;
         this.partition = partition;
         this.accountService = new AccountService(group);
@@ -67,7 +60,7 @@ public class AccountDispatcher implements EventHandler<NexusWrapper>, LifecycleA
     @Override
     public void onStart() {
         final Thread currentThread = Thread.currentThread();
-        currentThread.setName(AccountDispatcher.class.getSimpleName() + "-" + partition + "-thread");
+        currentThread.setName(SequencerDispatcher.class.getSimpleName() + "-" + partition + "-thread");
     }
 
     @Override
