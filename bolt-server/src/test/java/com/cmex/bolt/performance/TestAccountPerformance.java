@@ -7,6 +7,7 @@ import com.cmex.bolt.util.BigDecimalUtil;
 import com.cmex.bolt.util.FakeStreamObserver;
 import com.google.common.base.Stopwatch;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CountDownLatch;
@@ -21,6 +22,7 @@ import static com.cmex.bolt.util.EnvoyUtil.increase;
 /**
  * Unit test for simple App.
  */
+@Tag("performance")
 public class TestAccountPerformance {
     private EnvoyServer service;
 

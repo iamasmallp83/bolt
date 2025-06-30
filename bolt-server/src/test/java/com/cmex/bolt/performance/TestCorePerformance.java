@@ -9,6 +9,7 @@ import com.cmex.bolt.util.SystemCompletionDetector;
 import io.grpc.stub.StreamObserver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Tag;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -18,6 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 增强版订单性能测试
  * 使用SystemCompletionDetector来准确判断复杂异步系统的完成状态
  */
+@Tag("performance")
 public class TestCorePerformance {
 
     private EnvoyServer service;

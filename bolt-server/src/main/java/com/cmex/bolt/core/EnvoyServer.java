@@ -159,8 +159,6 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         responseObserver.onCompleted();
     }
 
-    // ==================== 重构后的服务方法 ====================
-
     @Override
     public void getAccount(GetAccountRequest request, StreamObserver<GetAccountResponse> responseObserver) {
         Map<Integer, Envoy.Balance> balances =

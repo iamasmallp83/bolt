@@ -8,10 +8,13 @@ public class Rate {
      *
      * @return 基础利率
      */
-    public static final double BASE_RATE = 100000.0;
+    public static final long BASE_RATE = 100000;
 
+    public static final double BASE_RATE_DOUBLE = 100000.0;
 
     public static long getRate(long amount, long rate) {
-        return Math.round(amount * (rate / Rate.BASE_RATE));
+        return Math.round(amount * rate / Rate.BASE_RATE_DOUBLE);
     }
+
+
 }

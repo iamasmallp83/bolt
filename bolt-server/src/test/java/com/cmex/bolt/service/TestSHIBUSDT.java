@@ -1,7 +1,8 @@
 package com.cmex.bolt.service;
 
-import com.cmex.bolt.BoltTest;
 import com.cmex.bolt.Envoy;
+import com.cmex.bolt.core.BoltConfig;
+import com.cmex.bolt.core.EnvoyServer;
 import com.cmex.bolt.util.BigDecimalUtil;
 import com.cmex.bolt.util.FakeStreamObserver;
 import org.junit.jupiter.api.Assertions;
@@ -9,7 +10,9 @@ import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CountDownLatch;
 
-public class TestSHIBUSDT extends BoltTest {
+public class TestSHIBUSDT {
+
+    public static EnvoyServer service = new EnvoyServer(BoltConfig.DEFAULT);
 
     /**
      * Account 3 初始资产 100 usdt

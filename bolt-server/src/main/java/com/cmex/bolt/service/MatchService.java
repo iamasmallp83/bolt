@@ -130,15 +130,15 @@ public class MatchService {
         clear.setIncomeCurrencyId(symbol.getIncomeCurrency(side).getId());
         if (side == Order.Side.BID) {
             clear.setPayAmount(
-                    Math.round(volume * (1 + (symbol.isQuoteSettlement() ? order.getFee().get(isTaker) / Rate.BASE_RATE : 0))));
+                    Math.round(volume * (1 + (symbol.isQuoteSettlement() ? order.getFee().get(isTaker) / Rate.BASE_RATE_DOUBLE : 0))));
             clear.setIncomeAmount(
-                    Math.round(quantity * (1 - (symbol.isQuoteSettlement() ? 0 : order.getFee().get(isTaker) / Rate.BASE_RATE))));
+                    Math.round(quantity * (1 - (symbol.isQuoteSettlement() ? 0 : order.getFee().get(isTaker) / Rate.BASE_RATE_DOUBLE))));
             if (order.isDone() && order.getUnfreezeAmount() > 0) {
                 clear.setRefundAmount(order.getUnfreezeAmount());
             }
         } else {
             clear.setPayAmount(quantity);
-            clear.setIncomeAmount(Math.round(volume * (1 - (order.getFee().get(isTaker) / Rate.BASE_RATE))));
+            clear.setIncomeAmount(Math.round(volume * (1 - (order.getFee().get(isTaker) / Rate.BASE_RATE_DOUBLE))));
         }
         return messageBuilder;
     }

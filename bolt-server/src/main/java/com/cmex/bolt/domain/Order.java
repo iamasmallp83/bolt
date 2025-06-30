@@ -132,7 +132,7 @@ public final class Order {
 
         public long calculateFee(long amount, boolean isTaker) {
             int rateBps = isTaker ? taker : maker;
-            return (amount * rateBps) / 10000; // 基点转换
+            return (amount * rateBps) / Rate.BASE_RATE; // 基点转换
         }
     }
 
