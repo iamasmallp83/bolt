@@ -31,6 +31,16 @@ public class PriceNode {
         this.quantity -= order.getAvailableQuantity();
     }
 
+    /**
+     * 仅从订单集合中移除订单，不更新数量
+     * 用于已经通过iterator.remove()删除的情况
+     */
+    public void removeWithoutQuantityUpdate(Order order) {
+        // 订单已经通过iterator.remove()删除，这里不需要再次删除
+        // 只需要更新数量
+        this.quantity -= order.getAvailableQuantity();
+    }
+
     public void decreaseQuantity(long amount) {
         this.quantity -= amount;
     }
