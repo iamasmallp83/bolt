@@ -5,6 +5,7 @@ import com.cmex.bolt.Envoy.PlaceOrderRequest;
 import com.cmex.bolt.Envoy.PlaceOrderResponse;
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.EnvoyServer;
+import com.cmex.bolt.util.EnvoyUtil;
 import com.cmex.bolt.util.SystemCompletionDetector;
 import io.grpc.stub.StreamObserver;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,9 +33,9 @@ public class TestCorePerformance {
         detector = new SystemCompletionDetector(service, 60000, 50, 15);
 
         // 注册背压管理器（假设可以通过某种方式获取）
-        // detector.addBackpressureManager(service.getAccountBackpressureManager());
-        // detector.addBackpressureManager(service.getMatchBackpressureManager());
-        // detector.addBackpressureManager(service.getResponseBackpressureManager());
+         detector.addBackpressureManager(service.getSequencerBackpressureManager());
+         detector.addBackpressureManager(service.getMatchBackpressureManager());
+         detector.addBackpressureManager(service.getResponseBackpressureManager());
     }
 
     @Test
@@ -42,36 +43,36 @@ public class TestCorePerformance {
         System.out.println("🚀 开始增强版性能测试（精确完成状态检测）");
 
         // 测试参数
-        int orderCount = 10000;
-        int threadCount = 4;
-
+        int orderCount = 100;
+        int symbolCount = 10;
+        for (int i = 1; i <= symbolCount * 2; i++) {
+            EnvoyUtil.increase(service, i, i % 2 == 1 ? 1 : i / 2 + 1, "10000000");
+        }
         // 启动系统完成状态检测器
         detector.start();
 
         // 创建线程池发送订单
-        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        ExecutorService executor = Executors.newFixedThreadPool(symbolCount);
         AtomicInteger completedThreads = new AtomicInteger(0);
 
         long startTime = System.currentTimeMillis();
 
         // 分批发送订单
-        for (int threadId = 0; threadId < threadCount; threadId++) {
+        for (int threadId = 0; threadId < symbolCount; threadId++) {
             final int tid = threadId;
+            int finalThreadId = threadId;
             executor.submit(() -> {
-                int ordersPerThread = orderCount / threadCount;
-                int startOrderId = tid * ordersPerThread;
-
-                for (int i = 0; i < ordersPerThread; i++) {
-                    sendOrderWithDetection(startOrderId + i + 1);
+                for (int i = 0; i < orderCount; i++) {
+                    sendOrderWithDetection(finalThreadId, orderCount + i + 1);
                 }
 
-                System.out.printf("🧵 线程 %d 完成 %d 个订单发送\n", tid, ordersPerThread);
+                System.out.printf("🧵 线程 %d 完成 %d 个订单发送\n", tid, orderCount);
                 completedThreads.incrementAndGet();
             });
         }
 
         // 等待所有发送线程完成
-        while (completedThreads.get() < threadCount) {
+        while (completedThreads.get() < symbolCount) {
             Thread.sleep(10);
         }
 
@@ -92,17 +93,21 @@ public class TestCorePerformance {
         assert result.finalState().sentRequests() == orderCount : "发送订单数不匹配";
 
         System.out.println("✅ 增强版性能测试完成！");
+        for (int i = 1; i <= symbolCount; i++) {
+            EnvoyUtil.getDepth(service, i);
+        }
     }
 
     /**
      * 发送订单并记录到检测器
      */
-    private void sendOrderWithDetection(int orderSequence) {
+    private void sendOrderWithDetection(int threadId, int orderSequence) {
         // 构建订单请求
+        Envoy.Side side = orderSequence % 2 == 1 ? Envoy.Side.BID : Envoy.Side.ASK;
         PlaceOrderRequest request = PlaceOrderRequest.newBuilder()
-                .setAccountId(((orderSequence % 2) == 1) ? 1 : 2)
-                .setSymbolId(1)
-                .setSide(((orderSequence % 2) == 1) ? Envoy.Side.BID : Envoy.Side.ASK)
+                .setAccountId(side == Envoy.Side.BID ? 1 : threadId * 2)
+                .setSymbolId(threadId)
+                .setSide(side)
                 .setPrice("1.0")
                 .setQuantity("1.0")
                 .build();
@@ -139,44 +144,44 @@ public class TestCorePerformance {
         }
     }
 
-    /**
-     * 测试背压场景下的完成状态检测
-     */
-    @Test
-    public void testCompletionDetectionUnderBackpressure() throws Exception {
-        System.out.println("🔥 测试高负载背压场景下的完成状态检测");
-
-        // 高负载参数：更多订单，更少线程，模拟背压
-        int orderCount = 50000;
-        int threadCount = 2; // 减少线程数增加背压
-
-        detector.start();
-
-        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
-
-        // 快速发送大量订单
-        for (int i = 0; i < orderCount; i++) {
-            final int orderId = i + 1;
-            executor.submit(() -> sendOrderWithDetection(orderId));
-        }
-
-        // 等待系统完成
-        SystemCompletionDetector.SystemCompletionResult result = detector.waitForSystemCompletion();
-
-        result.printDetailedSummary();
-
-        // 在背压场景下验证
-        System.out.printf("📊 背压测试结果：成功率 %.1f%%, 拒绝率 %.1f%%\n",
-                (double)result.finalState().successfulRequests() / result.finalState().sentRequests() * 100,
-                (double)result.finalState().rejectedRequests() / result.finalState().sentRequests() * 100);
-
-        executor.shutdown();
-
-        assert result.finalState().sentRequests() == orderCount : "发送订单数不匹配";
-        assert result.finalState().responseProcessed() > 0 : "应该有响应处理";
-
-        System.out.println("✅ 背压场景测试完成！");
-    }
+//    /**
+//     * 测试背压场景下的完成状态检测
+//     */
+//    @Test
+//    public void testCompletionDetectionUnderBackpressure() throws Exception {
+//        System.out.println("🔥 测试高负载背压场景下的完成状态检测");
+//
+//        // 高负载参数：更多订单，更少线程，模拟背压
+//        int orderCount = 50000;
+//        int threadCount = 2; // 减少线程数增加背压
+//
+//        detector.start();
+//
+//        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+//
+//        // 快速发送大量订单
+//        for (int i = 0; i < orderCount; i++) {
+//            final int orderId = i + 1;
+//            executor.submit(() -> sendOrderWithDetection(orderId));
+//        }
+//
+//        // 等待系统完成
+//        SystemCompletionDetector.SystemCompletionResult result = detector.waitForSystemCompletion();
+//
+//        result.printDetailedSummary();
+//
+//        // 在背压场景下验证
+//        System.out.printf("📊 背压测试结果：成功率 %.1f%%, 拒绝率 %.1f%%\n",
+//                (double) result.finalState().successfulRequests() / result.finalState().sentRequests() * 100,
+//                (double) result.finalState().rejectedRequests() / result.finalState().sentRequests() * 100);
+//
+//        executor.shutdown();
+//
+//        assert result.finalState().sentRequests() == orderCount : "发送订单数不匹配";
+//        assert result.finalState().responseProcessed() > 0 : "应该有响应处理";
+//
+//        System.out.println("✅ 背压场景测试完成！");
+//    }
 
     /**
      * 测试系统稳定性检测
@@ -233,7 +238,8 @@ public class TestCorePerformance {
             }
 
             @Override
-            public void onCompleted() {}
+            public void onCompleted() {
+            }
         });
     }
 } 

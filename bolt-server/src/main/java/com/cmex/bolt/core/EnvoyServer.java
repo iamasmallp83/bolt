@@ -23,6 +23,7 @@ import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
 import com.lmax.disruptor.util.DaemonThreadFactory;
 import io.grpc.stub.StreamObserver;
+import lombok.Getter;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -43,11 +44,15 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     private final List<MatchService> matchServices;
 
     // 背压管理器
+    @Getter
     private final BackpressureManager sequencerBackpressureManager;
+    @Getter
     private final BackpressureManager matchBackpressureManager;
+    @Getter
     private final BackpressureManager responseBackpressureManager;
+    @Getter
     private final RingBufferMonitor ringBufferMonitor;
-    private final Transfer transfer = new Transfer();
+    private final Transfer transfer;
 
     //分组数量
     private final int group;
@@ -105,6 +110,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
             dispatcher.getAccountService().setResponseRingBuffer(responseRingBuffer);
             accountServices.add(dispatcher.getAccountService());
         }
+        transfer = new Transfer();
     }
 
     private List<SequencerDispatcher> createSequencerDispatchers() {
@@ -284,21 +290,6 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     }
 
     /**
-     * 获取背压统计信息 - 用于外部监控
-     */
-    public BackpressureManager.BackpressureStats getSequencerBackpressureStats() {
-        return sequencerBackpressureManager.getStats();
-    }
-
-    public BackpressureManager.BackpressureStats getMatchBackpressureStats() {
-        return matchBackpressureManager.getStats();
-    }
-
-    public BackpressureManager.BackpressureStats getResponseBackpressureStats() {
-        return responseBackpressureManager.getStats();
-    }
-
-    /**
      * 获取监控器的汇总统计
      */
     public RingBufferMonitor.SummaryStats getMonitorSummary() {
@@ -355,6 +346,6 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     }
 
     private Optional<Symbol> getSymbol(int symbolId) {
-        return matchServices.get(symbolId % 10).getSymbol(symbolId);
+        return matchServices.get(symbolId % group).getSymbol(symbolId);
     }
 }

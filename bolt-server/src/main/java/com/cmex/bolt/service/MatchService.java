@@ -144,7 +144,7 @@ public class MatchService {
     }
 
     private Order getOrder(Symbol symbol, Nexus.PlaceOrder.Reader placeOrder) {
-        Order.Specification specification = null;
+        Order.Specification specification;
         if (placeOrder.getType() == Nexus.OrderType.LIMIT) {
             specification = Order.Specification.limitByQuantity(placeOrder.getPrice(), placeOrder.getQuantity());
         } else {
