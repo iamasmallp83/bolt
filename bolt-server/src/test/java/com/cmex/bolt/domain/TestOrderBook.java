@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -206,9 +207,9 @@ public class TestOrderBook {
             .accountId(100)
             .type(Order.Type.LIMIT)
             .side(Order.Side.BID)
-            .specification(Order.Specification.limitByQuantity(price, quantity))
+            .specification(Order.Specification.limitByQuantity(new BigDecimal(price), new BigDecimal(quantity)))
             .fee(Order.Fee.builder().taker(30).maker(20).build())
-            .frozen(0)
+            .frozen(BigDecimal.ZERO)
             .build();
     }
     
@@ -219,9 +220,9 @@ public class TestOrderBook {
             .accountId(200)
             .type(Order.Type.LIMIT)
             .side(Order.Side.ASK)
-            .specification(Order.Specification.limitByQuantity(price, quantity))
+            .specification(Order.Specification.limitByQuantity(new BigDecimal(price), new BigDecimal(quantity)))
             .fee(Order.Fee.builder().taker(30).maker(20).build())
-            .frozen(0)
+            .frozen(BigDecimal.ZERO)
             .build();
     }
 }

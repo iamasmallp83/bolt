@@ -51,10 +51,10 @@ struct PlaceOrder {
   accountId @1 :Int32;
   type @2 :OrderType;
   side @3 :OrderSide;
-  price @4 :Int64;
-  quantity @5 :Int64;
-  volume @6 :Int64;
-  frozen @7 :Int64;
+  price @4 :Text;
+  quantity @5 :Text;
+  volume @6 :Text;
+  frozen @7 :Text;
   takerRate @8 :Int32;
   makerRate @9 :Int32;
 }
@@ -83,14 +83,14 @@ struct CancelOrderRejected {
 struct Increase {
   accountId @0 :Int32;
   currencyId @1 :Int32;
-  amount @2 :Int64;
+  amount @2 :Text;
 }
 
 struct Increased {
   currencyId @0 :Int32;
-  amount @1 :Int64;
-  available @2 :Int64;
-  frozen @3 :Int64;
+  amount @1 :Text;
+  available @2 :Text;
+  frozen @3 :Text;
 }
 
 struct IncreaseRejected {
@@ -100,14 +100,14 @@ struct IncreaseRejected {
 struct Decrease {
   accountId @0 :Int32;
   currencyId @1 :Int32;
-  amount @2 :Int64;
+  amount @2 :Text;
 }
 
 struct Decreased {
   currencyId @0 :Int32;
-  amount @1 :Int64;
-  available @2 :Int64;
-  frozen @3 :Int64;
+  amount @1 :Text;
+  available @2 :Text;
+  frozen @3 :Text;
 }
 
 struct DecreaseRejected {
@@ -116,27 +116,27 @@ struct DecreaseRejected {
 
 struct Freeze {
   accountId @0 :Int32;
-  amount @1 :Int64;
+  amount @1 :Text;
 }
 
 struct Unfreeze {
   accountId @0 :Int32;
   currencyId @1 :Int32;
-  amount @2 :Int64;
+  amount @2 :Text;
 }
 
 struct Unfrozen {
   accountId @0 :Int32;
-  amount @1 :Int64;
+  amount @1 :Text;
 }
 
 struct Clear {
     accountId @0 :Int32;
     payCurrencyId @1 :Int32;
-    payAmount @2 :Int64;
-    refundAmount @3 :Int64;
+    payAmount @2 :Text;
+    refundAmount @3 :Text;
     incomeCurrencyId @4 :Int32;
-    incomeAmount @5 :Int64;
+    incomeAmount @5 :Text;
 }
 
 struct EmptyEvent {

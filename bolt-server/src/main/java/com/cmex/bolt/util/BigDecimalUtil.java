@@ -47,4 +47,11 @@ public class BigDecimalUtil {
     public static BigDecimal min(BigDecimal one, BigDecimal two) {
         return gte(one, two) ? two : one;
     }
+
+    public static BigDecimal valueOf(String value) {
+        if (value.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        return new BigDecimal(value);
+    }
 }

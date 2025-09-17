@@ -175,9 +175,9 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
                                     Balance balance = entry.getValue();
                                     return Envoy.Balance.newBuilder()
                                             .setCurrency(balance.getCurrency().getName())
-                                            .setFrozen(balance.getFormatFrozen())
-                                            .setAvailable(balance.getFormatAvailable())
-                                            .setValue(balance.getFormatValue())
+                                            .setFrozen(balance.getFrozen().toString())
+                                            .setAvailable(balance.available().toString())
+                                            .setValue(balance.getValue().toString())
                                             .build();
                                 }));
         GetAccountResponse response = GetAccountResponse.newBuilder()

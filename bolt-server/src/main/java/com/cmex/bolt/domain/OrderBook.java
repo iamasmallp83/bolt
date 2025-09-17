@@ -8,19 +8,20 @@ import lombok.Getter;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.math.BigDecimal;
 
 @Getter
 public class OrderBook {
 
     private final Symbol symbol;
 
-    private final TreeMap<Long, PriceNode> bids;
-    private final TreeMap<Long, PriceNode> asks;
+    private final TreeMap<BigDecimal, PriceNode> bids;
+    private final TreeMap<BigDecimal, PriceNode> asks;
     private final Map<Long, Order> orders;
 
     // 缓存最优价格，避免重复TreeMap查找
-    private Long cachedBestBid = null;
-    private Long cachedBestAsk = null;
+    private BigDecimal cachedBestBid = null;
+    private BigDecimal cachedBestAsk = null;
 
     // ==================== 预分配内存优化 ====================
     
@@ -86,13 +87,13 @@ public class OrderBook {
     /**
      * 智能更新缓存 - 只在新价格可能成为最优价格时更新
      */
-    private void updateCacheForNewOrder(Order.Side side, long price) {
+    private void updateCacheForNewOrder(Order.Side side, BigDecimal price) {
         if (side == Order.Side.BID) {
-            if (cachedBestBid == null || price > cachedBestBid) {
+            if (cachedBestBid == null || price.compareTo(cachedBestBid) > 0) {
                 cachedBestBid = price;
             }
         } else {
-            if (cachedBestAsk == null || price < cachedBestAsk) {
+            if (cachedBestAsk == null || price.compareTo(cachedBestAsk) < 0) {
                 cachedBestAsk = price;
             }
         }
@@ -102,16 +103,16 @@ public class OrderBook {
      * 优化后的tryMatch - 使用缓存价格避免TreeMap查找
      */
     private boolean tryMatch(Order.Side takerSide, Order taker) {
-        Long bestPrice = (takerSide == Order.Side.BID) ? cachedBestAsk : cachedBestBid;
+        BigDecimal bestPrice = (takerSide == Order.Side.BID) ? cachedBestAsk : cachedBestBid;
         
         if (bestPrice == null) {
             return false;
         }
         
         if (takerSide == Order.Side.BID) {
-            return taker.getSpecification().getPrice() >= bestPrice;
+            return taker.getSpecification().getPrice().compareTo(bestPrice) >= 0;
         } else {
-            return taker.getSpecification().getPrice() <= bestPrice;
+            return taker.getSpecification().getPrice().compareTo(bestPrice) <= 0;
         }
     }
 
@@ -119,11 +120,11 @@ public class OrderBook {
         List<Ticket> tickets = borrowTicketList(); // 从对象池借用列表
         
         try {
-            TreeMap<Long, PriceNode> counter = getCounter(taker.getSide());
+            TreeMap<BigDecimal, PriceNode> counter = getCounter(taker.getSide());
             
             while (tryMatch(taker.getSide(), taker)) {
                 //价格匹配 - 直接使用缓存的价格，避免firstEntry()查找
-                Long bestPrice = (taker.getSide() == Order.Side.BID) ? cachedBestAsk : cachedBestBid;
+                BigDecimal bestPrice = (taker.getSide() == Order.Side.BID) ? cachedBestAsk : cachedBestBid;
                 PriceNode priceNode = counter.get(bestPrice);
                 
                 boolean takerDone = false;
@@ -155,8 +156,8 @@ public class OrderBook {
             
             //价格不匹配 - 添加新订单到订单簿
             if (!taker.isDone()) {
-                long price = taker.getSpecification().getPrice();
-                TreeMap<Long, PriceNode> own = getOwn(taker.getSide());
+                BigDecimal price = taker.getSpecification().getPrice();
+                TreeMap<BigDecimal, PriceNode> own = getOwn(taker.getSide());
                 
                 boolean isNewPriceLevel = !own.containsKey(price);
                 own.compute(price, (key, existingValue) -> {
@@ -189,11 +190,11 @@ public class OrderBook {
         }
     }
 
-    private TreeMap<Long, PriceNode> getCounter(Order.Side side) {
+    private TreeMap<BigDecimal, PriceNode> getCounter(Order.Side side) {
         return side == Order.Side.BID ? asks : bids;
     }
 
-    private TreeMap<Long, PriceNode> getOwn(Order.Side side) {
+    private TreeMap<BigDecimal, PriceNode> getOwn(Order.Side side) {
         return side == Order.Side.BID ? bids : asks;
     }
 
@@ -203,16 +204,16 @@ public class OrderBook {
             return Result.fail(Nexus.RejectionReason.ORDER_NOT_EXIST);
         }
         order.cancel();
-        TreeMap<Long, PriceNode> own = getOwn(order.getSide());
-        long price = order.getSpecification().getPrice();
+        TreeMap<BigDecimal, PriceNode> own = getOwn(order.getSide());
+        BigDecimal price = order.getSpecification().getPrice();
         PriceNode priceNode = own.get(price);
         priceNode.remove(order);
         
         if (priceNode.isDone()) {
             own.remove(price);
             // 只在最优价格被删除时才需要重新计算缓存
-            if ((order.getSide() == Order.Side.BID && price == cachedBestBid) ||
-                (order.getSide() == Order.Side.ASK && price == cachedBestAsk)) {
+            if ((order.getSide() == Order.Side.BID && price.equals(cachedBestBid)) ||
+                (order.getSide() == Order.Side.ASK && price.equals(cachedBestAsk))) {
                 updateBestPrices();
             }
         }
@@ -227,10 +228,10 @@ public class OrderBook {
                 .build();
     }
 
-    private TreeMap<String, String> convert(TreeMap<Long, PriceNode> target) {
+    private TreeMap<String, String> convert(TreeMap<BigDecimal, PriceNode> target) {
         return target.entrySet().stream().collect(Collectors.toMap(
-                entry -> symbol.parsePrice(entry.getKey()),
-                entry -> symbol.parseQuantity(entry.getValue().getQuantity()),
+                entry -> entry.getKey().toString(),
+                entry -> entry.getValue().getQuantity().toString(),
                 (o1, o2) -> o1,
                 TreeMap::new
         ));

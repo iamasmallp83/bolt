@@ -6,10 +6,12 @@ import com.cmex.bolt.domain.*;
 import com.cmex.bolt.repository.impl.AccountRepository;
 import com.cmex.bolt.repository.impl.CurrencyRepository;
 import com.cmex.bolt.repository.impl.SymbolRepository;
+import com.cmex.bolt.util.BigDecimalUtil;
 import com.cmex.bolt.util.Result;
 import com.lmax.disruptor.RingBuffer;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
@@ -69,7 +71,7 @@ public class AccountService {
 
     private void handleAccountPresent(long messageId, Symbol symbol, Account account, Nexus.PlaceOrder.Reader placeOrder) {
         Currency currency = placeOrder.getSide() == Nexus.OrderSide.BID ? symbol.getQuote() : symbol.getBase();
-        Result<Balance> result = account.freeze(currency.getId(), placeOrder.getFrozen());
+        Result<Balance> result = account.freeze(currency.getId(), new BigDecimal(placeOrder.getFrozen().toString()));
         if (result.isSuccess()) {
             publishPlaceOrderEvent(messageId, placeOrder);
         } else {
@@ -101,7 +103,7 @@ public class AccountService {
     public void on(long messageId, Nexus.Decrease.Reader decrease) {
         int accountId = decrease.getAccountId();
         Result<Balance> result = accountRepository.get(accountId)
-                .map(account -> account.decrease(decrease.getCurrencyId(), decrease.getAmount()))
+                .map(account -> account.decrease(decrease.getCurrencyId(), new BigDecimal(decrease.getAmount().toString())))
                 .orElse(Result.fail(Nexus.RejectionReason.BALANCE_NOT_ENOUGH));
         if (result.isSuccess()) {
             publishDecreasedEvent(messageId, result.value());
@@ -125,7 +127,7 @@ public class AccountService {
     }
 
     private void doIncrease(long messageId, Nexus.Increase.Reader increase, Account account, Currency currency) {
-        Result<Balance> result = account.increase(currency, increase.getAmount());//increase.amount.get());
+        Result<Balance> result = account.increase(currency, new BigDecimal(increase.getAmount().toString()));//increase.amount.get());
         publishIncreasedEvent(messageId, result.value());
     }
 
@@ -141,15 +143,17 @@ public class AccountService {
         int accountId = unfreeze.getAccountId();
         Optional<Account> optional = accountRepository.get(accountId);
         Account account = optional.get();
-        account.unfreeze(unfreeze.getCurrencyId(), unfreeze.getAmount());
+        account.unfreeze(unfreeze.getCurrencyId(), new BigDecimal(unfreeze.getAmount().toString()));
     }
 
     public void on(Nexus.Clear.Reader clear) {
         int accountId = clear.getAccountId();
         Optional<Account> optional = accountRepository.get(accountId);
         Account account = optional.get();
-        account.settle(clear.getPayCurrencyId(), clear.getPayAmount(), clear.getRefundAmount(),
-                currencyRepository.get(clear.getIncomeCurrencyId()).get(), clear.getIncomeAmount());
+        account.settle(clear.getPayCurrencyId(), BigDecimalUtil.valueOf(clear.getPayAmount().toString()),
+                BigDecimalUtil.valueOf(clear.getRefundAmount().toString()),
+                currencyRepository.get(clear.getIncomeCurrencyId()).get(),
+                BigDecimalUtil.valueOf(clear.getIncomeAmount().toString()));
     }
 
 }

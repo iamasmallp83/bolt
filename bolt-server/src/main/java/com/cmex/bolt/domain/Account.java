@@ -1,9 +1,11 @@
 package com.cmex.bolt.domain;
 
 import static com.cmex.bolt.Nexus.RejectionReason;
+
 import com.cmex.bolt.util.Result;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -21,14 +23,16 @@ public class Account {
         return Optional.ofNullable(balances.get(currencyId));
     }
 
-    public Result<Balance> increase(Currency currency, long value) {
+    public Result<Balance> increase(Currency currency, BigDecimal value) {
         Balance balance = balances.computeIfAbsent(currency.getId(), currencyId -> Balance.builder()
                 .currency(currency)
+                .value(BigDecimal.ZERO)
+                .frozen(BigDecimal.ZERO)
                 .build());
         return balance.increase(value);
     }
 
-    public Result<Balance> decrease(int currencyId, long value) {
+    public Result<Balance> decrease(int currencyId, BigDecimal value) {
         Balance balance = balances.get(currencyId);
         if (balance == null) {
             return Result.fail(RejectionReason.BALANCE_NOT_ENOUGH);
@@ -36,7 +40,7 @@ public class Account {
         return balance.decrease(value);
     }
 
-    public Result<Balance> freeze(int currencyId, long value) {
+    public Result<Balance> freeze(int currencyId, BigDecimal value) {
         Balance balance = balances.get(currencyId);
         if (balance == null) {
             return Result.fail(RejectionReason.BALANCE_NOT_ENOUGH);
@@ -44,18 +48,18 @@ public class Account {
         return balance.freeze(value);
     }
 
-    public Result<Balance> unfreeze(int currencyId, long value) {
+    public Result<Balance> unfreeze(int currencyId, BigDecimal value) {
         Balance balance = balances.get(currencyId);
         return balance.unfreeze(value);
     }
 
-    public Result<Balance> unfreezeAndDecrease(int currencyId, long unfreezeAmount, long decreaseAmount) {
+    public Result<Balance> unfreezeAndDecrease(int currencyId, BigDecimal unfreezeAmount, BigDecimal decreaseAmount) {
         Balance balance = balances.get(currencyId);
         return balance.unfreezeAndDecrease(unfreezeAmount, decreaseAmount);
     }
 
-    public void settle(int payCurrencyId, long payAmount, long refundAmount, Currency incomeCurrency, long incomeAmount) {
-        this.unfreezeAndDecrease(payCurrencyId, payAmount + refundAmount, payAmount);
+    public void settle(int payCurrencyId, BigDecimal payAmount, BigDecimal refundAmount, Currency incomeCurrency, BigDecimal incomeAmount) {
+        this.unfreezeAndDecrease(payCurrencyId, payAmount.add(refundAmount), payAmount);
         this.increase(incomeCurrency, incomeAmount);
     }
 }

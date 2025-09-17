@@ -3,6 +3,9 @@ package com.cmex.bolt.domain;
 import lombok.Builder;
 import lombok.Getter;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
 /**
  * 重新设计的订单类 - 面向高频交易撮合系统
  * <p>
@@ -28,13 +31,13 @@ public final class Order {
     private final Fee fee;                         // 费率规格
 
     // ==================== 动态状态（撮合过程中会变化） ====================
-    private OrderStatus status;           // 订单状态
-    private long availableQuantity;       // 可用数量（原子更新）
-    private long availableAmount;         // 可用金额（原子更新）
-    private final long frozen;           // 冻结余额
-    private long cost;               // 累计成本
-    private long executedQuantity;        // 已成交数量
-    private long executedVolume;          // 已成交金额
+    private OrderStatus status;                // 订单状态
+    private BigDecimal availableQuantity;      // 可用数量（原子更新）
+    private BigDecimal availableAmount;        // 可用金额（原子更新）
+    private final BigDecimal frozen;           // 冻结余额
+    private BigDecimal cost;                   // 累计成本
+    private BigDecimal executedQuantity;       // 已成交数量
+    private BigDecimal executedVolume;         // 已成交金额
 
     // ==================== 订单枚举定义 ====================
 
@@ -63,9 +66,9 @@ public final class Order {
      */
     @Getter
     public static final class Specification {
-        private final long price;           // 价格（LIMIT订单必需，MARKET订单为0）
-        private final long quantity;        // 数量（指定数量的订单）
-        private final long amount;          // 金额（指定金额的MARKET订单）
+        private final BigDecimal price;           // 价格（LIMIT订单必需，MARKET订单为0）
+        private final BigDecimal quantity;        // 数量（指定数量的订单）
+        private final BigDecimal amount;          // 金额（指定金额的MARKET订单）
         private final QuantityType quantityType;  // 数量类型
 
         public enum QuantityType {
@@ -74,19 +77,19 @@ public final class Order {
         }
 
         // 静态工厂方法
-        public static Specification limitByQuantity(long price, long quantity) {
-            return new Specification(price, quantity, 0, QuantityType.BY_QUANTITY);
+        public static Specification limitByQuantity(BigDecimal price, BigDecimal quantity) {
+            return new Specification(price, quantity, BigDecimal.ZERO, QuantityType.BY_QUANTITY);
         }
 
-        public static Specification marketByQuantity(long quantity) {
-            return new Specification(0, quantity, 0, QuantityType.BY_QUANTITY);
+        public static Specification marketByQuantity(BigDecimal quantity) {
+            return new Specification(BigDecimal.ZERO, quantity, BigDecimal.ZERO, QuantityType.BY_QUANTITY);
         }
 
-        public static Specification marketByAmount(long amount) {
-            return new Specification(0, 0, amount, QuantityType.BY_AMOUNT);
+        public static Specification marketByAmount(BigDecimal amount) {
+            return new Specification(BigDecimal.ZERO, BigDecimal.ZERO, amount, QuantityType.BY_AMOUNT);
         }
 
-        private Specification(long price, long quantity, long amount, QuantityType quantityType) {
+        private Specification(BigDecimal price, BigDecimal quantity, BigDecimal amount, QuantityType quantityType) {
             this.price = price;
             this.quantity = quantity;
             this.amount = amount;
@@ -94,7 +97,7 @@ public final class Order {
         }
 
         public boolean isPriceSpecified() {
-            return price > 0;
+            return price.compareTo(BigDecimal.ZERO) > 0;
         }
 
         public boolean isQuantityBased() {
@@ -107,7 +110,7 @@ public final class Order {
 
         @Override
         public String toString() {
-            return String.format("%s{price=%d, quantity=%d, amount=%d}",
+            return String.format("%s{price=%s, quantity=%s, amount=%s}",
                     quantityType, price, quantity, amount);
         }
     }
@@ -134,11 +137,16 @@ public final class Order {
             int rateBps = isTaker ? taker : maker;
             return (amount * rateBps) / Rate.BASE_RATE; // 基点转换
         }
+
+        public BigDecimal calculateFeeBD(BigDecimal amount, boolean isTaker) {
+            int rateBps = isTaker ? taker : maker;
+            return Rate.getRate(amount, rateBps);
+        }
     }
 
     @Builder
     public Order(long id, int symbolId, int accountId, Type type, Side side,
-                 Specification specification, Fee fee, long frozen) {
+                 Specification specification, Fee fee, BigDecimal frozen) {
         // 静态属性
         this.id = id;
         this.symbolId = symbolId;
@@ -151,17 +159,17 @@ public final class Order {
         // 初始化动态状态
         this.status = OrderStatus.NEW;
         this.frozen = frozen;
-        this.cost = 0;
-        this.executedQuantity = 0;
-        this.executedVolume = 0;
+        this.cost = BigDecimal.ZERO;
+        this.executedQuantity = BigDecimal.ZERO;
+        this.executedVolume = BigDecimal.ZERO;
 
         // 根据订单类型初始化可用量
         if (specification.isQuantityBased()) {
             this.availableQuantity = specification.getQuantity();
-            this.availableAmount = calculateRequiredAmount(specification.getQuantity());
+            this.availableAmount = calculateRequiredAmountBD(specification.getQuantity());
         } else {
             this.availableAmount = specification.getAmount();
-            this.availableQuantity = 0; // 将在撮合时计算
+            this.availableQuantity = BigDecimal.ZERO; // 将在撮合时计算
         }
     }
 
@@ -175,8 +183,8 @@ public final class Order {
         Ticket ticket = calculateMatch(symbol, maker);
 
         // 2. 应用匹配结果到双方订单
-        this.applyMatch(ticket, true);    // this是taker
-        maker.applyMatch(ticket, false);  // maker是maker
+        this.applyMatchBD(ticket, true);    // this是taker
+        maker.applyMatchBD(ticket, false);  // maker是maker
 
         return ticket;
     }
@@ -185,10 +193,10 @@ public final class Order {
      * 计算与maker订单的匹配结果
      */
     public Ticket calculateMatch(Symbol symbol, Order maker) {
-        long matchPrice = maker.getSpecification().getPrice();
-        long matchQuantity = determineMatchQuantity(maker, matchPrice);
-        //成交额的数量是不能直接乘，因为已经price和quantity已经都进行乘以系数
-        long volume = symbol.getVolume(matchPrice, matchQuantity);
+        // 注意：这个方法保留为向后兼容，但实际应该使用BigDecimal版本
+        BigDecimal matchPrice = maker.getSpecification().getPrice();
+        BigDecimal matchQuantity = determineMatchQuantityBD(maker, matchPrice);
+        BigDecimal volume = matchPrice.multiply(matchQuantity);
         return Ticket.builder()
                 .id(0)
                 .taker(this)
@@ -203,28 +211,56 @@ public final class Order {
      * 应用撮合结果（原子操作）
      */
     public void applyMatch(Ticket ticket, boolean isTaker) {
-
-        long quantity = ticket.getQuantity();
-        long volume = ticket.getVolume();
+        // 注意：这个方法保留为向后兼容，但实际应该使用BigDecimal版本
+        BigDecimal quantity = ticket.getQuantity();
+        BigDecimal volume = ticket.getVolume();
 
         // 更新已成交量
-        this.executedQuantity += quantity;
-        this.executedVolume += volume;
+        this.executedQuantity = this.executedQuantity.add(quantity);
+        this.executedVolume = this.executedVolume.add(volume);
 
         // 更新可用量
         if (specification.isQuantityBased()) {
-            this.availableQuantity -= quantity;
+            this.availableQuantity = this.availableQuantity.subtract(quantity);
         } else {
-            this.availableAmount -= volume;
+            this.availableAmount = this.availableAmount.subtract(volume);
         }
 
         // 计算并更新成本（包括手续费）
-        long feeAmount = this.fee.calculateFee(volume, isTaker);
-        long orderCost = (side == Side.BID) ? volume + feeAmount : quantity + feeAmount;
-        this.cost += orderCost;
+        BigDecimal feeAmount = this.fee.calculateFeeBD(volume, isTaker);
+        BigDecimal orderCost = (side == Side.BID) ? volume.add(feeAmount) : quantity.add(feeAmount);
+        this.cost = this.cost.add(orderCost);
 
         // 更新订单状态
-        updateStatus();
+        updateStatusBD();
+    }
+
+    /**
+     * 应用撮合结果（原子操作）(BigDecimal版本)
+     */
+    public void applyMatchBD(Ticket ticket, boolean isTaker) {
+
+        BigDecimal quantity = ticket.getQuantity();
+        BigDecimal volume = ticket.getVolume();
+
+        // 更新已成交量
+        this.executedQuantity = this.executedQuantity.add(quantity);
+        this.executedVolume = this.executedVolume.add(volume);
+
+        // 更新可用量
+        if (specification.isQuantityBased()) {
+            this.availableQuantity = this.availableQuantity.subtract(quantity);
+        } else {
+            this.availableAmount = this.availableAmount.subtract(volume);
+        }
+
+        // 计算并更新成本（包括手续费）
+        BigDecimal feeAmount = this.fee.calculateFeeBD(volume, isTaker);
+        BigDecimal orderCost = (side == Side.BID) ? volume.add(feeAmount) : quantity.add(feeAmount);
+        this.cost = this.cost.add(orderCost);
+
+        // 更新订单状态
+        updateStatusBD();
     }
 
     // ==================== 撤单相关方法 ====================
@@ -233,7 +269,7 @@ public final class Order {
      * 计算撤单时需要解冻的金额
      * 这是撤单功能的核心方法
      */
-    public long calculateUnfreeze() {
+    public BigDecimal calculateUnfreeze() {
         if (side == Side.BID) {
             // 买单撤销：解冻未使用的资金
             return calculateBuyOrderUnfreeze();
@@ -244,22 +280,23 @@ public final class Order {
     }
 
     /**
-     * 买单撤销时的解冻计算
+     * 买单撤销时的解冻计算 (BigDecimal版本)
      * 解冻逻辑：总冻结金额 - 已使用金额 - 剩余订单需要的金额
      */
-    private long calculateBuyOrderUnfreeze() {
+    private BigDecimal calculateBuyOrderUnfreeze() {
         if (specification.isQuantityBased()) {
             // 按数量买入的限价单/市价单
             if (type == Type.LIMIT) {
                 // 限价单：解冻剩余数量对应的金额
-                long remainingRequiredAmount = availableQuantity * specification.getPrice();
+                BigDecimal remainingRequiredAmount = availableQuantity.multiply(specification.getPrice());
                 // 考虑手续费的预留金额
-                long remainingFeeReserve = fee.calculateFee(remainingRequiredAmount, true);
-                return remainingRequiredAmount + remainingFeeReserve;
+                BigDecimal remainingFeeReserve = fee.calculateFeeBD(remainingRequiredAmount, true);
+                return remainingRequiredAmount.add(remainingFeeReserve);
             } else {
                 // 市价买单按数量：解冻剩余的预估金额
                 // 市价单的冻结通常是按最坏情况预估的，实际成交后解冻差额
-                return Math.max(0, frozen - cost);
+                BigDecimal difference = frozen.subtract(cost);
+                return difference.compareTo(BigDecimal.ZERO) > 0 ? difference : BigDecimal.ZERO;
             }
         } else {
             // 按金额买入的市价单：直接解冻剩余金额
@@ -268,10 +305,10 @@ public final class Order {
     }
 
     /**
-     * 卖单撤销时的解冻计算
+     * 卖单撤销时的解冻计算 (BigDecimal版本)
      * 解冻逻辑：未卖出的币数量
      */
-    private long calculateSellOrderUnfreeze() {
+    private BigDecimal calculateSellOrderUnfreeze() {
         if (specification.isQuantityBased()) {
             // 按数量卖出：解冻剩余数量
             return availableQuantity;
@@ -279,7 +316,7 @@ public final class Order {
             // 按金额卖出的市价单：根据当前市价计算剩余数量
             // 这种情况较少，通常需要参考当前市价
             // 这里返回0，实际实现中需要根据当前最优买价计算
-            return 0; // 需要外部提供当前市价来计算
+            return BigDecimal.ZERO; // 需要外部提供当前市价来计算
         }
     }
 
@@ -300,30 +337,31 @@ public final class Order {
 
     public double getFillPercentage() {
         if (specification.isQuantityBased()) {
-            return specification.getQuantity() > 0 ?
-                    (double) executedQuantity / specification.getQuantity() : 0.0;
+            return specification.getQuantity().compareTo(BigDecimal.ZERO) > 0 ?
+                    executedQuantity.divide(specification.getQuantity(), 18, RoundingMode.HALF_UP).doubleValue() : 0.0;
         } else {
-            return specification.getAmount() > 0 ?
-                    (double) executedVolume / specification.getAmount() : 0.0;
+            return specification.getAmount().compareTo(BigDecimal.ZERO) > 0 ?
+                    executedVolume.divide(specification.getAmount(), 18, RoundingMode.HALF_UP).doubleValue() : 0.0;
         }
     }
 
-    public long getRemainingQuantity() {
+    public BigDecimal getRemainingQuantity() {
         return availableQuantity;
     }
 
-    public long getRemainingAmount() {
+    public BigDecimal getRemainingAmount() {
         return availableAmount;
     }
 
     /**
-     * 获取订单完成时的解冻金额（订单完全成交时）
+     * 获取订单完成时的解冻金额（订单完全成交时）(BigDecimal版本)
      */
-    public long getUnfreezeAmount() {
+    public BigDecimal getUnfreezeAmount() {
         if (status == OrderStatus.FULLY_FILLED) {
-            return Math.max(0, frozen - cost);
+            BigDecimal difference = frozen.subtract(cost);
+            return difference.compareTo(BigDecimal.ZERO) > 0 ? difference : BigDecimal.ZERO;
         }
-        return 0;
+        return BigDecimal.ZERO;
     }
 
     private boolean isPriceMatched(Order maker) {
@@ -333,46 +371,69 @@ public final class Order {
 
         // 限价单价格匹配逻辑
         if (this.side == Side.BID) {
-            return this.specification.getPrice() >= maker.specification.getPrice();
+            return this.specification.getPrice().compareTo(maker.specification.getPrice()) >= 0;
         } else {
-            return this.specification.getPrice() <= maker.specification.getPrice();
+            return this.specification.getPrice().compareTo(maker.specification.getPrice()) <= 0;
         }
     }
 
     private long determineMatchQuantity(Order maker, long matchPrice) {
-        long thisAvailable = getAvailableQuantityAtPrice(matchPrice);
-        long makerAvailable = maker.getAvailableQuantity();
-        return Math.min(thisAvailable, makerAvailable);
+        // 注意：这个方法保留为向后兼容，应该使用BigDecimal版本
+        BigDecimal thisAvailable = getAvailableQuantityAtPriceBD(new BigDecimal(matchPrice));
+        BigDecimal makerAvailable = maker.getAvailableQuantity();
+        return thisAvailable.min(makerAvailable).longValue();
+    }
+
+    private BigDecimal determineMatchQuantityBD(Order maker, BigDecimal matchPrice) {
+        BigDecimal thisAvailable = getAvailableQuantityAtPriceBD(matchPrice);
+        BigDecimal makerAvailable = maker.getAvailableQuantity();
+        return thisAvailable.min(makerAvailable);
     }
 
     private long getAvailableQuantityAtPrice(long price) {
+        // 注意：这个方法保留为向后兼容，应该使用BigDecimal版本
+        return getAvailableQuantityAtPriceBD(new BigDecimal(price)).longValue();
+    }
+
+    private BigDecimal getAvailableQuantityAtPriceBD(BigDecimal price) {
         if (specification.isQuantityBased()) {
             return availableQuantity;
         } else {
             // 金额驱动订单：计算在指定价格下能买到的数量
-            return price > 0 ? availableAmount / price : 0;
+            return price.compareTo(BigDecimal.ZERO) > 0 ?
+                    availableAmount.divide(price, 18, RoundingMode.HALF_UP) : BigDecimal.ZERO;
         }
     }
 
     private long calculateRequiredAmount(long quantity) {
+        // 注意：这个方法保留为向后兼容，应该使用BigDecimal版本
+        return calculateRequiredAmountBD(new BigDecimal(quantity)).longValue();
+    }
+
+    private BigDecimal calculateRequiredAmountBD(BigDecimal quantity) {
         if (type == Type.LIMIT) {
-            return quantity * specification.getPrice();
+            return quantity.multiply(specification.getPrice());
         }
         // MARKET订单的金额在撮合时确定
-        return 0;
+        return BigDecimal.ZERO;
     }
 
     private void updateStatus() {
+        // 注意：这个方法保留为向后兼容，应该使用BigDecimal版本
+        updateStatusBD();
+    }
+
+    private void updateStatusBD() {
         if (specification.isQuantityBased()) {
-            if (availableQuantity == 0) {
+            if (availableQuantity.compareTo(BigDecimal.ZERO) == 0) {
                 status = OrderStatus.FULLY_FILLED;
-            } else if (executedQuantity > 0) {
+            } else if (executedQuantity.compareTo(BigDecimal.ZERO) > 0) {
                 status = OrderStatus.PARTIALLY_FILLED;
             }
         } else {
-            if (availableAmount == 0) {
+            if (availableAmount.compareTo(BigDecimal.ZERO) == 0) {
                 status = OrderStatus.FULLY_FILLED;
-            } else if (executedVolume > 0) {
+            } else if (executedVolume.compareTo(BigDecimal.ZERO) > 0) {
                 status = OrderStatus.PARTIALLY_FILLED;
             }
         }
