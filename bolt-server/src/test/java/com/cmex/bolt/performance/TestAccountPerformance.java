@@ -29,7 +29,7 @@ public class TestAccountPerformance {
     @BeforeEach
     void setUp() {
         service = new EnvoyServer(new BoltConfig(9090, true, 10,
-                1024 * 1024 * 2, 1024 * 1024, 1024 * 1024));
+                1024 * 1024 * 2, 1024 * 1024, 1024 * 1024, true, 9091));
     }
 
     @Test

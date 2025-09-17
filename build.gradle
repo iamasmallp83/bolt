@@ -37,6 +37,7 @@ ext {
         grpc: '1.61.0',
         protobuf: '3.19.2',
         protobufPlugin: '0.9.4',
-        annotationsApi: '6.0.53'
+        annotationsApi: '6.0.53',
+        prometheus: '0.16.0'
     ]
 }

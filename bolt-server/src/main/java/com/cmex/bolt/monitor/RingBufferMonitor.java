@@ -81,17 +81,17 @@ public class RingBufferMonitor {
             
             // 如果有高负载或拒绝，输出警告
             if (stats.isCritical()) {
-                System.err.printf("⚠️  CRITICAL: %s usage is %.2f%% (threshold: %.2f%%)%n", 
-                    stats.name(), stats.currentUsageRate() * 100, stats.criticalWatermark() * 100);
+                System.err.printf("⚠️  CRITICAL: RingBuffer usage is %.2f%% (threshold: %.2f%%)%n", 
+                    stats.currentUsageRate() * 100, stats.criticalWatermark() * 100);
             } else if (stats.isHighLoad()) {
-                System.out.printf("⚠️  WARNING: %s usage is %.2f%% (threshold: %.2f%%)%n", 
-                    stats.name(), stats.currentUsageRate() * 100, stats.highWatermark() * 100);
+                System.out.printf("⚠️  WARNING: RingBuffer usage is %.2f%% (threshold: %.2f%%)%n", 
+                    stats.currentUsageRate() * 100, stats.highWatermark() * 100);
             }
             
             // 如果有拒绝率，输出详细信息
             if (stats.rejectedRequests() > 0) {
-                System.out.printf("📊 %s rejection rate: %.2f%% (%d/%d requests)%n",
-                    stats.name(), stats.getRejectionRate() * 100, 
+                System.out.printf("📊 RingBuffer rejection rate: %.2f%% (%d/%d requests)%n",
+                    stats.getRejectionRate() * 100, 
                     stats.rejectedRequests(), stats.totalRequests());
             }
         }

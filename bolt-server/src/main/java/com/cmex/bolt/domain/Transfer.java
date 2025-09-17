@@ -29,6 +29,7 @@ public class Transfer {
             ByteBufWritableChannel channel = new ByteBufWritableChannel(buffer);
             Serialize.write(channel, messageBuilder);
         } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 

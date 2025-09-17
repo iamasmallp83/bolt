@@ -47,10 +47,6 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     @Getter
     private final BackpressureManager sequencerBackpressureManager;
     @Getter
-    private final BackpressureManager matchBackpressureManager;
-    @Getter
-    private final BackpressureManager responseBackpressureManager;
-    @Getter
     private final RingBufferMonitor ringBufferMonitor;
     private final Transfer transfer;
 
@@ -64,7 +60,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         if (boltConfig.isProd()) {
             waitStrategy = new BusySpinWaitStrategy();
         } else {
-            waitStrategy = new BusySpinWaitStrategy();
+            waitStrategy = new BlockingWaitStrategy();
         }
         Disruptor<NexusWrapper> sequencerDisruptor =
                 new Disruptor<>(new NexusWrapper.Factory(256), boltConfig.sequencerSize(), DaemonThreadFactory.INSTANCE,
@@ -87,15 +83,11 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         RingBuffer<NexusWrapper> responseRingBuffer = responseDisruptor.start();
 
         // 初始化背压管理器
-        sequencerBackpressureManager = new BackpressureManager("Sequencer", sequencerRingBuffer);
-        matchBackpressureManager = new BackpressureManager("Match", matchingRingBuffer);
-        responseBackpressureManager = new BackpressureManager("Response", responseRingBuffer);
+        sequencerBackpressureManager = new BackpressureManager(sequencerRingBuffer);
 
         // 初始化监控器
         ringBufferMonitor = new RingBufferMonitor(5000); // 5秒报告一次
         ringBufferMonitor.addManager(sequencerBackpressureManager);
-        ringBufferMonitor.addManager(matchBackpressureManager);
-        ringBufferMonitor.addManager(responseBackpressureManager);
         ringBufferMonitor.startMonitoring();
 
         matchServices = new ArrayList<>(group);
@@ -143,14 +135,14 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     private <T> boolean handleBackpressure(StreamObserver<T> responseObserver,
                                            SystemBusyResponseFactory<T> responseFactory,
                                            BackpressureManager backpressureManager) {
-        BackpressureManager.BackpressureResult result = backpressureManager.checkCapacity();
+        boolean canAccept = backpressureManager.checkCapacity();
 
-        if (result == BackpressureManager.BackpressureResult.CRITICAL_REJECT) {
+        if (!canAccept) {
             sendResponse(responseObserver, responseFactory.createResponse());
             return true;
         }
 
-        if (result == BackpressureManager.BackpressureResult.HIGH_LOAD) {
+        if (backpressureManager.isHighLoad()) {
             System.out.printf("WARNING: Account RingBuffer usage is high: %.2f%%%n",
                     backpressureManager.getCurrentUsageRate() * 100);
         }
@@ -287,36 +279,6 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
                 .build();
         responseObserver.onNext(response);
         responseObserver.onCompleted();
-    }
-
-    /**
-     * 获取监控器的汇总统计
-     */
-    public RingBufferMonitor.SummaryStats getMonitorSummary() {
-        return ringBufferMonitor.getSummaryStats();
-    }
-
-    /**
-     * 立即输出监控报告
-     */
-    public void reportMonitorStats() {
-        ringBufferMonitor.reportStats();
-    }
-
-    /**
-     * 重置所有统计信息
-     */
-    public void resetAllStats() {
-        sequencerBackpressureManager.resetStats();
-        matchBackpressureManager.resetStats();
-        responseBackpressureManager.resetStats();
-    }
-
-    /**
-     * 关闭监控器（在服务停止时调用）
-     */
-    public void shutdown() {
-        ringBufferMonitor.stopMonitoring();
     }
 
     private class ResponseEventHandler implements EventHandler<NexusWrapper>, LifecycleAware {
