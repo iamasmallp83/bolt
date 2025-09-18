@@ -12,6 +12,7 @@ import io.grpc.netty.shaded.io.netty.channel.EventLoopGroup;
 import io.grpc.netty.shaded.io.netty.channel.nio.NioEventLoopGroup;
 import io.grpc.netty.shaded.io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.grpc.netty.shaded.io.netty.util.concurrent.DefaultThreadFactory;
+import lombok.Getter;
 
 import java.io.IOException;
 import java.util.concurrent.Executor;
@@ -21,9 +22,25 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class Bolt {
 
+    // Getter methods for accessing internal state
+    @Getter
+    private final BoltConfig config;
+    @Getter
+    private Server nettyServer;
+    @Getter
+    private EnvoyServer envoyServer;
+    @Getter
+    private PrometheusMetricsServer prometheusServer;
+
+    public Bolt(BoltConfig config) {
+        this.config = config;
+        this.envoyServer = new EnvoyServer(config);
+    }
+
     public static void main(String[] args) throws IOException, InterruptedException {
+        BoltConfig config;
         if (args.length == 0) {
-            startServer(BoltConfig.DEFAULT);
+            config = BoltConfig.DEFAULT;
         } else if (args.length == 8) {
             try {
                 int port = Integer.parseInt(args[0]);
@@ -34,14 +51,17 @@ public class Bolt {
                 int responseSize = Integer.parseInt(args[5]);
                 boolean enablePrometheus = Boolean.parseBoolean(args[6]);
                 int prometheusPort = Integer.parseInt(args[7]);
-                BoltConfig config = new BoltConfig(port, isProd, group, sequencerSize, matchingSize, responseSize, enablePrometheus, prometheusPort);
-                startServer(config);
+                config = new BoltConfig(port, isProd, group, sequencerSize, matchingSize, responseSize, enablePrometheus, prometheusPort);
             } catch (NumberFormatException e) {
                 printUsage();
+                return;
             }
         } else {
             printUsage();
+            return;
         }
+        Bolt bolt = new Bolt(config);
+        bolt.start();
     }
 
     private static void printUsage() {
@@ -52,32 +72,32 @@ public class Bolt {
         System.out.println("  java -jar bolt.jar 9090 true 4 1024 512 512 true 9091");
     }
 
-    private static void startServer(BoltConfig boltConfig) throws IOException, InterruptedException {
-        final Server server = newNettyServer(boltConfig);
-        PrometheusMetricsServer prometheusServer = null;
+    public void start() throws IOException, InterruptedException {
+        this.nettyServer = newNettyServer();
+        this.prometheusServer = null;
 
         // 启动 Prometheus 监控（如果启用）
-        if (boltConfig.enablePrometheus()) {
-            prometheusServer = new PrometheusMetricsServer(boltConfig.prometheusPort());
+        if (config.enablePrometheus()) {
+            this.prometheusServer = new PrometheusMetricsServer(config.prometheusPort());
         }
-        System.out.println("Start Bolt with " + boltConfig);
-        server.start();
+        System.out.println("Start Bolt with " + config);
+        nettyServer.start();
         System.out.println("Bolt started");
-        shutdown(server, prometheusServer);
+        shutdown();
     }
 
-    private static Server newNettyServer(BoltConfig boltConfig) {
+    private Server newNettyServer() {
         // On Linux it can, possibly, be improved by using
         // io.netty.channel.epoll.EpollEventLoopGroup
         // io.netty.channel.epoll.EpollServerSocketChannel
         final EventLoopGroup boss = new NioEventLoopGroup(1, new DefaultThreadFactory("boss", true));
         final EventLoopGroup worker = new NioEventLoopGroup(0, new DefaultThreadFactory("worker", true));
         NettyServerBuilder builder = NettyServerBuilder
-                .forPort(boltConfig.port())
+                .forPort(config.port())
                 .bossEventLoopGroup(boss)
                 .workerEventLoopGroup(worker)
                 .channelType(NioServerSocketChannel.class)
-                .addService(new EnvoyServer(boltConfig))
+                .addService(envoyServer)
                 .flowControlWindow(NettyChannelBuilder.DEFAULT_FLOW_CONTROL_WINDOW);
         //使用worker执行操作
         builder.executor(MoreExecutors.directExecutor());
@@ -103,11 +123,11 @@ public class Bolt {
     }
 
 
-    private static void shutdown(Server server, PrometheusMetricsServer prometheusServer) throws InterruptedException {
+    private void shutdown() throws InterruptedException {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
                 System.out.println("Server shutting down...");
-                server.shutdown();
+                nettyServer.shutdown();
                 if (prometheusServer != null) {
                     System.out.println("Prometheus metrics server shutting down...");
                     prometheusServer.shutdown();
@@ -118,6 +138,10 @@ public class Bolt {
                 e.printStackTrace();
             }
         }));
-        server.awaitTermination();
+        newNettyServer().awaitTermination();
+    }
+
+    public boolean isRunning() {
+        return nettyServer != null && !nettyServer.isShutdown();
     }
 }

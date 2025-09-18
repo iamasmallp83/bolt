@@ -3,7 +3,6 @@ package com.cmex.bolt.util;
 
 import com.cmex.bolt.core.EnvoyServer;
 import com.cmex.bolt.Envoy;
-import com.cmex.bolt.util.FakeStreamObserver;
 
 import java.util.Map;
 
@@ -31,13 +30,55 @@ public class EnvoyUtil {
     public static void getAccount(EnvoyServer service, int accountId) {
         service.getAccount(Envoy.GetAccountRequest.newBuilder()
                 .setAccountId(accountId)
-                .build(), FakeStreamObserver.noop());
+                .build(), FakeStreamObserver.logger());
     }
+    
 
     public static void getDepth(EnvoyServer service, int symbolId) {
         service.getDepth(Envoy.GetDepthRequest.newBuilder()
                 .setSymbolId(symbolId)
                 .build(), FakeStreamObserver.logger());
+    }
+
+    public static void placeOrder(EnvoyServer service, long requestId, int symbolId, int accountId,
+                                 Envoy.Type type, Envoy.Side side, String price, String quantity,
+                                 FakeStreamObserver<Envoy.PlaceOrderResponse> observer) {
+        service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
+                .setRequestId(requestId)
+                .setSymbolId(symbolId)
+                .setAccountId(accountId)
+                .setType(type)
+                .setSide(side)
+                .setPrice(price)
+                .setQuantity(quantity)
+                .build(), observer);
+    }
+
+    public static void placeOrder(EnvoyServer service, long requestId, int symbolId, int accountId,
+                                 Envoy.Type type, Envoy.Side side, String price, String quantity) {
+        placeOrder(service, requestId, symbolId, accountId, type, side, price, quantity, FakeStreamObserver.noop());
+    }
+
+    public static void placeOrder(EnvoyServer service, long requestId, int symbolId, int accountId,
+                                 Envoy.Type type, Envoy.Side side, String price, String quantity,
+                                 int takerRate, int makerRate, FakeStreamObserver<Envoy.PlaceOrderResponse> observer) {
+        service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
+                .setRequestId(requestId)
+                .setSymbolId(symbolId)
+                .setAccountId(accountId)
+                .setType(type)
+                .setSide(side)
+                .setPrice(price)
+                .setQuantity(quantity)
+                .setTakerRate(takerRate)
+                .setMakerRate(makerRate)
+                .build(), observer);
+    }
+
+    public static void placeOrder(EnvoyServer service, long requestId, int symbolId, int accountId,
+                                 Envoy.Type type, Envoy.Side side, String price, String quantity,
+                                 int takerRate, int makerRate) {
+        placeOrder(service, requestId, symbolId, accountId, type, side, price, quantity, takerRate, makerRate, FakeStreamObserver.noop());
     }
 
     public static boolean equals(Map<Integer, Envoy.Balance> one, Map<Integer, Envoy.Balance> other) {
