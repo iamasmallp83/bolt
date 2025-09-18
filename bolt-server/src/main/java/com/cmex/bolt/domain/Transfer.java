@@ -3,13 +3,16 @@ package com.cmex.bolt.domain;
 import com.cmex.bolt.Envoy;
 import com.cmex.bolt.Nexus;
 import com.cmex.bolt.repository.impl.CurrencyRepository;
+import com.cmex.bolt.util.BigDecimalUtil;
 import io.grpc.netty.shaded.io.netty.buffer.ByteBuf;
 import io.grpc.netty.shaded.io.netty.buffer.ByteBufAllocator;
+import org.agrona.Strings;
 import org.capnproto.MessageBuilder;
 import org.capnproto.MessageReader;
 import org.capnproto.Serialize;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.WritableByteChannel;
@@ -26,6 +29,7 @@ public class Transfer {
             ByteBufWritableChannel channel = new ByteBufWritableChannel(buffer);
             Serialize.write(channel, messageBuilder);
         } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
@@ -40,7 +44,7 @@ public class Transfer {
 
         increase.setAccountId(request.getAccountId());
         increase.setCurrencyId(currency.getId());
-        increase.setAmount(currency.parse(request.getAmount()));
+        increase.setAmount(request.getAmount());
 
         serialize(messageBuilder, buffer);
     }
@@ -52,7 +56,7 @@ public class Transfer {
 
         decrease.setAccountId(request.getAccountId());
         decrease.setCurrencyId(currency.getId());
-        decrease.setAmount(currency.parse(request.getAmount()));
+        decrease.setAmount(request.getAmount());
 
         serialize(messageBuilder, buffer);
     }
@@ -67,32 +71,30 @@ public class Transfer {
                 Nexus.OrderType.LIMIT : Nexus.OrderType.MARKET);
         placeOrder.setSide(request.getSide() == Envoy.Side.BID ?
                 Nexus.OrderSide.BID : Nexus.OrderSide.ASK);
-        long price = symbol.formatPrice(request.getPrice());
-        placeOrder.setPrice(price);
-        long quantity = symbol.formatQuantity(request.getQuantity());
-        placeOrder.setQuantity(quantity);
-        long volume = symbol.formatPrice(request.getVolume());
-        placeOrder.setVolume(volume);
-        placeOrder.setFrozen(calculateFrozen(symbol, request.getSide(), volume, price, quantity, request.getTakerRate()));
+        placeOrder.setPrice(request.getPrice());
+        placeOrder.setQuantity(request.getQuantity());
+        placeOrder.setVolume(request.getVolume());
+        placeOrder.setFrozen(calculateFrozen(symbol, request.getSide(),
+                request.getVolume(), request.getPrice(), request.getQuantity(), request.getTakerRate()).toString());
         placeOrder.setTakerRate(request.getTakerRate());
         placeOrder.setMakerRate(request.getMakerRate());
         serialize(messageBuilder, buffer);
     }
 
-    private long calculateFrozen(Symbol symbol, Envoy.Side side, long volume,
-                                 long price, long quantity, int takerRate) {
-        long amount;
+    private BigDecimal calculateFrozen(Symbol symbol, Envoy.Side side, String volume,
+                                       String price, String quantity, int takerRate) {
+        BigDecimal amount;
         if (side == Envoy.Side.BID) {
-            if (volume > 0) {
-                amount = volume;
+            if (!volume.isEmpty()) {
+                amount = new BigDecimal(volume);
             } else {
-                amount = symbol.getVolume(price, quantity);
+                amount = new BigDecimal(price).multiply(new BigDecimal(quantity));
             }
             if (symbol.isQuoteSettlement()) {
-                amount += Rate.getRate(amount, takerRate);
+                amount = amount.add(Rate.getRate(amount, takerRate));
             }
         } else {
-            amount = quantity;
+            amount = new BigDecimal(quantity);
         }
         return amount;
     }
@@ -132,17 +134,17 @@ public class Transfer {
             case INCREASED -> {
                 Nexus.Increased.Builder increased = builder.getPayload().initIncreased();
                 increased.setCurrencyId(balance.getCurrency().getId());
-                increased.setAmount(balance.getValue());
-                increased.setAvailable(balance.getValue());
-                increased.setFrozen(balance.getFrozen());
+                increased.setAmount(balance.getValue().toString());
+                increased.setAvailable(balance.getValue().toString());
+                increased.setFrozen(balance.getFrozen().toString());
                 serialize(messageBuilder, buffer);
             }
             case DECREASED -> {
                 Nexus.Decreased.Builder decreased = builder.getPayload().initDecreased();
                 decreased.setCurrencyId(balance.getCurrency().getId());
-                decreased.setAmount(balance.getValue());
-                decreased.setAvailable(balance.getValue());
-                decreased.setFrozen(balance.getFrozen());
+                decreased.setAmount(balance.getValue().toString());
+                decreased.setAvailable(balance.getValue().toString());
+                decreased.setFrozen(balance.getFrozen().toString());
                 serialize(messageBuilder, buffer);
             }
             default -> {
@@ -210,9 +212,9 @@ public class Transfer {
                 return Envoy.IncreaseResponse.newBuilder().setCode(1).setData(
                         Envoy.Balance.newBuilder()
                                 .setCurrency(currency.getName())
-                                .setValue(currency.format(increased.getAmount()))
-                                .setAvailable(currency.format(increased.getAvailable()))
-                                .setFrozen(currency.format(increased.getFrozen())).build()
+                                .setValue(increased.getAmount().toString())
+                                .setAvailable(increased.getAvailable().toString())
+                                .setFrozen(increased.getFrozen().toString()).build()
                 ).build();
             }
             case DECREASED -> {
@@ -221,9 +223,9 @@ public class Transfer {
                 return Envoy.IncreaseResponse.newBuilder().setCode(1).setData(
                         Envoy.Balance.newBuilder()
                                 .setCurrency(currency.getName())
-                                .setValue(currency.format(decreased.getAmount()))
-                                .setAvailable(currency.format(decreased.getAvailable()))
-                                .setFrozen(currency.format(decreased.getFrozen())).build()
+                                .setValue(decreased.getAmount().toString())
+                                .setAvailable(decreased.getAvailable().toString())
+                                .setFrozen(decreased.getFrozen().toString()).build()
                 ).build();
             }
             case DECREASE_REJECTED -> {
@@ -267,7 +269,7 @@ public class Transfer {
         Nexus.Unfreeze.Builder unfreeze = builder.getPayload().initUnfreeze();
         unfreeze.setAccountId(order.getAccountId());
         unfreeze.setCurrencyId(symbol.getPayCurrency(order.getSide()).getId());
-        unfreeze.setAmount(order.calculateUnfreeze());
+        unfreeze.setAmount(order.calculateUnfreeze().toString());
         serialize(messageBuilder, buffer);
     }
 

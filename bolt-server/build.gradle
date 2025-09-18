@@ -9,6 +9,10 @@ dependencies {
     implementation "com.lmax:disruptor:${versions.disruptor}"
     implementation "io.aeron:aeron-driver:${versions.aeron}"
     implementation "io.aeron:aeron-client:${versions.aeron}"
+    
+    // Prometheus 监控
+    implementation "io.prometheus:simpleclient:${versions.prometheus}"
+    implementation "io.prometheus:simpleclient_httpserver:${versions.prometheus}"
 
     compileOnly "org.projectlombok:lombok:${versions.lombok}"
     annotationProcessor "org.projectlombok:lombok:${versions.lombok}"

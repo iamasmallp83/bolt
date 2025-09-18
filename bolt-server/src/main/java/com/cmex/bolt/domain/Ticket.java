@@ -2,6 +2,7 @@ package com.cmex.bolt.domain;
 
 import lombok.Builder;
 import lombok.Data;
+import java.math.BigDecimal;
 
 @Data
 @Builder
@@ -13,10 +14,10 @@ public class Ticket {
 
     private Order maker;
 
-    private long price;
+    private BigDecimal price;
 
-    private long quantity;
+    private BigDecimal quantity;
 
-    private long volume;
+    private BigDecimal volume;
 
 }

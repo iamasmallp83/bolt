@@ -23,6 +23,7 @@ import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
 import com.lmax.disruptor.util.DaemonThreadFactory;
 import io.grpc.stub.StreamObserver;
+import lombok.Getter;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -43,11 +44,11 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     private final List<MatchService> matchServices;
 
     // 背压管理器
+    @Getter
     private final BackpressureManager sequencerBackpressureManager;
-    private final BackpressureManager matchBackpressureManager;
-    private final BackpressureManager responseBackpressureManager;
+    @Getter
     private final RingBufferMonitor ringBufferMonitor;
-    private final Transfer transfer = new Transfer();
+    private final Transfer transfer;
 
     //分组数量
     private final int group;
@@ -59,7 +60,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         if (boltConfig.isProd()) {
             waitStrategy = new BusySpinWaitStrategy();
         } else {
-            waitStrategy = new BusySpinWaitStrategy();
+            waitStrategy = new BlockingWaitStrategy();
         }
         Disruptor<NexusWrapper> sequencerDisruptor =
                 new Disruptor<>(new NexusWrapper.Factory(256), boltConfig.sequencerSize(), DaemonThreadFactory.INSTANCE,
@@ -82,15 +83,11 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         RingBuffer<NexusWrapper> responseRingBuffer = responseDisruptor.start();
 
         // 初始化背压管理器
-        sequencerBackpressureManager = new BackpressureManager("Sequencer", sequencerRingBuffer);
-        matchBackpressureManager = new BackpressureManager("Match", matchingRingBuffer);
-        responseBackpressureManager = new BackpressureManager("Response", responseRingBuffer);
+        sequencerBackpressureManager = new BackpressureManager(sequencerRingBuffer);
 
         // 初始化监控器
         ringBufferMonitor = new RingBufferMonitor(5000); // 5秒报告一次
         ringBufferMonitor.addManager(sequencerBackpressureManager);
-        ringBufferMonitor.addManager(matchBackpressureManager);
-        ringBufferMonitor.addManager(responseBackpressureManager);
         ringBufferMonitor.startMonitoring();
 
         matchServices = new ArrayList<>(group);
@@ -105,6 +102,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
             dispatcher.getAccountService().setResponseRingBuffer(responseRingBuffer);
             accountServices.add(dispatcher.getAccountService());
         }
+        transfer = new Transfer();
     }
 
     private List<SequencerDispatcher> createSequencerDispatchers() {
@@ -137,14 +135,14 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     private <T> boolean handleBackpressure(StreamObserver<T> responseObserver,
                                            SystemBusyResponseFactory<T> responseFactory,
                                            BackpressureManager backpressureManager) {
-        BackpressureManager.BackpressureResult result = backpressureManager.checkCapacity();
+        boolean canAccept = backpressureManager.checkCapacity();
 
-        if (result == BackpressureManager.BackpressureResult.CRITICAL_REJECT) {
+        if (!canAccept) {
             sendResponse(responseObserver, responseFactory.createResponse());
             return true;
         }
 
-        if (result == BackpressureManager.BackpressureResult.HIGH_LOAD) {
+        if (backpressureManager.isHighLoad()) {
             System.out.printf("WARNING: Account RingBuffer usage is high: %.2f%%%n",
                     backpressureManager.getCurrentUsageRate() * 100);
         }
@@ -169,9 +167,9 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
                                     Balance balance = entry.getValue();
                                     return Envoy.Balance.newBuilder()
                                             .setCurrency(balance.getCurrency().getName())
-                                            .setFrozen(balance.getFormatFrozen())
-                                            .setAvailable(balance.getFormatAvailable())
-                                            .setValue(balance.getFormatValue())
+                                            .setFrozen(balance.getFrozen().toString())
+                                            .setAvailable(balance.available().toString())
+                                            .setValue(balance.getValue().toString())
                                             .build();
                                 }));
         GetAccountResponse response = GetAccountResponse.newBuilder()
@@ -283,51 +281,6 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         responseObserver.onCompleted();
     }
 
-    /**
-     * 获取背压统计信息 - 用于外部监控
-     */
-    public BackpressureManager.BackpressureStats getSequencerBackpressureStats() {
-        return sequencerBackpressureManager.getStats();
-    }
-
-    public BackpressureManager.BackpressureStats getMatchBackpressureStats() {
-        return matchBackpressureManager.getStats();
-    }
-
-    public BackpressureManager.BackpressureStats getResponseBackpressureStats() {
-        return responseBackpressureManager.getStats();
-    }
-
-    /**
-     * 获取监控器的汇总统计
-     */
-    public RingBufferMonitor.SummaryStats getMonitorSummary() {
-        return ringBufferMonitor.getSummaryStats();
-    }
-
-    /**
-     * 立即输出监控报告
-     */
-    public void reportMonitorStats() {
-        ringBufferMonitor.reportStats();
-    }
-
-    /**
-     * 重置所有统计信息
-     */
-    public void resetAllStats() {
-        sequencerBackpressureManager.resetStats();
-        matchBackpressureManager.resetStats();
-        responseBackpressureManager.resetStats();
-    }
-
-    /**
-     * 关闭监控器（在服务停止时调用）
-     */
-    public void shutdown() {
-        ringBufferMonitor.stopMonitoring();
-    }
-
     private class ResponseEventHandler implements EventHandler<NexusWrapper>, LifecycleAware {
 
         @SuppressWarnings("unchecked")
@@ -355,6 +308,6 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     }
 
     private Optional<Symbol> getSymbol(int symbolId) {
-        return matchServices.get(symbolId % 10).getSymbol(symbolId);
+        return matchServices.get(symbolId % group).getSymbol(symbolId);
     }
 }

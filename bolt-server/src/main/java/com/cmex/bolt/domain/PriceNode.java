@@ -1,6 +1,7 @@
 package com.cmex.bolt.domain;
 
 import lombok.Getter;
+import java.math.BigDecimal;
 
 import java.util.Iterator;
 import java.util.LinkedHashSet;
@@ -8,27 +9,27 @@ import java.util.LinkedHashSet;
 @Getter
 public class PriceNode {
 
-    private final long price;
+    private final BigDecimal price;
 
-    private long quantity;
+    private BigDecimal quantity;
 
     private final LinkedHashSet<Order> orders;
 
-    public PriceNode(long price, Order order) {
+    public PriceNode(BigDecimal price, Order order) {
         this.price = price;
         this.orders = new LinkedHashSet<>();
         this.orders.add(order);
-        this.quantity += order.getAvailableQuantity();
+        this.quantity = order.getAvailableQuantity();
     }
 
     public void add(Order order) {
         this.orders.add(order);
-        this.quantity += order.getAvailableQuantity();
+        this.quantity = this.quantity.add(order.getAvailableQuantity());
     }
 
     public void remove(Order order) {
         this.orders.remove(order);
-        this.quantity -= order.getAvailableQuantity();
+        this.quantity = this.quantity.subtract(order.getAvailableQuantity());
     }
 
     /**
@@ -38,11 +39,11 @@ public class PriceNode {
     public void removeWithoutQuantityUpdate(Order order) {
         // 订单已经通过iterator.remove()删除，这里不需要再次删除
         // 只需要更新数量
-        this.quantity -= order.getAvailableQuantity();
+        this.quantity = this.quantity.subtract(order.getAvailableQuantity());
     }
 
-    public void decreaseQuantity(long amount) {
-        this.quantity -= amount;
+    public void decreaseQuantity(BigDecimal amount) {
+        this.quantity = this.quantity.subtract(amount);
     }
 
     public Iterator<Order> iterator() {

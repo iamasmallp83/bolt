@@ -20,6 +20,8 @@ public class TestSHIBUSDT {
     public static void before() {
         EnvoyUtil.increase(service, 3, 1,"86");
         EnvoyUtil.increase(service, 4, 3,"10000000");
+        EnvoyUtil.increase(service, 5, 1,"10000000");
+        EnvoyUtil.increase(service, 6, 3,"200000000000");
     }
 
     @Test
@@ -52,14 +54,12 @@ public class TestSHIBUSDT {
         latch.await();
         Thread.sleep(1000);
         service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(4).build(), FakeStreamObserver.of(response -> {
-            System.out.println(response.getDataMap());
-//            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "86"));
-//            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(3).getAvailable(), "0"));
+            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "86"));
+            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(3).getAvailable(), "0"));
         }));
         service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(3).build(), FakeStreamObserver.of(response -> {
-            System.out.println(response.getDataMap());
-//            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "10000000"));
-//            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(3).getAvailable(), "0"));
+            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(3).getAvailable(), "10000000"));
+            Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "0"));
         }));
     }
 
@@ -108,8 +108,6 @@ public class TestSHIBUSDT {
         latch.await();
         Thread.sleep(1000);
         service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(5).build(), FakeStreamObserver.of(response -> {
-            System.out.println(response.getDataMap().get(1));
-            System.out.println(response.getDataMap().get(3));
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(1).getAvailable(), "9931062.4"));
             Assertions.assertTrue(BigDecimalUtil.eq(response.getDataMap().get(3).getAvailable(), "8000000000"));
         }));

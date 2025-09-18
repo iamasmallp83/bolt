@@ -2,10 +2,13 @@ package com.cmex.bolt.domain;
 
 import static com.cmex.bolt.Nexus.RejectionReason;
 
+import com.cmex.bolt.util.BigDecimalUtil;
 import com.cmex.bolt.util.Result;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+
+import java.math.BigDecimal;
 
 @Data
 @Builder
@@ -13,56 +16,44 @@ import lombok.Data;
 public class Balance {
     private Currency currency;
 
-    private long value;
+    private BigDecimal value;
 
-    private long frozen;
+    private BigDecimal frozen;
 
-    public Result<Balance> increase(long amount) {
-        this.value += amount;
+    public Result<Balance> increase(BigDecimal amount) {
+        value = value.add(amount);
         return Result.success(this);
     }
 
-    public Result<Balance> decrease(long amount) {
-        if (this.available() < amount) {
+    public Result<Balance> decrease(BigDecimal amount) {
+        if (BigDecimalUtil.lt(available(), amount)) {
             return Result.fail(RejectionReason.BALANCE_NOT_ENOUGH);
         }
-        this.value -= amount;
+        value = value.subtract(amount);
         return Result.success(this);
     }
 
-    public Result<Balance> freeze(long amount) {
-        if (this.available() < amount) {
+    public Result<Balance> freeze(BigDecimal amount) {
+        if (BigDecimalUtil.lt(available(), amount)) {
             return Result.fail(RejectionReason.BALANCE_NOT_ENOUGH);
         }
-        this.frozen += amount;
+        frozen = frozen.add(amount);
         return Result.success(this);
     }
 
-    public Result<Balance> unfreeze(long amount) {
-        frozen -= amount;
+    public Result<Balance> unfreeze(BigDecimal amount) {
+        frozen = frozen.subtract(amount);
         return Result.success(this);
     }
 
-    public Result<Balance> unfreezeAndDecrease(long unfreezeAmount, long decreaseAmount) {
-        frozen -= unfreezeAmount;
-        value -= decreaseAmount;
+    public Result<Balance> unfreezeAndDecrease(BigDecimal unfreezeAmount, BigDecimal decreaseAmount) {
+        frozen = frozen.subtract(unfreezeAmount);
+        value = value.subtract(decreaseAmount);
         return Result.success(this);
     }
 
-    public long available() {
-        return value - frozen;
+    public BigDecimal available() {
+        return value.subtract(frozen);
     }
 
-    public String getFormatValue() {
-        return currency.format(value);
-    }
-
-    public String getFormatFrozen() {
-        return currency.format(frozen);
-    }
-
-
-    public String getFormatAvailable() {
-        return currency.format(available());
-    }
 }

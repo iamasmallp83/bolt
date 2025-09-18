@@ -6,6 +6,7 @@ import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.domain.*;
 import com.cmex.bolt.dto.DepthDto;
 import com.cmex.bolt.repository.impl.SymbolRepository;
+import com.cmex.bolt.util.BigDecimalUtil;
 import com.cmex.bolt.util.OrderIdGenerator;
 import com.cmex.bolt.util.Result;
 import com.lmax.disruptor.RingBuffer;
@@ -13,6 +14,7 @@ import lombok.Setter;
 import org.capnproto.MessageBuilder;
 
 import java.util.List;
+import java.math.BigDecimal;
 import java.util.Optional;
 
 public class MatchService {
@@ -49,8 +51,8 @@ public class MatchService {
             Order order = getOrder(symbol, placeOrder);
             Result<List<Ticket>> result = orderBook.match(order);
             if (result.isSuccess()) {
-                long totalQuantity = 0;
-                long totalVolume = 0;
+                BigDecimal totalQuantity = BigDecimal.ZERO;
+                BigDecimal totalVolume = BigDecimal.ZERO;
                 for (Ticket ticket : result.value()) {
                     sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
                         MessageBuilder builder = createClearMessage(symbol, ticket.getMaker(), false,
@@ -58,11 +60,11 @@ public class MatchService {
                         wrapper.setPartition(ticket.getMaker().getAccountId() % group);
                         transfer.serialize(builder, wrapper.getBuffer());
                     });
-                    totalQuantity += ticket.getQuantity();
-                    totalVolume += ticket.getVolume();
+                    totalQuantity = totalQuantity.add(ticket.getQuantity());
+                    totalVolume = totalVolume.add(ticket.getVolume());
                 }
-                long finalTotalQuantity = totalQuantity;
-                long finalTotalVolume = totalVolume;
+                BigDecimal finalTotalQuantity = totalQuantity;
+                BigDecimal finalTotalVolume = totalVolume;
                 sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
                     MessageBuilder builder = createClearMessage(symbol, order, true, finalTotalQuantity,
                             finalTotalVolume);
@@ -118,7 +120,7 @@ public class MatchService {
                 .map(Symbol::getDepth).get();
     }
 
-    private MessageBuilder createClearMessage(Symbol symbol, Order order, boolean isTaker, long quantity, long volume) {
+    private MessageBuilder createClearMessage(Symbol symbol, Order order, boolean isTaker, BigDecimal quantity, BigDecimal volume) {
         MessageBuilder messageBuilder = new MessageBuilder();
         Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
         Nexus.Clear.Builder clear = builder.getPayload().initClear();
@@ -130,28 +132,30 @@ public class MatchService {
         clear.setIncomeCurrencyId(symbol.getIncomeCurrency(side).getId());
         if (side == Order.Side.BID) {
             clear.setPayAmount(
-                    Math.round(volume * (1 + (symbol.isQuoteSettlement() ? order.getFee().get(isTaker) / Rate.BASE_RATE_DOUBLE : 0))));
+                    volume.multiply(BigDecimal.valueOf(1 + (symbol.isQuoteSettlement() ? order.getFee().get(isTaker) / Rate.BASE_RATE_DOUBLE : 0))).toString());
             clear.setIncomeAmount(
-                    Math.round(quantity * (1 - (symbol.isQuoteSettlement() ? 0 : order.getFee().get(isTaker) / Rate.BASE_RATE_DOUBLE))));
-            if (order.isDone() && order.getUnfreezeAmount() > 0) {
-                clear.setRefundAmount(order.getUnfreezeAmount());
+                    quantity.multiply(BigDecimal.valueOf(1 - (symbol.isQuoteSettlement() ? 0 : order.getFee().get(isTaker) / Rate.BASE_RATE_DOUBLE))).toString());
+            if (order.isDone() && BigDecimalUtil.gtZero(order.getUnfreezeAmount())) {
+                clear.setRefundAmount(order.getUnfreezeAmount().toString());
             }
         } else {
-            clear.setPayAmount(quantity);
-            clear.setIncomeAmount(Math.round(volume * (1 - (order.getFee().get(isTaker) / Rate.BASE_RATE_DOUBLE))));
+            clear.setPayAmount(quantity.toString());
+            clear.setIncomeAmount(volume.multiply (BigDecimal.valueOf(1 - (order.getFee().get(isTaker) / Rate.BASE_RATE_DOUBLE))).toString());
         }
         return messageBuilder;
     }
 
     private Order getOrder(Symbol symbol, Nexus.PlaceOrder.Reader placeOrder) {
-        Order.Specification specification = null;
+        Order.Specification specification;
         if (placeOrder.getType() == Nexus.OrderType.LIMIT) {
-            specification = Order.Specification.limitByQuantity(placeOrder.getPrice(), placeOrder.getQuantity());
+            specification = Order.Specification.limitByQuantity(
+                    new BigDecimal(placeOrder.getPrice().toString()),
+                    new BigDecimal(placeOrder.getQuantity().toString()));
         } else {
             if (placeOrder.getSide() == Nexus.OrderSide.BID) {
-                specification = Order.Specification.marketByAmount(placeOrder.getVolume());
+                specification = Order.Specification.marketByAmount(new BigDecimal(placeOrder.getVolume().toString()));
             } else {
-                specification = Order.Specification.marketByQuantity(placeOrder.getQuantity());
+                specification = Order.Specification.marketByQuantity(new BigDecimal(placeOrder.getQuantity().toString()));
             }
         }
         return Order.builder()
@@ -162,7 +166,7 @@ public class MatchService {
                 .side(placeOrder.getSide() == Nexus.OrderSide.BID ? Order.Side.BID : Order.Side.ASK)
                 .specification(specification)
                 .fee(new Order.Fee(placeOrder.getTakerRate(), placeOrder.getMakerRate())) // 0.2% taker, 0.1% maker
-                .frozen(placeOrder.getFrozen())
+                .frozen(new BigDecimal(placeOrder.getFrozen().toString()))
                 .build();
     }
 
