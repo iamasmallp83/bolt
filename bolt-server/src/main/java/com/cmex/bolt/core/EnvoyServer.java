@@ -9,11 +9,10 @@ import com.cmex.bolt.Envoy.*;
 import com.cmex.bolt.EnvoyServerGrpc;
 import com.cmex.bolt.handler.SequencerDispatcher;
 import com.cmex.bolt.handler.MatchDispatcher;
-import com.cmex.bolt.monitor.RingBufferMonitor;
 import com.cmex.bolt.repository.impl.CurrencyRepository;
 import com.cmex.bolt.service.AccountService;
 import com.cmex.bolt.service.MatchService;
-import com.cmex.bolt.util.BackpressureManager;
+import com.cmex.bolt.util.PerformanceExporter;
 import com.cmex.bolt.util.OrderIdGenerator;
 import com.cmex.bolt.util.SystemBusyResponseFactory;
 import com.cmex.bolt.util.SystemBusyResponses;
@@ -43,11 +42,10 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     private final List<AccountService> accountServices;
     private final List<MatchService> matchServices;
 
-    // 背压管理器
+    // 性能导出器
     @Getter
-    private final BackpressureManager sequencerBackpressureManager;
-    @Getter
-    private final RingBufferMonitor ringBufferMonitor;
+    private final PerformanceExporter performanceExporter;
+
     private final Transfer transfer;
 
     //分组数量
@@ -82,13 +80,8 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         matchingRingBuffer = matchingDisruptor.start();
         RingBuffer<NexusWrapper> responseRingBuffer = responseDisruptor.start();
 
-        // 初始化背压管理器
-        sequencerBackpressureManager = new BackpressureManager(sequencerRingBuffer);
-
-        // 初始化监控器
-        ringBufferMonitor = new RingBufferMonitor(5000); // 5秒报告一次
-        ringBufferMonitor.addManager(sequencerBackpressureManager);
-        ringBufferMonitor.startMonitoring();
+        // 初始化性能导出器
+        performanceExporter = new PerformanceExporter(sequencerRingBuffer);
 
         matchServices = new ArrayList<>(group);
         for (MatchDispatcher dispatcher : matchDispatchers) {
@@ -134,17 +127,17 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
      */
     private <T> boolean handleBackpressure(StreamObserver<T> responseObserver,
                                            SystemBusyResponseFactory<T> responseFactory,
-                                           BackpressureManager backpressureManager) {
-        boolean canAccept = backpressureManager.checkCapacity();
+                                           PerformanceExporter performanceExporter) {
+        boolean canAccept = performanceExporter.checkCapacity();
 
         if (!canAccept) {
             sendResponse(responseObserver, responseFactory.createResponse());
             return true;
         }
 
-        if (backpressureManager.isHighLoad()) {
+        if (performanceExporter.isHighLoad()) {
             System.out.printf("WARNING: Account RingBuffer usage is high: %.2f%%%n",
-                    backpressureManager.getCurrentUsageRate() * 100);
+                    performanceExporter.getCurrentUsageRate() * 100);
         }
         return false;
     }
@@ -159,126 +152,168 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
     @Override
     public void getAccount(GetAccountRequest request, StreamObserver<GetAccountResponse> responseObserver) {
-        Map<Integer, Envoy.Balance> balances =
-                getAccountService(request.getAccountId()).getBalances(request.getAccountId(), request.getCurrencyId()).entrySet().stream()
-                        .collect(Collectors.toMap(
-                                Map.Entry::getKey,
-                                entry -> {
-                                    Balance balance = entry.getValue();
-                                    return Envoy.Balance.newBuilder()
-                                            .setCurrency(balance.getCurrency().getName())
-                                            .setFrozen(balance.getFrozen().toString())
-                                            .setAvailable(balance.available().toString())
-                                            .setValue(balance.getValue().toString())
-                                            .build();
-                                }));
-        GetAccountResponse response = GetAccountResponse.newBuilder()
-                .setCode(1)
-                .putAllData(balances)
-                .build();
-        responseObserver.onNext(response);
-        responseObserver.onCompleted();
+        try (PerformanceExporter.GrpcTimer timer = performanceExporter.createGrpcTimer("getAccount")) {
+            Map<Integer, Envoy.Balance> balances =
+                    getAccountService(request.getAccountId()).getBalances(request.getAccountId(), request.getCurrencyId()).entrySet().stream()
+                            .collect(Collectors.toMap(
+                                    Map.Entry::getKey,
+                                    entry -> {
+                                        Balance balance = entry.getValue();
+                                        return Envoy.Balance.newBuilder()
+                                                .setCurrency(balance.getCurrency().getName())
+                                                .setFrozen(balance.getFrozen().toString())
+                                                .setAvailable(balance.available().toString())
+                                                .setValue(balance.getValue().toString())
+                                                .build();
+                                    }));
+            GetAccountResponse response = GetAccountResponse.newBuilder()
+                    .setCode(1)
+                    .putAllData(balances)
+                    .build();
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+            timer.recordSuccess();
+        } catch (Exception e) {
+            performanceExporter.recordGrpcCall("getAccount", false, 0.0);
+            responseObserver.onError(e);
+        }
     }
 
     public void increase(IncreaseRequest request, StreamObserver<IncreaseResponse> responseObserver) {
-        // 背压检查
-        if (handleBackpressure(responseObserver, SystemBusyResponses::createIncreaseBusyResponse,
-                sequencerBackpressureManager)) {
-            return;
-        }
+        try (PerformanceExporter.GrpcTimer timer = performanceExporter.createGrpcTimer("increase")) {
+            // 背压检查
+            if (handleBackpressure(responseObserver, SystemBusyResponses::createIncreaseBusyResponse,
+                    performanceExporter)) {
+                timer.recordError();
+                return;
+            }
 
-        getAccountService(request.getAccountId()).getCurrency(request.getCurrencyId()).ifPresentOrElse(currency -> {
-            long id = requestId.incrementAndGet();
-            int partition = getPartition(request.getAccountId());
-            observers.put(id, responseObserver);
-            sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
-                wrapper.setId(id);
-                wrapper.setPartition(partition);
-                transfer.writeIncreaseRequest(request, currency, wrapper.getBuffer());
+            getAccountService(request.getAccountId()).getCurrency(request.getCurrencyId()).ifPresentOrElse(currency -> {
+                long id = requestId.incrementAndGet();
+                int partition = getPartition(request.getAccountId());
+                observers.put(id, responseObserver);
+                sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
+                    wrapper.setId(id);
+                    wrapper.setPartition(partition);
+                    transfer.writeIncreaseRequest(request, currency, wrapper.getBuffer());
+                });
+                timer.recordSuccess();
+            }, () -> {
+                IncreaseResponse response = IncreaseResponse.newBuilder()
+                        .setCode(Nexus.RejectionReason.CURRENCY_NOT_EXIST.ordinal())
+                        .setMessage(Nexus.RejectionReason.CURRENCY_NOT_EXIST.name())
+                        .build();
+                sendResponse(responseObserver, response);
+                timer.recordError();
             });
-        }, () -> {
-            IncreaseResponse response = IncreaseResponse.newBuilder()
-                    .setCode(Nexus.RejectionReason.CURRENCY_NOT_EXIST.ordinal())
-                    .setMessage(Nexus.RejectionReason.CURRENCY_NOT_EXIST.name())
-                    .build();
-            sendResponse(responseObserver, response);
-        });
+        } catch (Exception e) {
+            performanceExporter.recordGrpcCall("increase", false, 0.0);
+            responseObserver.onError(e);
+        }
     }
 
     public void decrease(DecreaseRequest request, StreamObserver<DecreaseResponse> responseObserver) {
-        // 背压检查
-        if (handleBackpressure(responseObserver, SystemBusyResponses::createDecreaseBusyResponse,
-                sequencerBackpressureManager)) {
-            return;
-        }
+        try (PerformanceExporter.GrpcTimer timer = performanceExporter.createGrpcTimer("decrease")) {
+            // 背压检查
+            if (handleBackpressure(responseObserver, SystemBusyResponses::createDecreaseBusyResponse,
+                    performanceExporter)) {
+                timer.recordError();
+                return;
+            }
 
-        getAccountService(request.getAccountId()).getCurrency(request.getCurrencyId())
-                .ifPresentOrElse(currency -> {
-                    long id = requestId.incrementAndGet();
-                    int partition = getPartition(request.getAccountId());
-                    observers.put(id, responseObserver);
-                    sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
-                        wrapper.setId(id);
-                        wrapper.setPartition(partition);
-                        transfer.writeDecreaseRequest(request, currency, wrapper.getBuffer());
+            getAccountService(request.getAccountId()).getCurrency(request.getCurrencyId())
+                    .ifPresentOrElse(currency -> {
+                        long id = requestId.incrementAndGet();
+                        int partition = getPartition(request.getAccountId());
+                        observers.put(id, responseObserver);
+                        sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
+                            wrapper.setId(id);
+                            wrapper.setPartition(partition);
+                            transfer.writeDecreaseRequest(request, currency, wrapper.getBuffer());
+                        });
+                        timer.recordSuccess();
+                    }, () -> {
+                        DecreaseResponse response = DecreaseResponse.newBuilder()
+                                .setCode(Nexus.RejectionReason.CURRENCY_NOT_EXIST.ordinal())
+                                .setMessage(Nexus.RejectionReason.CURRENCY_NOT_EXIST.name())
+                                .build();
+                        sendResponse(responseObserver, response);
+                        timer.recordError();
                     });
-                }, () -> {
-                    DecreaseResponse response = DecreaseResponse.newBuilder()
-                            .setCode(Nexus.RejectionReason.CURRENCY_NOT_EXIST.ordinal())
-                            .setMessage(Nexus.RejectionReason.CURRENCY_NOT_EXIST.name())
-                            .build();
-                    sendResponse(responseObserver, response);
-                });
+        } catch (Exception e) {
+            performanceExporter.recordGrpcCall("decrease", false, 0.0);
+            responseObserver.onError(e);
+        }
     }
 
     public void placeOrder(PlaceOrderRequest request, StreamObserver<PlaceOrderResponse> responseObserver) {
-        if (handleBackpressure(responseObserver, SystemBusyResponses::createPlaceOrderBusyResponse,
-                sequencerBackpressureManager)) {
-            return;
-        }
+        try (PerformanceExporter.GrpcTimer timer = performanceExporter.createGrpcTimer("placeOrder")) {
+            if (handleBackpressure(responseObserver, SystemBusyResponses::createPlaceOrderBusyResponse,
+                    performanceExporter)) {
+                timer.recordError();
+                return;
+            }
 
-        //TODO
-        //市价单 支持买金额卖数量
-        getSymbol(request.getSymbolId()).ifPresentOrElse(symbol -> {
-            long id = requestId.incrementAndGet();
-            int partition = getPartition(request.getAccountId());
-            observers.put(id, responseObserver);
-            sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
-                wrapper.setId(id);
-                wrapper.setPartition(partition);
-                transfer.writePlaceOrderRequest(request, symbol, wrapper.getBuffer());
+            //TODO
+            //市价单 支持买金额卖数量
+            getSymbol(request.getSymbolId()).ifPresentOrElse(symbol -> {
+                long id = requestId.incrementAndGet();
+                int partition = getPartition(request.getAccountId());
+                observers.put(id, responseObserver);
+                sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
+                    wrapper.setId(id);
+                    wrapper.setPartition(partition);
+                    transfer.writePlaceOrderRequest(request, symbol, wrapper.getBuffer());
+                });
+                timer.recordSuccess();
+            }, () -> {
+                PlaceOrderResponse response = PlaceOrderResponse.newBuilder()
+                        .setCode(Nexus.RejectionReason.SYMBOL_NOT_EXIST.ordinal())
+                        .setMessage(Nexus.RejectionReason.SYMBOL_NOT_EXIST.name())
+                        .build();
+                sendResponse(responseObserver, response);
+                timer.recordError();
             });
-        }, () -> {
-            PlaceOrderResponse response = PlaceOrderResponse.newBuilder()
-                    .setCode(Nexus.RejectionReason.SYMBOL_NOT_EXIST.ordinal())
-                    .setMessage(Nexus.RejectionReason.SYMBOL_NOT_EXIST.name())
-                    .build();
-            sendResponse(responseObserver, response);
-        });
+        } catch (Exception e) {
+            performanceExporter.recordGrpcCall("placeOrder", false, 0.0);
+            responseObserver.onError(e);
+        }
     }
 
     @Override
     public void cancelOrder(CancelOrderRequest request, StreamObserver<CancelOrderResponse> responseObserver) {
-        long id = requestId.incrementAndGet();
-        observers.put(id, responseObserver);
-        matchingRingBuffer.publishEvent((wrapper, sequence) -> {
-            wrapper.setId(id);
-            wrapper.setPartition(OrderIdGenerator.getSymbolId(request.getOrderId()) % group);
-            transfer.writeCancelOrderRequest(request, wrapper.getBuffer());
-        });
+        try (PerformanceExporter.GrpcTimer timer = performanceExporter.createGrpcTimer("cancelOrder")) {
+            long id = requestId.incrementAndGet();
+            observers.put(id, responseObserver);
+            matchingRingBuffer.publishEvent((wrapper, sequence) -> {
+                wrapper.setId(id);
+                wrapper.setPartition(OrderIdGenerator.getSymbolId(request.getOrderId()) % group);
+                transfer.writeCancelOrderRequest(request, wrapper.getBuffer());
+            });
+            timer.recordSuccess();
+        } catch (Exception e) {
+            performanceExporter.recordGrpcCall("cancelOrder", false, 0.0);
+            responseObserver.onError(e);
+        }
     }
 
     @Override
     public void getDepth(Envoy.GetDepthRequest request, StreamObserver<Envoy.GetDepthResponse> responseObserver) {
-        int symbolId = request.getSymbolId();
-        MatchService matchService = matchServices.get(symbolId % group);
-        DepthDto dto = matchService.getDepth(symbolId);
-        GetDepthResponse response = GetDepthResponse.newBuilder()
-                .setCode(1)
-                .setData(Depth.newBuilder().setSymbol(dto.getSymbol()).putAllAsks(dto.getAsks()).putAllBids(dto.getBids()))
-                .build();
-        responseObserver.onNext(response);
-        responseObserver.onCompleted();
+        try (PerformanceExporter.GrpcTimer timer = performanceExporter.createGrpcTimer("getDepth")) {
+            int symbolId = request.getSymbolId();
+            MatchService matchService = matchServices.get(symbolId % group);
+            DepthDto dto = matchService.getDepth(symbolId);
+            GetDepthResponse response = GetDepthResponse.newBuilder()
+                    .setCode(1)
+                    .setData(Depth.newBuilder().setSymbol(dto.getSymbol()).putAllAsks(dto.getAsks()).putAllBids(dto.getBids()))
+                    .build();
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+            timer.recordSuccess();
+        } catch (Exception e) {
+            performanceExporter.recordGrpcCall("getDepth", false, 0.0);
+            responseObserver.onError(e);
+        }
     }
 
     private class ResponseEventHandler implements EventHandler<NexusWrapper>, LifecycleAware {
