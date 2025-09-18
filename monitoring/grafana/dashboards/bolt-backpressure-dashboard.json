@@ -1,0 +1,391 @@
+{
+  "id": null,
+  "title": "Bolt Performance Monitoring Dashboard",
+  "tags": ["bolt", "performance", "monitoring", "grpc", "backpressure"],
+  "style": "dark",
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "RingBuffer Usage Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "bolt_ring_buffer_usage_rate",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "yellow", "value": 0.75},
+              {"color": "red", "value": 0.9}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 8, "w": 4, "x": 0, "y": 0}
+    },
+    {
+      "id": 2,
+      "title": "Current State",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "bolt_current_state",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {"type": "value", "value": "0", "text": "Normal"},
+            {"type": "value", "value": "1", "text": "High Load"},
+            {"type": "value", "value": "2", "text": "Critical"}
+          ],
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "yellow", "value": 1},
+              {"color": "red", "value": 2}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 8, "w": 4, "x": 4, "y": 0}
+    },
+    {
+      "id": 3,
+      "title": "Max Usage Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "bolt_ring_buffer_max_usage_rate",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "yellow", "value": 0.75},
+              {"color": "red", "value": 0.9}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 8, "w": 4, "x": 8, "y": 0}
+    },
+    {
+      "id": 4,
+      "title": "Remaining Capacity",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "bolt_ring_buffer_remaining_capacity",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        }
+      },
+      "gridPos": {"h": 8, "w": 4, "x": 12, "y": 0}
+    },
+    {
+      "id": 5,
+      "title": "Total Capacity",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "bolt_total_capacity",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        }
+      },
+      "gridPos": {"h": 8, "w": 4, "x": 16, "y": 0}
+    },
+    {
+      "id": 6,
+      "title": "Request Rate by Status",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(bolt_requests_total[5m])",
+          "refId": "A",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+    },
+    {
+      "id": 7,
+      "title": "Rejection Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(bolt_rejected_requests_total[5m]) / rate(bolt_requests_total[5m])",
+          "refId": "A",
+          "legendFormat": "Rejection Rate"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+    },
+    {
+      "id": 8,
+      "title": "Usage Rate Over Time",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "bolt_ring_buffer_usage_rate",
+          "refId": "A",
+          "legendFormat": "Usage Rate"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+    },
+    {
+      "id": 9,
+      "title": "Check Duration Percentiles",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(bolt_check_duration_seconds_bucket[5m]))",
+          "refId": "A",
+          "legendFormat": "50th percentile"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(bolt_check_duration_seconds_bucket[5m]))",
+          "refId": "B",
+          "legendFormat": "95th percentile"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(bolt_check_duration_seconds_bucket[5m]))",
+          "refId": "C",
+          "legendFormat": "99th percentile"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+    },
+    {
+      "id": 10,
+      "title": "gRPC Request Rate by Method",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(grpc_requests_total[5m])",
+          "refId": "A",
+          "legendFormat": "{{method}} - {{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}
+    },
+    {
+      "id": 11,
+      "title": "gRPC Request Duration",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(grpc_request_duration_milliseconds_bucket[5m]))",
+          "refId": "A",
+          "legendFormat": "{{method}} - 50th percentile"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(grpc_request_duration_milliseconds_bucket[5m]))",
+          "refId": "B",
+          "legendFormat": "{{method}} - 95th percentile"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(grpc_request_duration_milliseconds_bucket[5m]))",
+          "refId": "C",
+          "legendFormat": "{{method}} - 99th percentile"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}
+    },
+    {
+      "id": 12,
+      "title": "System CPU Usage",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "system_cpu_usage",
+          "refId": "A",
+          "legendFormat": "CPU Usage"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 32}
+    },
+    {
+      "id": 13,
+      "title": "System Load Average",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "system_load_average",
+          "refId": "A",
+          "legendFormat": "Load Average"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 32}
+    },
+    {
+      "id": 14,
+      "title": "JVM Memory Usage",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "jvm_memory_heap_used_bytes",
+          "refId": "A",
+          "legendFormat": "Heap Used"
+        },
+        {
+          "expr": "jvm_memory_heap_max_bytes",
+          "refId": "B",
+          "legendFormat": "Heap Max"
+        },
+        {
+          "expr": "jvm_memory_non_heap_used_bytes",
+          "refId": "C",
+          "legendFormat": "Non-Heap Used"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32}
+    },
+    {
+      "id": 15,
+      "title": "JVM Threads",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "jvm_threads_count",
+          "refId": "A",
+          "legendFormat": "Thread Count"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 40}
+    },
+    {
+      "id": 16,
+      "title": "JVM Uptime",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "jvm_uptime_seconds",
+          "refId": "A",
+          "legendFormat": "Uptime"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 40}
+    },
+    {
+      "id": 17,
+      "title": "Memory Usage Percentage",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "jvm_memory_heap_used_bytes / jvm_memory_heap_max_bytes",
+          "refId": "A",
+          "legendFormat": "Heap Usage %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40}
+    }
+  ]
+}

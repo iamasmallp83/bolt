@@ -3,8 +3,13 @@ package com.cmex.bolt.util;
 import com.lmax.disruptor.RingBuffer;
 import io.prometheus.client.Counter;
 import io.prometheus.client.Gauge;
+import io.prometheus.client.Histogram;
 import io.prometheus.client.Summary;
 
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryMXBean;
+import java.lang.management.OperatingSystemMXBean;
+import java.lang.management.RuntimeMXBean;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -14,11 +19,11 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * RingBuffer背压管理器
- * 用于监控RingBuffer容量并提供背压控制
+ * 性能导出器
+ * 用于监控RingBuffer容量、gRPC方法性能、机器信息等
  * 高级优化版本：使用volatile变量+读写锁，减少原子操作开销
  */
-public class BackpressureManager {
+public class PerformanceExporter {
     private final RingBuffer<?> ringBuffer;
     private final double highWatermark;
     private final double criticalWatermark;
@@ -32,14 +37,14 @@ public class BackpressureManager {
     private volatile double cachedUsageRate = 0.0;
     private volatile long cachedCapacity = 0L;
     private volatile long cachedRemaining = 0L;
-    private volatile BackpressureResult currentState = BackpressureResult.NORMAL;
+    private volatile boltResult currentState = boltResult.NORMAL;
     
     // 读写锁，用于保护状态更新
     private final ReadWriteLock stateLock = new ReentrantReadWriteLock();
     
     // 后台更新线程
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-        Thread t = new Thread(r, "BackpressureManager-Updater");
+        Thread t = new Thread(r, "PerformanceExporter-Updater");
         t.setDaemon(true);
         return t;
     });
@@ -49,53 +54,123 @@ public class BackpressureManager {
     private static final int MIN_UPDATE_INTERVAL = 50;  // 最小50ms
     private static final int MAX_UPDATE_INTERVAL = 1000; // 最大1秒
     
-    // Prometheus 指标定义
+    // 机器信息相关
+    private final OperatingSystemMXBean osBean = ManagementFactory.getOperatingSystemMXBean();
+    private final MemoryMXBean memoryBean = ManagementFactory.getMemoryMXBean();
+    private final RuntimeMXBean runtimeBean = ManagementFactory.getRuntimeMXBean();
+    
+    // RingBuffer 背压相关 Prometheus 指标
     private static final Counter TOTAL_REQUESTS = Counter.build()
-            .name("backpressure_requests_total")
-            .help("Total number of requests checked by backpressure manager")
+            .name("bolt_requests_total")
+            .help("Total number of requests checked by bolt manager")
             .labelNames("status")
             .register();
     
     private static final Counter REJECTED_REQUESTS = Counter.build()
-            .name("backpressure_rejected_requests_total")
+            .name("bolt_rejected_requests_total")
             .help("Total number of rejected requests")
             .register();
     
     private static final Gauge USAGE_RATE = Gauge.build()
-            .name("backpressure_usage_rate")
+            .name("bolt_ring_buffer_usage_rate")
             .help("Current RingBuffer usage rate (0.0-1.0)")
             .register();
     
     private static final Gauge MAX_USAGE_RATE = Gauge.build()
-            .name("backpressure_max_usage_rate")
+            .name("bolt_ring_buffer_max_usage_rate")
             .help("Maximum RingBuffer usage rate observed")
             .register();
     
     private static final Gauge REMAINING_CAPACITY = Gauge.build()
-            .name("backpressure_remaining_capacity")
+            .name("bolt_ring_buffer_remaining_capacity")
             .help("Current remaining capacity in RingBuffer")
             .register();
     
     private static final Gauge TOTAL_CAPACITY = Gauge.build()
-            .name("backpressure_total_capacity")
+            .name("bolt_total_capacity")
             .help("Total capacity of RingBuffer")
             .register();
     
     private static final Gauge CURRENT_STATE = Gauge.build()
-            .name("backpressure_current_state")
-            .help("Current backpressure state (0=Normal, 1=HighLoad, 2=Critical)")
+            .name("bolt_current_state")
+            .help("Current bolt state (0=Normal, 1=HighLoad, 2=Critical)")
             .register();
     
     private static final Summary CHECK_DURATION = Summary.build()
-            .name("backpressure_check_duration_seconds")
-            .help("Time spent checking backpressure capacity")
+            .name("bolt_check_duration_seconds")
+            .help("Time spent checking bolt capacity")
             .register();
     
-    public BackpressureManager(RingBuffer<?> ringBuffer) {
+    // gRPC 方法性能指标
+    private static final Counter GRPC_REQUESTS_TOTAL = Counter.build()
+            .name("grpc_requests_total")
+            .help("Total number of gRPC requests")
+            .labelNames("method", "status")
+            .register();
+    
+    private static final Histogram GRPC_REQUEST_DURATION = Histogram.build()
+            .name("grpc_request_duration_milliseconds")
+            .help("gRPC request duration in milliseconds")
+            .labelNames("method")
+            .buckets(1.0, 5.0, 10.0, 50.0, 100.0)
+            .register();
+    
+    private static final Summary GRPC_REQUEST_LATENCY = Summary.build()
+            .name("grpc_request_latency_milliseconds")
+            .help("gRPC request latency in milliseconds")
+            .labelNames("method")
+            .quantile(0.5, 0.01)
+            .quantile(0.9, 0.01)
+            .quantile(0.95, 0.01)
+            .quantile(0.99, 0.01)
+            .register();
+    
+    // 机器信息指标
+    private static final Gauge SYSTEM_CPU_USAGE = Gauge.build()
+            .name("system_cpu_usage")
+            .help("System CPU usage percentage")
+            .register();
+    
+    private static final Gauge SYSTEM_LOAD_AVERAGE = Gauge.build()
+            .name("system_load_average")
+            .help("System load average")
+            .register();
+    
+    private static final Gauge JVM_MEMORY_HEAP_USED = Gauge.build()
+            .name("jvm_memory_heap_used_bytes")
+            .help("JVM heap memory used in bytes")
+            .register();
+    
+    private static final Gauge JVM_MEMORY_HEAP_MAX = Gauge.build()
+            .name("jvm_memory_heap_max_bytes")
+            .help("JVM heap memory max in bytes")
+            .register();
+    
+    private static final Gauge JVM_MEMORY_NON_HEAP_USED = Gauge.build()
+            .name("jvm_memory_non_heap_used_bytes")
+            .help("JVM non-heap memory used in bytes")
+            .register();
+    
+    private static final Gauge JVM_MEMORY_NON_HEAP_MAX = Gauge.build()
+            .name("jvm_memory_non_heap_max_bytes")
+            .help("JVM non-heap memory max in bytes")
+            .register();
+    
+    private static final Gauge JVM_UPTIME = Gauge.build()
+            .name("jvm_uptime_seconds")
+            .help("JVM uptime in seconds")
+            .register();
+    
+    private static final Gauge JVM_THREADS_COUNT = Gauge.build()
+            .name("jvm_threads_count")
+            .help("JVM thread count")
+            .register();
+    
+    public PerformanceExporter(RingBuffer<?> ringBuffer) {
         this(ringBuffer, 0.75, 0.9);
     }
     
-    public BackpressureManager(RingBuffer<?> ringBuffer, double highWatermark, double criticalWatermark) {
+    public PerformanceExporter(RingBuffer<?> ringBuffer, double highWatermark, double criticalWatermark) {
         this.ringBuffer = ringBuffer;
         this.highWatermark = highWatermark;
         this.criticalWatermark = criticalWatermark;
@@ -135,11 +210,11 @@ public class BackpressureManager {
             
             // 预计算状态，避免checkCapacity中的重复计算
             if (usageRate >= criticalWatermark) {
-                currentState = BackpressureResult.CRITICAL_REJECT;
+                currentState = boltResult.CRITICAL_REJECT;
             } else if (usageRate >= highWatermark) {
-                currentState = BackpressureResult.HIGH_LOAD;
+                currentState = boltResult.HIGH_LOAD;
             } else {
-                currentState = BackpressureResult.NORMAL;
+                currentState = boltResult.NORMAL;
             }
         } finally {
             stateLock.writeLock().unlock();
@@ -150,6 +225,7 @@ public class BackpressureManager {
         
         // 更新 Prometheus 指标
         updatePrometheusMetrics(capacity, remaining, usageRate);
+        updateMachineMetrics();
         
         // 自适应调整更新频率
         adjustUpdateFrequency(usageRate);
@@ -175,6 +251,35 @@ public class BackpressureManager {
             case CRITICAL_REJECT -> 2;
         };
         CURRENT_STATE.set(stateValue);
+    }
+    
+    /**
+     * 更新机器信息指标
+     */
+    private void updateMachineMetrics() {
+        // CPU 使用率
+        if (osBean instanceof com.sun.management.OperatingSystemMXBean) {
+            com.sun.management.OperatingSystemMXBean sunOsBean = (com.sun.management.OperatingSystemMXBean) osBean;
+            SYSTEM_CPU_USAGE.set(sunOsBean.getProcessCpuLoad());
+        }
+        
+        // 系统负载
+        double loadAverage = osBean.getSystemLoadAverage();
+        if (loadAverage >= 0) {
+            SYSTEM_LOAD_AVERAGE.set(loadAverage);
+        }
+        
+        // JVM 内存信息
+        JVM_MEMORY_HEAP_USED.set(memoryBean.getHeapMemoryUsage().getUsed());
+        JVM_MEMORY_HEAP_MAX.set(memoryBean.getHeapMemoryUsage().getMax());
+        JVM_MEMORY_NON_HEAP_USED.set(memoryBean.getNonHeapMemoryUsage().getUsed());
+        JVM_MEMORY_NON_HEAP_MAX.set(memoryBean.getNonHeapMemoryUsage().getMax());
+        
+        // JVM 运行时间
+        JVM_UPTIME.set(runtimeBean.getUptime() / 1000.0);
+        
+        // 线程数
+        JVM_THREADS_COUNT.set(ManagementFactory.getThreadMXBean().getThreadCount());
     }
     
     /**
@@ -205,7 +310,7 @@ public class BackpressureManager {
             totalRequests.increment();
             
             // 直接使用预计算的状态，避免任何计算和比较
-            BackpressureResult result = currentState;
+            boltResult result = currentState;
             
             // 记录请求状态到 Prometheus
             String statusLabel = switch (result) {
@@ -216,7 +321,7 @@ public class BackpressureManager {
             TOTAL_REQUESTS.labels(statusLabel).inc();
             
             // 只有在CRITICAL状态时才拒绝请求并更新拒绝计数
-            if (result == BackpressureResult.CRITICAL_REJECT) {
+            if (result == boltResult.CRITICAL_REJECT) {
                 rejectedRequests.increment();
                 REJECTED_REQUESTS.inc();
                 return false; // 拒绝请求
@@ -226,6 +331,30 @@ public class BackpressureManager {
         } finally {
             timer.observeDuration();
         }
+    }
+    
+    /**
+     * 记录 gRPC 方法调用
+     * @param methodName 方法名
+     * @param success 是否成功
+     * @param duration 耗时（秒）
+     */
+    public void recordGrpcCall(String methodName, boolean success, double duration) {
+        String status = success ? "success" : "error";
+        GRPC_REQUESTS_TOTAL.labels(methodName, status).inc();
+        // 转换为毫秒
+        double durationMs = duration * 1000.0;
+        GRPC_REQUEST_DURATION.labels(methodName).observe(durationMs);
+        GRPC_REQUEST_LATENCY.labels(methodName).observe(durationMs);
+    }
+    
+    /**
+     * 创建 gRPC 方法计时器
+     * @param methodName 方法名
+     * @return 计时器
+     */
+    public GrpcTimer createGrpcTimer(String methodName) {
+        return new GrpcTimer(methodName, this);
     }
     
     /**
@@ -240,7 +369,7 @@ public class BackpressureManager {
      * 获取当前背压状态（用于监控和日志）
      * @return 当前背压状态
      */
-    public BackpressureResult getCurrentState() {
+    public boltResult getCurrentState() {
         return currentState;
     }
     
@@ -249,7 +378,7 @@ public class BackpressureManager {
      * @return true表示处于高负载状态
      */
     public boolean isHighLoad() {
-        return currentState == BackpressureResult.HIGH_LOAD;
+        return currentState == boltResult.HIGH_LOAD;
     }
     
     /**
@@ -257,7 +386,7 @@ public class BackpressureManager {
      * @return true表示处于临界状态
      */
     public boolean isCritical() {
-        return currentState == BackpressureResult.CRITICAL_REJECT;
+        return currentState == boltResult.CRITICAL_REJECT;
     }
     
     /**
@@ -278,7 +407,7 @@ public class BackpressureManager {
      * 获取统计信息（超优化版本：使用读锁保护，批量读取）
      * @return 背压统计信息
      */
-    public BackpressureStats getStats() {
+    public boltStats getStats() {
         stateLock.readLock().lock();
         try {
             double currentUsageRate = cachedUsageRate;
@@ -286,7 +415,7 @@ public class BackpressureManager {
             long remaining = cachedRemaining;
             double maxUsage = Double.longBitsToDouble(maxUsageRate.get());
             
-            return new BackpressureStats(
+            return new boltStats(
                 currentUsageRate,
                 maxUsage,
                 rejectedRequests.sum(),
@@ -305,7 +434,7 @@ public class BackpressureManager {
      * 格式化统计信息用于日志输出
      */
     public String formatStats() {
-        BackpressureStats stats = getStats();
+        boltStats stats = getStats();
         return String.format("[%s] Usage: %.2f%% (Max: %.2f%%), Rejected: %d/%d (%.2f%%), Remaining: %d/%d",
             stats.currentUsageRate() * 100,
             stats.maxUsageRate() * 100,
@@ -331,7 +460,7 @@ public class BackpressureManager {
     }
     
     /**
-     * 关闭背压管理器，清理资源
+     * 关闭性能导出器，清理资源
      */
     public void shutdown() {
         scheduler.shutdown();
@@ -348,7 +477,7 @@ public class BackpressureManager {
     /**
      * 背压检查结果
      */
-    public enum BackpressureResult {
+    public enum boltResult {
         NORMAL,           // 正常，可以接受请求
         HIGH_LOAD,        // 高负载，可以接受但需要警告
         CRITICAL_REJECT   // 临界状态，拒绝请求
@@ -357,7 +486,7 @@ public class BackpressureManager {
     /**
      * 背压统计信息
      */
-    public record BackpressureStats(
+    public record boltStats(
         double currentUsageRate,
         double maxUsageRate,
         long rejectedRequests,
@@ -379,4 +508,43 @@ public class BackpressureManager {
             return currentUsageRate >= criticalWatermark;
         }
     }
-} 
+    
+    /**
+     * gRPC 方法计时器
+     */
+    public static class GrpcTimer implements AutoCloseable {
+        private final String methodName;
+        private final PerformanceExporter exporter;
+        private final long startTime;
+        private boolean closed = false;
+        
+        public GrpcTimer(String methodName, PerformanceExporter exporter) {
+            this.methodName = methodName;
+            this.exporter = exporter;
+            this.startTime = System.nanoTime();
+        }
+        
+        public void recordSuccess() {
+            if (!closed) {
+                double duration = (System.nanoTime() - startTime) / 1_000_000_000.0;
+                exporter.recordGrpcCall(methodName, true, duration);
+                closed = true;
+            }
+        }
+        
+        public void recordError() {
+            if (!closed) {
+                double duration = (System.nanoTime() - startTime) / 1_000_000_000.0;
+                exporter.recordGrpcCall(methodName, false, duration);
+                closed = true;
+            }
+        }
+        
+        @Override
+        public void close() {
+            if (!closed) {
+                recordSuccess(); // 默认记录为成功
+            }
+        }
+    }
+}
