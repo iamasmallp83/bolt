@@ -16,15 +16,9 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
-  - job_name: 'bolt-backpressure'
+  - job_name: 'bolt'
     static_configs:
       - targets: ['192.168.0.194:9091']
     scrape_interval: 5s
     metrics_path: /metrics
     scrape_timeout: 3s
-
-  # 可选：监控其他服务 (当需要时取消注释)
-  # - job_name: 'node-exporter'
-  #   static_configs:
-  #     - targets: ['node-exporter:9100']
-  #   scrape_interval: 15s

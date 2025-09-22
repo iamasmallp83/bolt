@@ -99,7 +99,30 @@ public class NettyMetricsHandler extends SimpleChannelInboundHandler<FullHttpReq
         
         while (samples.hasMoreElements()) {
             io.prometheus.client.Collector.MetricFamilySamples family = samples.nextElement();
-            sb.append(family.toString()).append("\n");
+            
+            // 输出标准的Prometheus格式
+            sb.append("# HELP ").append(family.name).append(" ").append(family.help).append("\n");
+            sb.append("# TYPE ").append(family.name).append(" ").append(family.type.name().toLowerCase()).append("\n");
+            
+            for (io.prometheus.client.Collector.MetricFamilySamples.Sample sample : family.samples) {
+                sb.append(sample.name);
+                
+                // 添加标签
+                if (sample.labelNames != null && !sample.labelNames.isEmpty()) {
+                    sb.append("{");
+                    for (int i = 0; i < sample.labelNames.size(); i++) {
+                        if (i > 0) sb.append(",");
+                        sb.append(sample.labelNames.get(i)).append("=\"").append(sample.labelValues.get(i)).append("\"");
+                    }
+                    sb.append("}");
+                }
+                
+                sb.append(" ").append(sample.value);
+                if (sample.timestampMs != null) {
+                    sb.append(" ").append(sample.timestampMs);
+                }
+                sb.append("\n");
+            }
         }
         
         return sb.toString();
