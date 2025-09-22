@@ -33,7 +33,7 @@ public class TestCorePerformance {
     @Test
     public void test() throws Exception {
         // 配置参数
-        final int ORDERS_PER_THREAD = 20000; // 每个线程的下单数量
+        final int ORDERS_PER_THREAD = 25000; // 每个线程的下单数量
         final int TRADING_PAIRS_COUNT = 10;  // 交易对数量
         final int THREADS_PER_PAIR = 2;      // 每个交易对的线程数（买单+卖单）
         

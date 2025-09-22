@@ -2,7 +2,7 @@ package com.cmex.bolt;
 
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.EnvoyServer;
-import com.cmex.bolt.util.PrometheusMetricsServer;
+import com.cmex.bolt.util.NettyMetricsServer;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.UncaughtExceptionHandlers;
 import io.grpc.Server;
@@ -30,7 +30,7 @@ public class Bolt {
     @Getter
     private EnvoyServer envoyServer;
     @Getter
-    private PrometheusMetricsServer prometheusServer;
+    private NettyMetricsServer metricsServer;
 
     public Bolt(BoltConfig config) {
         this.config = config;
@@ -74,11 +74,12 @@ public class Bolt {
 
     public void start() throws IOException, InterruptedException {
         this.nettyServer = newNettyServer();
-        this.prometheusServer = null;
+        this.metricsServer = null;
 
         // 启动 Prometheus 监控（如果启用）
         if (config.enablePrometheus()) {
-            this.prometheusServer = new PrometheusMetricsServer(config.prometheusPort());
+            this.metricsServer = new NettyMetricsServer(config.prometheusPort());
+            this.metricsServer.start();
         }
         System.out.println("Start Bolt with " + config);
         nettyServer.start();
@@ -99,6 +100,9 @@ public class Bolt {
                 .channelType(NioServerSocketChannel.class)
                 .addService(envoyServer)
                 .flowControlWindow(NettyChannelBuilder.DEFAULT_FLOW_CONTROL_WINDOW);
+        
+        // gRPC服务器不需要额外的HTTP处理器
+        
         //使用worker执行操作
         builder.executor(MoreExecutors.directExecutor());
         //创建线程池执行
@@ -128,9 +132,9 @@ public class Bolt {
             try {
                 System.out.println("Server shutting down...");
                 nettyServer.shutdown();
-                if (prometheusServer != null) {
-                    System.out.println("Prometheus metrics server shutting down...");
-                    prometheusServer.shutdown();
+                if (metricsServer != null) {
+                    System.out.println("Metrics server shutting down...");
+                    metricsServer.shutdown();
                 }
                 System.out.println("Shutdown completed");
             } catch (Exception e) {
@@ -138,7 +142,7 @@ public class Bolt {
                 e.printStackTrace();
             }
         }));
-        newNettyServer().awaitTermination();
+        nettyServer.awaitTermination();
     }
 
     public boolean isRunning() {
