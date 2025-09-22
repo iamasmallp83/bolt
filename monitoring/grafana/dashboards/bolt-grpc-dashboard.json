@@ -1,0 +1,435 @@
+{
+  "id": null,
+  "uid": "be16c10a-7014-42bb-9ad8-d23a1379da93",
+  "title": "Bolt gRPC Performance Dashboard",
+  "tags": ["bolt", "grpc", "performance", "monitoring", "microservices"],
+  "style": "dark",
+  "timezone": "browser",
+  "refresh": "5s",
+  "version": 1,
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "gRPC Request Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(rate(grpc_requests_total[5m]))",
+          "refId": "A",
+          "legendFormat": "Total RPS"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0,
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "yellow", "value": 1000},
+              {"color": "red", "value": 5000}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+    },
+    {
+      "id": 2,
+      "title": "gRPC Error Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(rate(grpc_requests_total{status=\"error\"}[5m])) / sum(rate(grpc_requests_total[5m])) * 100",
+          "refId": "A",
+          "legendFormat": "Error Rate %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "yellow", "value": 1},
+              {"color": "red", "value": 5}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0}
+    },
+    {
+      "id": 3,
+      "title": "Average Response Time",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(rate(grpc_request_duration_milliseconds_sum[5m])) / sum(rate(grpc_request_duration_milliseconds_count[5m]))",
+          "refId": "A",
+          "legendFormat": "Avg Response Time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0,
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "yellow", "value": 100},
+              {"color": "red", "value": 500}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0}
+    },
+    {
+      "id": 4,
+      "title": "P95 Response Time",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(grpc_request_duration_milliseconds_bucket[5m])) by (le))",
+          "refId": "A",
+          "legendFormat": "P95 Response Time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0,
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "yellow", "value": 200},
+              {"color": "red", "value": 1000}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0}
+    },
+    {
+      "id": 5,
+      "title": "gRPC Request Rate by Method",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(grpc_requests_total[5m])",
+          "refId": "A",
+          "legendFormat": "{{method}} - {{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+    },
+    {
+      "id": 6,
+      "title": "gRPC Error Rate by Method",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(grpc_requests_total{status=\"error\"}[5m]) / rate(grpc_requests_total[5m]) * 100",
+          "refId": "A",
+          "legendFormat": "{{method}} Error Rate %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+    },
+    {
+      "id": 7,
+      "title": "gRPC Response Time Percentiles",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(grpc_request_duration_milliseconds_bucket[5m])) by (le))",
+          "refId": "A",
+          "legendFormat": "50th percentile"
+        },
+        {
+          "expr": "histogram_quantile(0.90, sum(rate(grpc_request_duration_milliseconds_bucket[5m])) by (le))",
+          "refId": "B",
+          "legendFormat": "90th percentile"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(grpc_request_duration_milliseconds_bucket[5m])) by (le))",
+          "refId": "C",
+          "legendFormat": "95th percentile"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(grpc_request_duration_milliseconds_bucket[5m])) by (le))",
+          "refId": "D",
+          "legendFormat": "99th percentile"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+    },
+    {
+      "id": 8,
+      "title": "gRPC Response Time by Method",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(grpc_request_duration_milliseconds_bucket[5m])) by (le, method))",
+          "refId": "A",
+          "legendFormat": "{{method}} - P95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+    },
+    {
+      "id": 9,
+      "title": "gRPC Request Duration Distribution",
+      "type": "heatmap",
+      "targets": [
+        {
+          "expr": "sum(rate(grpc_request_duration_milliseconds_bucket[5m])) by (le)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}
+    },
+    {
+      "id": 10,
+      "title": "gRPC Latency Summary",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(grpc_request_latency_milliseconds_sum) / sum(grpc_request_latency_milliseconds_count)",
+          "refId": "A",
+          "legendFormat": "Average Latency"
+        },
+        {
+          "expr": "grpc_request_latency_milliseconds{quantile=\"0.5\"}",
+          "refId": "B",
+          "legendFormat": "50th percentile"
+        },
+        {
+          "expr": "grpc_request_latency_milliseconds{quantile=\"0.95\"}",
+          "refId": "C",
+          "legendFormat": "95th percentile"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}
+    },
+    {
+      "id": 11,
+      "title": "gRPC Method Performance Table",
+      "type": "table",
+      "targets": [
+        {
+          "expr": "sum(rate(grpc_requests_total[5m])) by (method)",
+          "refId": "A",
+          "format": "table"
+        },
+        {
+          "expr": "sum(rate(grpc_requests_total{status=\"error\"}[5m])) by (method)",
+          "refId": "B",
+          "format": "table"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(grpc_request_duration_milliseconds_bucket[5m])) by (le, method))",
+          "refId": "C",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "displayMode": "table"
+          }
+        }
+      },
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 32}
+    },
+    {
+      "id": 12,
+      "title": "gRPC Success vs Error Count",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(grpc_requests_total{status=\"success\"}[5m])) by (method)",
+          "refId": "A",
+          "legendFormat": "{{method}} - Success"
+        },
+        {
+          "expr": "sum(rate(grpc_requests_total{status=\"error\"}[5m])) by (method)",
+          "refId": "B",
+          "legendFormat": "{{method}} - Error"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40}
+    },
+    {
+      "id": 13,
+      "title": "gRPC Throughput Trends",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(grpc_requests_total[1m]))",
+          "refId": "A",
+          "legendFormat": "Total RPS (1m)"
+        },
+        {
+          "expr": "sum(rate(grpc_requests_total[5m]))",
+          "refId": "B",
+          "legendFormat": "Total RPS (5m)"
+        },
+        {
+          "expr": "sum(rate(grpc_requests_total[15m]))",
+          "refId": "C",
+          "legendFormat": "Total RPS (15m)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40}
+    },
+    {
+      "id": 14,
+      "title": "gRPC Method Call Distribution",
+      "type": "piechart",
+      "targets": [
+        {
+          "expr": "sum(rate(grpc_requests_total[5m])) by (method)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        }
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 48}
+    },
+    {
+      "id": 15,
+      "title": "gRPC Error Distribution",
+      "type": "piechart",
+      "targets": [
+        {
+          "expr": "sum(rate(grpc_requests_total{status=\"error\"}[5m])) by (method)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        }
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 48}
+    },
+    {
+      "id": 16,
+      "title": "gRPC Response Time Heatmap by Method",
+      "type": "heatmap",
+      "targets": [
+        {
+          "expr": "sum(rate(grpc_request_duration_milliseconds_bucket[5m])) by (le, method)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 48}
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "method",
+        "type": "query",
+        "query": "label_values(grpc_requests_total, method)",
+        "refresh": 1,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*"
+      },
+      {
+        "name": "status",
+        "type": "query",
+        "query": "label_values(grpc_requests_total, status)",
+        "refresh": 1,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*"
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Deployments",
+        "enable": true,
+        "iconColor": "blue",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "Bolt Backpressure Dashboard",
+      "url": "/d/bolt-backpressure/bolt-performance-monitoring-dashboard",
+      "type": "link"
+    }
+  ]
+}
