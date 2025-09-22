@@ -96,10 +96,6 @@ public class PerformanceExporter {
             .help("Current bolt state (0=Normal, 1=HighLoad, 2=Critical)")
             .register();
     
-    private static final Summary CHECK_DURATION = Summary.build()
-            .name("bolt_check_duration_seconds")
-            .help("Time spent checking bolt capacity")
-            .register();
     
     // gRPC 方法性能指标
     private static final Counter GRPC_REQUESTS_TOTAL = Counter.build()
@@ -304,33 +300,27 @@ public class PerformanceExporter {
      * @return true表示可以接受请求，false表示拒绝请求
      */
     public boolean checkCapacity() {
-        // 使用 Summary 记录检查耗时
-        Summary.Timer timer = CHECK_DURATION.startTimer();
-        try {
-            totalRequests.increment();
-            
-            // 直接使用预计算的状态，避免任何计算和比较
-            boltResult result = currentState;
-            
-            // 记录请求状态到 Prometheus
-            String statusLabel = switch (result) {
-                case NORMAL -> "normal";
-                case HIGH_LOAD -> "high_load";
-                case CRITICAL_REJECT -> "critical_reject";
-            };
-            TOTAL_REQUESTS.labels(statusLabel).inc();
-            
-            // 只有在CRITICAL状态时才拒绝请求并更新拒绝计数
-            if (result == boltResult.CRITICAL_REJECT) {
-                rejectedRequests.increment();
-                REJECTED_REQUESTS.inc();
-                return false; // 拒绝请求
-            }
-            
-            return true; // 接受请求（包括NORMAL和HIGH_LOAD状态）
-        } finally {
-            timer.observeDuration();
+        totalRequests.increment();
+        
+        // 直接使用预计算的状态，避免任何计算和比较
+        boltResult result = currentState;
+        
+        // 记录请求状态到 Prometheus
+        String statusLabel = switch (result) {
+            case NORMAL -> "normal";
+            case HIGH_LOAD -> "high_load";
+            case CRITICAL_REJECT -> "critical_reject";
+        };
+        TOTAL_REQUESTS.labels(statusLabel).inc();
+        
+        // 只有在CRITICAL状态时才拒绝请求并更新拒绝计数
+        if (result == boltResult.CRITICAL_REJECT) {
+            rejectedRequests.increment();
+            REJECTED_REQUESTS.inc();
+            return false; // 拒绝请求
         }
+        
+        return true; // 接受请求（包括NORMAL和HIGH_LOAD状态）
     }
     
     /**

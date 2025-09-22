@@ -192,35 +192,6 @@
     },
     {
       "id": 9,
-      "title": "Check Duration Percentiles",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.50, rate(bolt_check_duration_seconds_bucket[5m]))",
-          "refId": "A",
-          "legendFormat": "50th percentile"
-        },
-        {
-          "expr": "histogram_quantile(0.95, rate(bolt_check_duration_seconds_bucket[5m]))",
-          "refId": "B",
-          "legendFormat": "95th percentile"
-        },
-        {
-          "expr": "histogram_quantile(0.99, rate(bolt_check_duration_seconds_bucket[5m]))",
-          "refId": "C",
-          "legendFormat": "99th percentile"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "min": 0
-        }
-      },
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
-    },
-    {
-      "id": 10,
       "title": "gRPC Request Rate by Method",
       "type": "timeseries",
       "targets": [
@@ -239,7 +210,7 @@
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}
     },
     {
-      "id": 11,
+      "id": 10,
       "title": "gRPC Request Duration",
       "type": "timeseries",
       "targets": [
@@ -268,7 +239,7 @@
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}
     },
     {
-      "id": 12,
+      "id": 11,
       "title": "System CPU Usage",
       "type": "timeseries",
       "targets": [
@@ -288,7 +259,7 @@
       "gridPos": {"h": 8, "w": 6, "x": 0, "y": 32}
     },
     {
-      "id": 13,
+      "id": 12,
       "title": "System Load Average",
       "type": "timeseries",
       "targets": [
@@ -306,7 +277,7 @@
       "gridPos": {"h": 8, "w": 6, "x": 6, "y": 32}
     },
     {
-      "id": 14,
+      "id": 13,
       "title": "JVM Memory Usage",
       "type": "timeseries",
       "targets": [
@@ -335,7 +306,7 @@
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32}
     },
     {
-      "id": 15,
+      "id": 14,
       "title": "JVM Threads",
       "type": "timeseries",
       "targets": [
@@ -354,7 +325,7 @@
       "gridPos": {"h": 8, "w": 6, "x": 0, "y": 40}
     },
     {
-      "id": 16,
+      "id": 15,
       "title": "JVM Uptime",
       "type": "timeseries",
       "targets": [
@@ -373,7 +344,7 @@
       "gridPos": {"h": 8, "w": 6, "x": 6, "y": 40}
     },
     {
-      "id": 17,
+      "id": 16,
       "title": "Memory Usage Percentage",
       "type": "timeseries",
       "targets": [
