@@ -190,14 +190,24 @@ public class Transfer {
 
     public Nexus.NexusEvent.Reader from(ByteBuf buffer) {
         if (buffer == null) {
-            throw new IllegalArgumentException("CancelOrderRequest cannot be null");
+            throw new IllegalArgumentException("Buffer cannot be null");
         }
+        
+        // 检查buffer是否有足够的数据
+        if (buffer.readableBytes() == 0) {
+            throw new RuntimeException("Buffer has no readable bytes");
+        }
+        
         ByteBufReadableChannel channel = new ByteBufReadableChannel(buffer);
         MessageReader messageReader;
         try {
             messageReader = Serialize.read(channel);
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            System.err.println("Debug: Cap'n Proto deserialization failed - " + e.getMessage());
+            System.err.println("Debug: Buffer state - readable: " + buffer.readableBytes() + 
+                             ", readerIndex: " + buffer.readerIndex() + 
+                             ", writerIndex: " + buffer.writerIndex());
+            throw new RuntimeException("Cap'n Proto deserialization failed: " + e.getMessage(), e);
         }
         return messageReader.getRoot(Nexus.NexusEvent.factory);
     }
@@ -321,11 +331,15 @@ public class Transfer {
             }
 
             int bytesToRead = Math.min(dst.remaining(), buffer.readableBytes());
-            if (bytesToRead == 0) {
-                return buffer.readableBytes() == 0 ? -1 : 0;
-            }
+
+            // 保存原始limit
+            int originalLimit = dst.limit();
             dst.limit(dst.position() + bytesToRead);
             buffer.readBytes(dst);
+            
+            // 恢复原始limit
+            dst.limit(originalLimit);
+            
             return bytesToRead;
         }
 

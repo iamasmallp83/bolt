@@ -9,6 +9,8 @@ import com.cmex.bolt.Envoy.*;
 import com.cmex.bolt.EnvoyServerGrpc;
 import com.cmex.bolt.handler.SequencerDispatcher;
 import com.cmex.bolt.handler.MatchDispatcher;
+import com.cmex.bolt.handler.JournalHandler;
+import com.cmex.bolt.handler.JournalReplayer;
 import com.cmex.bolt.repository.impl.CurrencyRepository;
 import com.cmex.bolt.service.AccountService;
 import com.cmex.bolt.service.MatchService;
@@ -23,6 +25,7 @@ import com.lmax.disruptor.dsl.ProducerType;
 import com.lmax.disruptor.util.DaemonThreadFactory;
 import io.grpc.stub.StreamObserver;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,6 +35,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
+@Slf4j
 public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
     private final RingBuffer<NexusWrapper> sequencerRingBuffer;
@@ -72,9 +76,15 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
         List<SequencerDispatcher> sequencerDispatchers = createSequencerDispatchers();
         List<MatchDispatcher> matchDispatchers = createMatchingDispatchers();
+        
+        JournalHandler journalHandler = new JournalHandler(boltConfig);
+
         matchingDisruptor.handleEventsWith(matchDispatchers.toArray(new MatchDispatcher[0]));
         responseDisruptor.handleEventsWith(new ResponseEventHandler());
-        sequencerDisruptor.handleEventsWith(sequencerDispatchers.toArray(new SequencerDispatcher[0]));
+        
+        // 配置 sequencerRingBuffer 的事件处理链：JournalHandler -> SequencerDispatcher
+        sequencerDisruptor.handleEventsWith(journalHandler)
+                .then(sequencerDispatchers.toArray(new SequencerDispatcher[0]));
 
         sequencerRingBuffer = sequencerDisruptor.start();
         matchingRingBuffer = matchingDisruptor.start();
@@ -82,6 +92,10 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
         // 初始化性能导出器
         performanceExporter = new PerformanceExporter(sequencerRingBuffer);
+        
+        // 如果存在 journal 文件，则进行重放
+        JournalReplayer replayer = new JournalReplayer(sequencerRingBuffer, boltConfig);
+        replayer.replayFromJournal();
 
         matchServices = new ArrayList<>(group);
         for (MatchDispatcher dispatcher : matchDispatchers) {
@@ -345,4 +359,5 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     private Optional<Symbol> getSymbol(int symbolId) {
         return matchServices.get(symbolId % group).getSymbol(symbolId);
     }
+    
 }

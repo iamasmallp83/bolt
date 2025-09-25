@@ -41,7 +41,7 @@ public class Bolt {
         BoltConfig config;
         if (args.length == 0) {
             config = BoltConfig.DEFAULT;
-        } else if (args.length == 8) {
+        } else if (args.length == 10) {
             try {
                 int port = Integer.parseInt(args[0]);
                 boolean isProd = Boolean.parseBoolean(args[1]);
@@ -51,7 +51,10 @@ public class Bolt {
                 int responseSize = Integer.parseInt(args[5]);
                 boolean enablePrometheus = Boolean.parseBoolean(args[6]);
                 int prometheusPort = Integer.parseInt(args[7]);
-                config = new BoltConfig(port, isProd, group, sequencerSize, matchingSize, responseSize, enablePrometheus, prometheusPort);
+                String journalFilePath = args[8];
+                boolean isBinary = Boolean.parseBoolean(args[9]);
+                config = new BoltConfig(port, isProd, group, sequencerSize, matchingSize, responseSize, 
+                    enablePrometheus, prometheusPort, journalFilePath, isBinary);
             } catch (NumberFormatException e) {
                 printUsage();
                 return;
@@ -67,9 +70,9 @@ public class Bolt {
     private static void printUsage() {
         System.out.println("Usage:");
         System.out.println("  java -jar bolt.jar  # 使用默认配置");
-        System.out.println("  java -jar bolt.jar {port} {isProduction} {group} {sequencerSize} {matchingSize} {responseSize} {prometheusPort} {enablePrometheus}");
+        System.out.println("  java -jar bolt.jar {port} {isProduction} {group} {sequencerSize} {matchingSize} {responseSize} {prometheusPort} {enablePrometheus} {journalFilePath} {isBinary}");
         System.out.println("Examples:");
-        System.out.println("  java -jar bolt.jar 9090 true 4 1024 512 512 true 9091");
+        System.out.println("  java -jar bolt.jar 9090 true 4 1024 512 512 true 9091 journal.data false");
     }
 
     public void start() throws IOException, InterruptedException {

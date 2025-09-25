@@ -80,6 +80,9 @@ public class AccountService {
     }
 
     private void handleAccountAbsent(long messageId) {
+        if (!needPublish(messageId)) {
+            return;
+        }
         publishFailureEvent(messageId, Nexus.EventType.PLACE_ORDER_REJECTED, Nexus.RejectionReason.BALANCE_NOT_ENOUGH);
     }
 
@@ -113,6 +116,9 @@ public class AccountService {
     }
 
     private void publishIncreasedEvent(long messageId, Balance balance) {
+        if (!needPublish(messageId)) {
+            return;
+        }
         responseRingBuffer.publishEvent((message, sequence) -> {
             message.setId(messageId);
             transfer.writeBalance(balance, Nexus.EventType.INCREASED, message.getBuffer());
@@ -120,6 +126,9 @@ public class AccountService {
     }
 
     private void publishDecreasedEvent(long messageId, Balance balance) {
+        if (!needPublish(messageId)) {
+            return;
+        }
         responseRingBuffer.publishEvent((message, sequence) -> {
             message.setId(messageId);
             transfer.writeBalance(balance, Nexus.EventType.DECREASED, message.getBuffer());
@@ -132,6 +141,9 @@ public class AccountService {
     }
 
     private void publishFailureEvent(long messageId, Nexus.EventType eventType, Nexus.RejectionReason rejectionReason) {
+        if (!needPublish(messageId)) {
+            return;
+        }
         responseRingBuffer.publishEvent((wrapper, sequence) -> {
             wrapper.setId(messageId);
             transfer.writeFailed(eventType, rejectionReason, wrapper.getBuffer());
@@ -156,4 +168,7 @@ public class AccountService {
                 BigDecimalUtil.valueOf(clear.getIncomeAmount().toString()));
     }
 
+    private boolean needPublish(long messageId) {
+        return messageId > 0;
+    }
 }

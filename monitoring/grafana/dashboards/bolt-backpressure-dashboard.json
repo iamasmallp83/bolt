@@ -9,7 +9,7 @@
   "version": 1,
   "editable": true,
   "gnetId": null,
-  "graphTooltip": 0, 
+  "graphTooltip": 0,
   "time": {
     "from": "now-1h",
     "to": "now"

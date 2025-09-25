@@ -1,10 +1,9 @@
 package com.cmex.bolt.util;
 
 
-import com.cmex.bolt.core.EnvoyServer;
 import com.cmex.bolt.Envoy;
+import com.cmex.bolt.core.EnvoyServer;
 
-import java.util.Map;
 
 public class EnvoyUtil {
     public static void increase(EnvoyServer service, int accountId, int currencyId, String amount,
@@ -32,7 +31,7 @@ public class EnvoyUtil {
                 .setAccountId(accountId)
                 .build(), FakeStreamObserver.logger());
     }
-    
+
 
     public static void getDepth(EnvoyServer service, int symbolId) {
         service.getDepth(Envoy.GetDepthRequest.newBuilder()
@@ -40,9 +39,15 @@ public class EnvoyUtil {
                 .build(), FakeStreamObserver.logger());
     }
 
+    public static void getDepth(EnvoyServer service, int symbolId, FakeStreamObserver<Envoy.GetDepthResponse> observer) {
+        service.getDepth(Envoy.GetDepthRequest.newBuilder()
+                .setSymbolId(symbolId)
+                .build(), observer);
+    }
+
     public static void placeOrder(EnvoyServer service, long requestId, int symbolId, int accountId,
-                                 Envoy.Type type, Envoy.Side side, String price, String quantity,
-                                 FakeStreamObserver<Envoy.PlaceOrderResponse> observer) {
+                                  Envoy.Type type, Envoy.Side side, String price, String quantity,
+                                  FakeStreamObserver<Envoy.PlaceOrderResponse> observer) {
         service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
                 .setRequestId(requestId)
                 .setSymbolId(symbolId)
@@ -55,13 +60,13 @@ public class EnvoyUtil {
     }
 
     public static void placeOrder(EnvoyServer service, long requestId, int symbolId, int accountId,
-                                 Envoy.Type type, Envoy.Side side, String price, String quantity) {
+                                  Envoy.Type type, Envoy.Side side, String price, String quantity) {
         placeOrder(service, requestId, symbolId, accountId, type, side, price, quantity, FakeStreamObserver.noop());
     }
 
     public static void placeOrder(EnvoyServer service, long requestId, int symbolId, int accountId,
-                                 Envoy.Type type, Envoy.Side side, String price, String quantity,
-                                 int takerRate, int makerRate, FakeStreamObserver<Envoy.PlaceOrderResponse> observer) {
+                                  Envoy.Type type, Envoy.Side side, String price, String quantity,
+                                  int takerRate, int makerRate, FakeStreamObserver<Envoy.PlaceOrderResponse> observer) {
         service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
                 .setRequestId(requestId)
                 .setSymbolId(symbolId)
@@ -76,13 +81,17 @@ public class EnvoyUtil {
     }
 
     public static void placeOrder(EnvoyServer service, long requestId, int symbolId, int accountId,
-                                 Envoy.Type type, Envoy.Side side, String price, String quantity,
-                                 int takerRate, int makerRate) {
+                                  Envoy.Type type, Envoy.Side side, String price, String quantity,
+                                  int takerRate, int makerRate) {
         placeOrder(service, requestId, symbolId, accountId, type, side, price, quantity, takerRate, makerRate, FakeStreamObserver.noop());
     }
 
-    public static boolean equals(Map<Integer, Envoy.Balance> one, Map<Integer, Envoy.Balance> other) {
-        return one == other || (one.size() == other.size() && one.entrySet().stream()
-                .allMatch(entry -> other.containsKey(entry.getKey()) && entry.getValue().equals(other.get(entry.getKey()))));
+    public static void cancelOrder(EnvoyServer service, long orderId) {
+        service.cancelOrder(Envoy.CancelOrderRequest.newBuilder().setOrderId(orderId).build(), FakeStreamObserver.noop());
     }
+
+    public static void cancelOrder(EnvoyServer service, long orderId, FakeStreamObserver<Envoy.CancelOrderResponse> observer) {
+        service.cancelOrder(Envoy.CancelOrderRequest.newBuilder().setOrderId(orderId).build(), observer);
+    }
+
 }

@@ -58,6 +58,7 @@ public class MatchService {
                         MessageBuilder builder = createClearMessage(symbol, ticket.getMaker(), false,
                                 ticket.getQuantity(), ticket.getVolume());
                         wrapper.setPartition(ticket.getMaker().getAccountId() % group);
+                        wrapper.setId(-1);//内部产生的事件
                         transfer.serialize(builder, wrapper.getBuffer());
                     });
                     totalQuantity = totalQuantity.add(ticket.getQuantity());
@@ -69,6 +70,7 @@ public class MatchService {
                     MessageBuilder builder = createClearMessage(symbol, order, true, finalTotalQuantity,
                             finalTotalVolume);
                     wrapper.setPartition(order.getAccountId() % group);
+                    wrapper.setId(-1);//内部产生的事件
                     transfer.serialize(builder, wrapper.getBuffer());
                 });
             }

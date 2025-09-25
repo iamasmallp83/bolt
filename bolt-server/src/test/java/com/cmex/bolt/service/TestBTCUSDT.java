@@ -1,17 +1,18 @@
 package com.cmex.bolt.service;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicLong;
+
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+
 import com.cmex.bolt.Envoy;
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.EnvoyServer;
 import com.cmex.bolt.util.BigDecimalUtil;
 import com.cmex.bolt.util.EnvoyUtil;
 import com.cmex.bolt.util.FakeStreamObserver;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
-
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class TestBTCUSDT {
     public static EnvoyServer service = new EnvoyServer(BoltConfig.DEFAULT);
@@ -28,44 +29,31 @@ public class TestBTCUSDT {
     @Test
     public void testCancel() throws InterruptedException {
         AtomicLong orderId = new AtomicLong();
-        service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
-                .setRequestId(1)
-                .setSymbolId(1)
-                .setAccountId(2)
-                .setType(Envoy.Type.LIMIT)
-                .setSide(Envoy.Side.ASK)
-                .setPrice("1000")
-                .setQuantity("2")
-                .build(), FakeStreamObserver.of(response -> {
-            Assertions.assertTrue(response.getData().getId() > 0);
-            orderId.set(response.getData().getId());
-        }));
+        EnvoyUtil.placeOrder(service, 1, 1, 2, Envoy.Type.LIMIT, Envoy.Side.ASK, "1000", "2",
+                FakeStreamObserver.of(response -> {
+                    Assertions.assertTrue(response.getData().getId() > 0);
+                    orderId.set(response.getData().getId());
+                }));
+        EnvoyUtil.placeOrder(service, 2, 1, 1, Envoy.Type.LIMIT, Envoy.Side.BID, "1000", "1",
+                FakeStreamObserver.of(response -> {
+                    Assertions.assertTrue(response.getData().getId() > 0);
+                }));
         Thread.sleep(100);
-        service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
-                .setRequestId(1)
-                .setSymbolId(1)
-                .setAccountId(1)
-                .setType(Envoy.Type.LIMIT)
-                .setSide(Envoy.Side.BID)
-                .setPrice("1000")
-                .setQuantity("1")
-                .build(), FakeStreamObserver.of(response -> {
-            Assertions.assertTrue(response.getData().getId() > 0);
-        }));
-        service.cancelOrder(Envoy.CancelOrderRequest.newBuilder().setOrderId(orderId.get()).build(), FakeStreamObserver.of(response -> {
+        EnvoyUtil.cancelOrder(service, orderId.get(), FakeStreamObserver.of(response -> {
+            System.out.println(response.getCode());
             System.out.printf("cancel order id: %d\n", orderId.get());
         }));
         Thread.sleep(100);
-        service.getDepth(Envoy.GetDepthRequest.newBuilder().setSymbolId(1).build(), FakeStreamObserver.of(
+        EnvoyUtil.getDepth(service, 1, FakeStreamObserver.of(
                 response -> {
                     Assertions.assertEquals(0, response.getData().getAsksCount());
                     Assertions.assertEquals(0, response.getData().getBidsCount());
                 }));
-        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(1).build(), FakeStreamObserver.of(response -> {
+        EnvoyUtil.getAccount(service, 1, FakeStreamObserver.of(response -> {
             Assertions.assertTrue(BigDecimalUtil.eq("9000", response.getDataMap().get(1).getValue()));
             Assertions.assertTrue(BigDecimalUtil.eq("1", response.getDataMap().get(2).getValue()));
         }));
-        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(2).build(), FakeStreamObserver.of(response -> {
+        EnvoyUtil.getAccount(service, 2, FakeStreamObserver.of(response -> {
             Assertions.assertTrue(BigDecimalUtil.eq("1000", response.getDataMap().get(1).getValue()));
             Assertions.assertTrue(BigDecimalUtil.eq("9", response.getDataMap().get(2).getValue()));
         }));
@@ -88,45 +76,27 @@ public class TestBTCUSDT {
     @Test
     public void testMatch() throws InterruptedException {
         AtomicLong orderId = new AtomicLong();
-        service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
-                .setRequestId(1)
-                .setSymbolId(1)
-                .setAccountId(4)
-                .setType(Envoy.Type.LIMIT)
-                .setSide(Envoy.Side.ASK)
-                .setPrice("10000")
-                .setQuantity("1")
-                .setTakerRate(200)
-                .setMakerRate(100)
-                .build(), FakeStreamObserver.of(response -> {
-            Assertions.assertTrue(response.getData().getId() > 0);
-            orderId.set(response.getData().getId());
-        }));
+        EnvoyUtil.placeOrder(service, 1, 1, 4, Envoy.Type.LIMIT, Envoy.Side.ASK, "10000", "1",
+                200, 100, FakeStreamObserver.of(response -> {
+                    Assertions.assertTrue(response.getData().getId() > 0);
+                    orderId.set(response.getData().getId());
+                }));
         Thread.sleep(100);
-        service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
-                .setRequestId(1)
-                .setSymbolId(1)
-                .setAccountId(3)
-                .setType(Envoy.Type.LIMIT)
-                .setSide(Envoy.Side.BID)
-                .setPrice("10000")
-                .setQuantity("1")
-                .setTakerRate(200)
-                .setMakerRate(100)
-                .build(), FakeStreamObserver.of(response -> {
-            Assertions.assertTrue(response.getData().getId() > 0);
-        }));
+        EnvoyUtil.placeOrder(service, 1, 1, 3, Envoy.Type.LIMIT, Envoy.Side.BID, "10000", "1",
+                200, 100, FakeStreamObserver.of(response -> {
+                    Assertions.assertTrue(response.getData().getId() > 0);
+                }));
         Thread.sleep(100);
-        service.getDepth(Envoy.GetDepthRequest.newBuilder().setSymbolId(1).build(), FakeStreamObserver.of(
+        EnvoyUtil.getDepth(service, 1, FakeStreamObserver.of(
                 response -> {
                     Assertions.assertEquals(0, response.getData().getAsksCount());
                     Assertions.assertEquals(0, response.getData().getBidsCount());
                 }));
-        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(3).build(), FakeStreamObserver.of(response -> {
+        EnvoyUtil.getAccount(service, 3, FakeStreamObserver.of(response -> {
             Assertions.assertTrue(BigDecimalUtil.eq("9980", response.getDataMap().get(1).getValue()));
             Assertions.assertTrue(BigDecimalUtil.eq("1", response.getDataMap().get(2).getValue()));
         }));
-        service.getAccount(Envoy.GetAccountRequest.newBuilder().setAccountId(4).build(), FakeStreamObserver.of(response -> {
+        EnvoyUtil.getAccount(service, 4, FakeStreamObserver.of(response -> {
             Assertions.assertTrue(BigDecimalUtil.eq("9990", response.getDataMap().get(1).getValue()));
             Assertions.assertTrue(BigDecimalUtil.eq("9", response.getDataMap().get(2).getValue()));
         }));
@@ -139,20 +109,12 @@ public class TestBTCUSDT {
     @Test
     public void testPlaceFailed() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(1);
-        service.placeOrder(Envoy.PlaceOrderRequest.newBuilder()
-                .setRequestId(1)
-                .setSymbolId(1)
-                .setAccountId(5)
-                .setType(Envoy.Type.LIMIT)
-                .setSide(Envoy.Side.BID)
-                .setPrice("10000")
-                .setQuantity("1")
-                .setTakerRate(200)
-                .build(), FakeStreamObserver.of(response -> {
-            System.out.println(response);
-            Assertions.assertTrue(response.getData().getId() == 0);
-            latch.countDown();
-        }));
+        EnvoyUtil.placeOrder(service, 1, 1, 5, Envoy.Type.LIMIT, Envoy.Side.BID, "10000", "1",
+                200, 0, FakeStreamObserver.of(response -> {
+                    System.out.println(response);
+                    Assertions.assertTrue(response.getData().getId() == 0);
+                    latch.countDown();
+                }));
         latch.await();
     }
 }
