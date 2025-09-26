@@ -41,7 +41,7 @@ public class Bolt {
         BoltConfig config;
         if (args.length == 0) {
             config = BoltConfig.DEFAULT;
-        } else if (args.length == 10) {
+        } else if (args.length == 17) {
             try {
                 int port = Integer.parseInt(args[0]);
                 boolean isProd = Boolean.parseBoolean(args[1]);
@@ -53,8 +53,16 @@ public class Bolt {
                 int prometheusPort = Integer.parseInt(args[7]);
                 String journalFilePath = args[8];
                 boolean isBinary = Boolean.parseBoolean(args[9]);
+                boolean isSlave = Boolean.parseBoolean(args[10]);
+                String masterHost = args[11];
+                int masterPort = Integer.parseInt(args[12]);
+                int replicationPort = Integer.parseInt(args[13]);
+                boolean enableReplication = Boolean.parseBoolean(args[14]);
+                int batchSize = Integer.parseInt(args[15]);
+                int batchTimeoutMs = Integer.parseInt(args[16]);
                 config = new BoltConfig(port, isProd, group, sequencerSize, matchingSize, responseSize, 
-                    enablePrometheus, prometheusPort, journalFilePath, isBinary);
+                    enablePrometheus, prometheusPort, journalFilePath, isBinary, isSlave, masterHost, 
+                    masterPort, replicationPort, enableReplication, batchSize, batchTimeoutMs, false);
             } catch (NumberFormatException e) {
                 printUsage();
                 return;
@@ -71,8 +79,10 @@ public class Bolt {
         System.out.println("Usage:");
         System.out.println("  java -jar bolt.jar  # 使用默认配置");
         System.out.println("  java -jar bolt.jar {port} {isProduction} {group} {sequencerSize} {matchingSize} {responseSize} {prometheusPort} {enablePrometheus} {journalFilePath} {isBinary}");
+        System.out.println("  java -jar bolt.jar {port} {isProduction} {group} {sequencerSize} {matchingSize} {responseSize} {prometheusPort} {enablePrometheus} {journalFilePath} {isBinary} {isSlave} {masterHost} {masterPort} {replicationPort} {enableReplication} {batchSize} {batchTimeoutMs}");
         System.out.println("Examples:");
         System.out.println("  java -jar bolt.jar 9090 true 4 1024 512 512 true 9091 journal.data false");
+        System.out.println("  java -jar bolt.jar 9090 true 4 1024 512 512 true 9091 journal.data false false localhost 9090 9092 true 100 5000");
     }
 
     public void start() throws IOException, InterruptedException {

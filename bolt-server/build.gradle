@@ -19,6 +19,8 @@ dependencies {
     
     // JSON 处理
     implementation "com.fasterxml.jackson.core:jackson-databind:2.15.2"
+    
+    // gRPC 和 Protobuf 依赖现在通过 bolt-schema 项目提供
 
     compileOnly "org.projectlombok:lombok:${versions.lombok}"
     annotationProcessor "org.projectlombok:lombok:${versions.lombok}"

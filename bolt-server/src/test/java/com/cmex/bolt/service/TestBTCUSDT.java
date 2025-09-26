@@ -109,7 +109,7 @@ public class TestBTCUSDT {
     @Test
     public void testPlaceFailed() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(1);
-        EnvoyUtil.placeOrder(service, 1, 1, 5, Envoy.Type.LIMIT, Envoy.Side.BID, "10000", "1",
+        EnvoyUtil.placeOrder(service, 1, 1, 10_000_000, Envoy.Type.LIMIT, Envoy.Side.BID, "10000", "1",
                 200, 0, FakeStreamObserver.of(response -> {
                     System.out.println(response);
                     Assertions.assertTrue(response.getData().getId() == 0);

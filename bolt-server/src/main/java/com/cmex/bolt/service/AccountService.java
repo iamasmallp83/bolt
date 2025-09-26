@@ -66,16 +66,20 @@ public class AccountService {
     }
 
     private void handleSymbolAbsent(long messageId) {
-        publishFailureEvent(messageId, Nexus.EventType.PLACE_ORDER_REJECTED, Nexus.RejectionReason.SYMBOL_NOT_EXIST);
+        if (messageId != -1) {
+            publishFailureEvent(messageId, Nexus.EventType.PLACE_ORDER_REJECTED, Nexus.RejectionReason.SYMBOL_NOT_EXIST);
+        }
     }
 
     private void handleAccountPresent(long messageId, Symbol symbol, Account account, Nexus.PlaceOrder.Reader placeOrder) {
         Currency currency = placeOrder.getSide() == Nexus.OrderSide.BID ? symbol.getQuote() : symbol.getBase();
         Result<Balance> result = account.freeze(currency.getId(), new BigDecimal(placeOrder.getFrozen().toString()));
-        if (result.isSuccess()) {
-            publishPlaceOrderEvent(messageId, placeOrder);
-        } else {
-            publishFailureEvent(messageId, Nexus.EventType.PLACE_ORDER_REJECTED, result.reason());
+        if (messageId != -1) {
+            if (result.isSuccess()) {
+                publishPlaceOrderEvent(messageId, placeOrder);
+            } else {
+                publishFailureEvent(messageId, Nexus.EventType.PLACE_ORDER_REJECTED, result.reason());
+            }
         }
     }
 

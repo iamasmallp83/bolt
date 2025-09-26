@@ -21,11 +21,11 @@ tasks.withType(Copy).configureEach {
 
 protobuf {
     protoc {
-        artifact = "com.google.protobuf:protoc:3.25.1"
+        artifact = "com.google.protobuf:protoc:${versions.protobuf}"
     }
     plugins {
         grpc {
-            artifact = "io.grpc:protoc-gen-grpc-java:1.60.1"
+            artifact = "io.grpc:protoc-gen-grpc-java:${versions.grpc}"
         }
     }
     generateProtoTasks {

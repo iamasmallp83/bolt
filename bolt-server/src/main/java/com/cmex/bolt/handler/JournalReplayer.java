@@ -48,6 +48,12 @@ public class JournalReplayer {
     }
 
     public long replayFromJournal() {
+        // 如果是测试模式，跳过 journal 重放
+        if (config.isTest()) {
+            log.info("Test mode enabled, skipping journal replay");
+            return 0;
+        }
+        
         long startTime = System.currentTimeMillis();
 
         try {

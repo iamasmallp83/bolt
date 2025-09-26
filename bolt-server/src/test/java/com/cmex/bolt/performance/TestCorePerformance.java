@@ -26,7 +26,8 @@ public class TestCorePerformance {
     @BeforeAll
     static void setUp() {
         bolt = new Bolt(new BoltConfig(9090, true, 10,
-                1024 * 1024 * 8, 1024 * 1024 * 4, 1024 * 1024 * 4, true, 9091, "journal", false));
+                1024 * 1024 * 8, 1024 * 1024 * 4, 1024 * 1024 * 4, true, 9091, "journal", false,
+                false, "localhost", 9090, 9092, false, 100, 5000, true));
         service = bolt.getEnvoyServer();
     }
 
