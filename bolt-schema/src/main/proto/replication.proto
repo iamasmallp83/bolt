@@ -18,6 +18,9 @@ service ReplicationService {
   
   // 从节点注册
   rpc RegisterSlave(RegisterSlaveRequest) returns (RegisterSlaveResponse);
+  
+  // 双向流复制服务 - 主节点主动推送，从节点主动确认
+  rpc ReplicationStream(stream ReplicationMessage) returns (stream ReplicationMessage);
 }
 
 // 事件批次请求
@@ -81,4 +84,27 @@ message NexusEvent {
   int64 id = 1;
   int32 partition = 2;
   bytes data = 3;  // Cap'n Proto序列化的数据
+}
+
+// 双向流复制消息
+message ReplicationMessage {
+  oneof message_type {
+    // 主节点推送事件批次
+    EventBatchRequest event_batch = 1;
+    // 从节点确认批次
+    BatchAckRequest batch_ack = 2;
+    // 心跳消息
+    HeartbeatRequest heartbeat = 3;
+    // 从节点注册
+    RegisterSlaveRequest slave_register = 4;
+    // 响应消息
+    ReplicationResponse response = 5;
+  }
+}
+
+// 复制响应消息
+message ReplicationResponse {
+  bool success = 1;
+  string error_message = 2;
+  int64 timestamp = 3;
 }

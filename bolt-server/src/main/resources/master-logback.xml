@@ -1,9 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <!-- 只通过环境变量控制文件路径和文件名 -->
-    <property name="LOGS_DIR" value="${LOGS_DIR:-./logs}"/>
-    <property name="LOG_FILE_NAME" value="${LOG_FILE_NAME:-bolt.log}"/>
-
     <!-- 控制台输出 -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
@@ -11,11 +7,11 @@
         </encoder>
     </appender>
 
-    <!-- 文件输出 -->
+    <!-- 文件输出 - Master节点固定使用bolt-master.log -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${LOGS_DIR}/${LOG_FILE_NAME}</file>
+        <file>/Users/stam/Source/Java/bolt/master/logs/bolt-master.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>${LOGS_DIR}/${LOG_FILE_NAME}.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <fileNamePattern>/Users/stam/Source/Java/bolt/master/logs/bolt-master.log.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
             <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
                 <maxFileSize>100MB</maxFileSize>
             </timeBasedFileNamingAndTriggeringPolicy>

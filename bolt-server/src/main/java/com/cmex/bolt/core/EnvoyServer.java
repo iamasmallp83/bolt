@@ -12,7 +12,6 @@ import com.cmex.bolt.handler.MatchDispatcher;
 import com.cmex.bolt.handler.JournalHandler;
 import com.cmex.bolt.handler.JournalReplayer;
 import com.cmex.bolt.handler.ReplicationHandler;
-import com.cmex.bolt.handler.ReplicationClientManager;
 import com.cmex.bolt.replication.ReplicationState;
 import com.cmex.bolt.repository.impl.CurrencyRepository;
 import com.cmex.bolt.service.AccountService;
@@ -85,8 +84,6 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         // 初始化复制相关组件
         ReplicationState replicationState = new ReplicationState();
         ReplicationHandler replicationHandler = new ReplicationHandler(boltConfig, replicationState);
-        ReplicationClientManager clientManager = new ReplicationClientManager(boltConfig, replicationState);
-        replicationHandler.setClientManager(clientManager);
 
         matchingDisruptor.handleEventsWith(matchDispatchers.toArray(new MatchDispatcher[0]));
         responseDisruptor.handleEventsWith(new ResponseEventHandler());

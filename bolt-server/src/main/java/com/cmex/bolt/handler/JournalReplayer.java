@@ -48,9 +48,9 @@ public class JournalReplayer {
     }
 
     public long replayFromJournal() {
-        // 如果是测试模式，跳过 journal 重放
-        if (config.isTest()) {
-            log.info("Test mode enabled, skipping journal replay");
+        // 如果禁用日志，跳过 journal 重放
+        if (!config.enableJournal()) {
+            log.info("Journal disabled, skipping journal replay");
             return 0;
         }
         

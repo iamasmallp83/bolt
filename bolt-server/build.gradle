@@ -62,9 +62,9 @@ tasks.register('performance', Test) {
 }
 
 tasks.register('fatJar', Jar) {
-    archiveFileName = 'bolt-spot-all-in-one.jar'
+    archiveFileName = 'bolt-all-in-one.jar'
     manifest {
-        attributes 'Main-Class': 'com.cmex.bolt.spot.SpotServer'
+        attributes 'Main-Class': 'com.cmex.bolt.Bolt'
     }
     from { configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
     with jar

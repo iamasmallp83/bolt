@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.charset.StandardCharsets;
@@ -30,9 +31,9 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
     public JournalHandler(BoltConfig config) {
         this.config = config;
         
-        // 如果是测试模式，不创建 journal 文件
-        if (config.isTest()) {
-            log.info("Test mode enabled, skipping journal file initialization");
+        // 如果禁用日志，不创建 journal 文件
+        if (!config.enableJournal()) {
+            log.info("Journal disabled, skipping journal file initialization");
             this.journalChannel = null;
             return;
         }
@@ -40,6 +41,14 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
         try {
             // 根据isBinary标志添加相应的文件后缀
             Path journalPath = Path.of(config.journalFilePath());
+            
+            // 确保父目录存在
+            Path parentDir = journalPath.getParent();
+            if (parentDir != null && !Files.exists(parentDir)) {
+                Files.createDirectories(parentDir);
+                log.info("Created journal directory: {}", parentDir);
+            }
+            
             this.journalChannel = FileChannel.open(journalPath,
                     StandardOpenOption.CREATE,
                     StandardOpenOption.WRITE,
@@ -54,8 +63,8 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
     @Override
     public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) throws Exception {
         try {
-            // 如果是测试模式，跳过 journal 写入
-            if (config.isTest()) {
+            // 如果禁用日志，跳过 journal 写入
+            if (!config.enableJournal()) {
                 this.sequence.set(sequence);
                 return;
             }

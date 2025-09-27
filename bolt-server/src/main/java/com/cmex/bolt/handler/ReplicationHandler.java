@@ -11,11 +11,14 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 复制处理器 - 负责将事件复制到从节点
  * 实现批量确认机制，确保强一致性
+ * 整合了客户端管理功能，无需单独的ReplicationClientManager
  */
 @Slf4j
 public class ReplicationHandler implements EventHandler<NexusWrapper>, LifecycleAware {
@@ -29,13 +32,16 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
     private final AtomicLong batchSequenceStart = new AtomicLong(-1);
     private final AtomicLong batchSequenceEnd = new AtomicLong(-1);
     
-    // 复制客户端管理器（稍后实现）
-    private ReplicationClientManager clientManager;
+    // 客户端连接管理
+    private final Map<String, ReplicationClient> clients = new ConcurrentHashMap<>();
     
     public ReplicationHandler(BoltConfig config, ReplicationState replicationState) {
         this.config = config;
         this.replicationState = replicationState;
         this.currentBatch = new ArrayList<>(config.batchSize());
+        
+        log.info("ReplicationHandler initialized - batchSize: {}, replicationPort: {}", 
+                config.batchSize(), config.replicationPort());
     }
 
     @Override
@@ -76,6 +82,7 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
         
         synchronized (currentBatch) {
             if (currentBatch.isEmpty()) {
+                log.debug("No events in current batch, skipping send");
                 return;
             }
             
@@ -93,13 +100,11 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
         ReplicationState.BatchAckTracker tracker = replicationState.createBatchTracker(
                 config.batchTimeoutMs(), sequenceStart, sequenceEnd);
         
-        log.debug("Sending batch {} with {} events, sequences {}-{}", 
+        log.info("Sending batch {} with {} events, sequences {}-{}", 
                 tracker.getBatchId(), batchToSend.size(), sequenceStart, sequenceEnd);
         
         // 发送到所有从节点
-        if (clientManager != null) {
-            clientManager.sendBatchToSlaves(tracker.getBatchId(), batchToSend, sequenceStart, sequenceEnd);
-        }
+        sendBatchToSlaves(tracker.getBatchId(), batchToSend, sequenceStart, sequenceEnd);
         
         // 等待确认（非阻塞方式）
         waitForBatchAcknowledgment(tracker);
@@ -165,10 +170,108 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
     }
     
     /**
-     * 设置复制客户端管理器
+     * 发送批次到所有从节点
      */
-    public void setClientManager(ReplicationClientManager clientManager) {
-        this.clientManager = clientManager;
+    private void sendBatchToSlaves(long batchId, List<NexusWrapper> events, long sequenceStart, long sequenceEnd) {
+        Map<String, ReplicationState.SlaveNode> slaves = replicationState.getAllSlaves();
+        
+        log.info("Attempting to send batch {} to {} slaves", batchId, slaves.size());
+        
+        if (slaves.isEmpty()) {
+            log.warn("No slaves available for batch {}", batchId);
+            return;
+        }
+        
+        for (Map.Entry<String, ReplicationState.SlaveNode> entry : slaves.entrySet()) {
+            String slaveNodeId = entry.getKey();
+            ReplicationState.SlaveNode slave = entry.getValue();
+            
+            log.debug("Processing slave {}: host={}, port={}, healthy={}", 
+                    slaveNodeId, slave.getHost(), slave.getPort(), slave.isHealthy(30000));
+            
+            if (slave.isHealthy(30000)) { // 30秒超时
+                ReplicationClient client = getOrCreateClient(slaveNodeId, slave);
+                if (client != null) {
+                    try {
+                        log.debug("Sending batch {} to slave {} ({}:{})", 
+                                batchId, slaveNodeId, slave.getHost(), slave.getPort());
+                        client.sendBatch(batchId, events, sequenceStart, sequenceEnd);
+                        log.debug("Successfully sent batch {} to slave {}", batchId, slaveNodeId);
+                    } catch (Exception e) {
+                        log.error("Failed to send batch {} to slave {} ({}:{}): {}", 
+                                batchId, slaveNodeId, slave.getHost(), slave.getPort(), e.getMessage(), e);
+                        replicationState.setSlaveConnected(slaveNodeId, false);
+                    }
+                } else {
+                    log.warn("Failed to create client for slave {} ({}:{})", 
+                            slaveNodeId, slave.getHost(), slave.getPort());
+                }
+            } else {
+                log.debug("Skipping unhealthy slave {} for batch {}", slaveNodeId, batchId);
+            }
+        }
+    }
+    
+    /**
+     * 获取或创建复制客户端
+     */
+    private ReplicationClient getOrCreateClient(String slaveNodeId, ReplicationState.SlaveNode slave) {
+        log.debug("Getting or creating client for slave {} at {}:{}", slaveNodeId, slave.getHost(), slave.getPort());
+        
+        ReplicationClient existingClient = clients.get(slaveNodeId);
+        if (existingClient != null) {
+            log.debug("Using existing client for slave {}", slaveNodeId);
+            return existingClient;
+        }
+        
+        log.info("Creating new replication client for slave {} at {}:{}", slaveNodeId, slave.getHost(), slave.getPort());
+        
+        return clients.computeIfAbsent(slaveNodeId, id -> {
+            try {
+                ReplicationClient client = new ReplicationClient(slave.getHost(), slave.getPort(), slaveNodeId);
+                log.debug("Connecting to slave {} at {}:{}", slaveNodeId, slave.getHost(), slave.getPort());
+                client.connect();
+                replicationState.setSlaveConnected(slaveNodeId, true);
+                log.info("Successfully created and connected replication client for slave {} at {}:{}", 
+                        slaveNodeId, slave.getHost(), slave.getPort());
+                return client;
+            } catch (Exception e) {
+                log.error("Failed to create replication client for slave {} at {}:{}: {}", 
+                        slaveNodeId, slave.getHost(), slave.getPort(), e.getMessage(), e);
+                replicationState.setSlaveConnected(slaveNodeId, false);
+                return null;
+            }
+        });
+    }
+    
+    /**
+     * 注册从节点
+     */
+    public void registerSlave(String slaveNodeId, String host, int port) {
+        replicationState.registerSlave(slaveNodeId, host, port);
+        log.info("Registered slave node: {} at {}:{}", slaveNodeId, host, port);
+    }
+    
+    /**
+     * 注销从节点
+     */
+    public void unregisterSlave(String slaveNodeId) {
+        ReplicationClient client = clients.remove(slaveNodeId);
+        if (client != null) {
+            try {
+                client.disconnect();
+            } catch (Exception e) {
+                log.warn("Error disconnecting client for slave {}", slaveNodeId, e);
+            }
+        }
+        replicationState.unregisterSlave(slaveNodeId);
+    }
+    
+    /**
+     * 处理从节点心跳
+     */
+    public void handleSlaveHeartbeat(String slaveNodeId) {
+        replicationState.updateSlaveHeartbeat(slaveNodeId);
     }
     
     @Override
@@ -188,5 +291,15 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
                 sendBatchToSlaves();
             }
         }
+        
+        // 关闭所有客户端连接
+        for (Map.Entry<String, ReplicationClient> entry : clients.entrySet()) {
+            try {
+                entry.getValue().disconnect();
+            } catch (Exception e) {
+                log.warn("Error disconnecting client for slave {}", entry.getKey(), e);
+            }
+        }
+        clients.clear();
     }
 }
