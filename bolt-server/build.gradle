@@ -12,7 +12,15 @@ dependencies {
     
     // Prometheus 监控
     implementation "io.prometheus:simpleclient:${versions.prometheus}"
-    implementation "io.prometheus:simpleclient_httpserver:${versions.prometheus}"
+    
+    // SLF4J 日志
+    implementation "org.slf4j:slf4j-api:1.7.36"
+    implementation "ch.qos.logback:logback-classic:1.2.12"
+    
+    // JSON 处理
+    implementation "com.fasterxml.jackson.core:jackson-databind:2.15.2"
+    
+    // gRPC 和 Protobuf 依赖现在通过 bolt-schema 项目提供
 
     compileOnly "org.projectlombok:lombok:${versions.lombok}"
     annotationProcessor "org.projectlombok:lombok:${versions.lombok}"
@@ -40,11 +48,12 @@ tasks.register('performance', Test) {
         includeTags 'performance'
     }
 
-    // 高性能测试的专用JVM配置
+    // 高性能测试的专用JVM配置 - 优化版
     jvmArgs = [
-            '-Xmx4g',
-            '-Xms4g',
-            '-XX:MaxDirectMemorySize=8g',
+            // 内存配置
+            '-Xmx4g',                    // 增加堆内存到6GB
+            '-Xms4g',                    // 预分配堆内存
+            '-XX:MaxDirectMemorySize=4g', // 增加直接内存
     ]
 
     // 设置测试超时（性能测试需要更长时间）
@@ -53,9 +62,9 @@ tasks.register('performance', Test) {
 }
 
 tasks.register('fatJar', Jar) {
-    archiveFileName = 'bolt-spot-all-in-one.jar'
+    archiveFileName = 'bolt-all-in-one.jar'
     manifest {
-        attributes 'Main-Class': 'com.cmex.bolt.spot.SpotServer'
+        attributes 'Main-Class': 'com.cmex.bolt.Bolt'
     }
     from { configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
     with jar

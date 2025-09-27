@@ -60,18 +60,18 @@ public class TestOrderBook {
         
         // 验证匹配结果
         Ticket firstTicket = tickets.get(0);
-        assertEquals(500000000L, firstTicket.getPrice()); // 应该匹配最优价格50000
-        assertEquals(1000000L, firstTicket.getQuantity()); // 完全消耗maker1
+        assertEquals(new BigDecimal("500000000"), firstTicket.getPrice()); // 应该匹配最优价格50000
+        assertEquals(new BigDecimal("1000000"), firstTicket.getQuantity()); // 完全消耗maker1
         
         // 5. 如果还有剩余，应该匹配下一个价格
         if (tickets.size() > 1) {
             Ticket secondTicket = tickets.get(1);
-            assertEquals(510000000L, secondTicket.getPrice()); // 下一个价格51000
+            assertEquals(new BigDecimal("510000000"), secondTicket.getPrice()); // 下一个价格51000
         }
         
         System.out.println("✅ 缓存优化测试通过！匹配了 " + tickets.size() + " 笔交易");
         for (Ticket ticket : tickets) {
-            System.out.printf("   价格: %d, 数量: %d, 成交额: %d%n", 
+            System.out.printf("   价格: %s, 数量: %s, 成交额: %s%n", 
                 ticket.getPrice(), ticket.getQuantity(), ticket.getVolume());
         }
     }
@@ -97,7 +97,7 @@ public class TestOrderBook {
         
         assertTrue(matchResult.isSuccess());
         Ticket ticket = matchResult.value().get(0);
-        assertEquals(510000000L, ticket.getPrice()); // 应该匹配51000而不是50000
+        assertEquals(new BigDecimal("510000000"), ticket.getPrice()); // 应该匹配51000而不是50000
         
         System.out.println("✅ 撤单缓存更新测试通过！匹配价格: " + ticket.getPrice());
     }

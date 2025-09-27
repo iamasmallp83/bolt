@@ -21,11 +21,11 @@ tasks.withType(Copy).configureEach {
 
 protobuf {
     protoc {
-        artifact = "com.google.protobuf:protoc:3.25.1"
+        artifact = "com.google.protobuf:protoc:${versions.protobuf}"
     }
     plugins {
         grpc {
-            artifact = "io.grpc:protoc-gen-grpc-java:1.60.1"
+            artifact = "io.grpc:protoc-gen-grpc-java:${versions.grpc}"
         }
     }
     generateProtoTasks {
@@ -79,14 +79,25 @@ tasks.register('generateCapnp', Exec) {
     doLast {
         // 移动生成的文件到正确的包路径
         def srcFile = new File(outputDir, 'Bolt.java')
+        def nexusFile = new File(outputDir, 'Nexus.java')
         def targetDir = new File(outputDir, 'com/cmex/bolt/')
         def targetFile = new File(targetDir, 'Envoy.java')
+        def nexusTargetFile = new File(targetDir, 'Nexus.java')
+        
         if (srcFile.exists()) {
             targetDir.mkdirs()
             if (targetFile.exists()) {
                 targetFile.delete()
             }
             srcFile.renameTo(targetFile)
+        }
+        
+        if (nexusFile.exists()) {
+            targetDir.mkdirs()
+            if (nexusTargetFile.exists()) {
+                nexusTargetFile.delete()
+            }
+            nexusFile.renameTo(nexusTargetFile)
         }
     }
 }

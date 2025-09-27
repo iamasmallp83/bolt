@@ -29,6 +29,7 @@ public class SequencerDispatcher implements EventHandler<NexusWrapper>, Lifecycl
         if (partition != wrapper.getPartition()) {
             return;
         }
+        
         Nexus.NexusEvent.Reader reader = transfer.from(wrapper.getBuffer());
         Nexus.Payload.Reader payload = reader.getPayload();
         switch (payload.which()) {
