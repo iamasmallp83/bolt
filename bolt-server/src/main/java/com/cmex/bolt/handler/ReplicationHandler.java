@@ -33,7 +33,7 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
     private final AtomicLong batchSequenceEnd = new AtomicLong(-1);
     
     // 客户端连接管理
-    private final Map<String, ReplicationClient> clients = new ConcurrentHashMap<>();
+    private final Map<String, TcpReplicationClient> clients = new ConcurrentHashMap<>();
     
     public ReplicationHandler(BoltConfig config, ReplicationState replicationState) {
         this.config = config;
@@ -190,7 +190,7 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
                     slaveNodeId, slave.getHost(), slave.getPort(), slave.isHealthy(30000));
             
             if (slave.isHealthy(30000)) { // 30秒超时
-                ReplicationClient client = getOrCreateClient(slaveNodeId, slave);
+                TcpReplicationClient client = getOrCreateClient(slaveNodeId, slave);
                 if (client != null) {
                     try {
                         log.debug("Sending batch {} to slave {} ({}:{})", 
@@ -215,28 +215,28 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
     /**
      * 获取或创建复制客户端
      */
-    private ReplicationClient getOrCreateClient(String slaveNodeId, ReplicationState.SlaveNode slave) {
-        log.debug("Getting or creating client for slave {} at {}:{}", slaveNodeId, slave.getHost(), slave.getPort());
+    private TcpReplicationClient getOrCreateClient(String slaveNodeId, ReplicationState.SlaveNode slave) {
+        log.debug("Getting or creating TCP client for slave {} at {}:{}", slaveNodeId, slave.getHost(), slave.getPort());
         
-        ReplicationClient existingClient = clients.get(slaveNodeId);
+        TcpReplicationClient existingClient = clients.get(slaveNodeId);
         if (existingClient != null) {
-            log.debug("Using existing client for slave {}", slaveNodeId);
+            log.debug("Using existing TCP client for slave {}", slaveNodeId);
             return existingClient;
         }
         
-        log.info("Creating new replication client for slave {} at {}:{}", slaveNodeId, slave.getHost(), slave.getPort());
+        log.info("Creating new TCP replication client for slave {} at {}:{}", slaveNodeId, slave.getHost(), slave.getPort());
         
         return clients.computeIfAbsent(slaveNodeId, id -> {
             try {
-                ReplicationClient client = new ReplicationClient(slave.getHost(), slave.getPort(), slaveNodeId);
+                TcpReplicationClient client = new TcpReplicationClient(slave.getHost(), slave.getPort(), slaveNodeId);
                 log.debug("Connecting to slave {} at {}:{}", slaveNodeId, slave.getHost(), slave.getPort());
                 client.connect();
                 replicationState.setSlaveConnected(slaveNodeId, true);
-                log.info("Successfully created and connected replication client for slave {} at {}:{}", 
+                log.info("Successfully created and connected TCP replication client for slave {} at {}:{}", 
                         slaveNodeId, slave.getHost(), slave.getPort());
                 return client;
             } catch (Exception e) {
-                log.error("Failed to create replication client for slave {} at {}:{}: {}", 
+                log.error("Failed to create TCP replication client for slave {} at {}:{}: {}", 
                         slaveNodeId, slave.getHost(), slave.getPort(), e.getMessage(), e);
                 replicationState.setSlaveConnected(slaveNodeId, false);
                 return null;
@@ -256,12 +256,12 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
      * 注销从节点
      */
     public void unregisterSlave(String slaveNodeId) {
-        ReplicationClient client = clients.remove(slaveNodeId);
+        TcpReplicationClient client = clients.remove(slaveNodeId);
         if (client != null) {
             try {
                 client.disconnect();
             } catch (Exception e) {
-                log.warn("Error disconnecting client for slave {}", slaveNodeId, e);
+                log.warn("Error disconnecting TCP client for slave {}", slaveNodeId, e);
             }
         }
         replicationState.unregisterSlave(slaveNodeId);
@@ -293,11 +293,11 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
         }
         
         // 关闭所有客户端连接
-        for (Map.Entry<String, ReplicationClient> entry : clients.entrySet()) {
+        for (Map.Entry<String, TcpReplicationClient> entry : clients.entrySet()) {
             try {
                 entry.getValue().disconnect();
             } catch (Exception e) {
-                log.warn("Error disconnecting client for slave {}", entry.getKey(), e);
+                log.warn("Error disconnecting TCP client for slave {}", entry.getKey(), e);
             }
         }
         clients.clear();

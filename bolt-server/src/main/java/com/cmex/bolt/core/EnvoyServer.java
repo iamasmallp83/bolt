@@ -12,6 +12,7 @@ import com.cmex.bolt.handler.MatchDispatcher;
 import com.cmex.bolt.handler.JournalHandler;
 import com.cmex.bolt.handler.JournalReplayer;
 import com.cmex.bolt.handler.ReplicationHandler;
+import com.cmex.bolt.handler.TcpSlaveClient;
 import com.cmex.bolt.replication.ReplicationState;
 import com.cmex.bolt.repository.impl.CurrencyRepository;
 import com.cmex.bolt.service.AccountService;
@@ -40,6 +41,7 @@ import java.util.stream.Collectors;
 @Slf4j
 public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
+    @Getter
     private final RingBuffer<NexusWrapper> sequencerRingBuffer;
     private final RingBuffer<NexusWrapper> matchingRingBuffer;
     private final AtomicLong requestId = new AtomicLong();
@@ -56,8 +58,14 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
     //分组数量
     private final int group;
+    
+    // TCP从节点客户端（仅在从节点模式下使用）
+    private TcpSlaveClient tcpSlaveClient;
 
     public EnvoyServer(BoltConfig boltConfig) {
+        log.info("EnvoyServer constructor called with config: isMaster={}, enableReplication={}, masterHost={}, masterPort={}", 
+                boltConfig.isMaster(), boltConfig.enableReplication(), boltConfig.masterHost(), boltConfig.masterPort());
+        
         this.group = boltConfig.group();
         observers = new ConcurrentHashMap<>();
         WaitStrategy waitStrategy;
@@ -122,6 +130,32 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
             accountServices.add(dispatcher.getAccountService());
         }
         transfer = new Transfer();
+        
+        // 如果是从节点且启用复制，启动TCP客户端连接到主节点
+        if (!boltConfig.isMaster() && boltConfig.enableReplication()) {
+            log.info("Initializing TCP slave client - masterHost: {}, masterPort: {}", 
+                    boltConfig.masterHost(), boltConfig.masterPort());
+            try {
+                String slaveNodeId = "slave-" + System.currentTimeMillis();
+                log.info("Creating TcpSlaveClient with nodeId: {}", slaveNodeId);
+                tcpSlaveClient = new TcpSlaveClient(
+                    boltConfig.masterHost(), 
+                    boltConfig.masterPort(), 
+                    slaveNodeId, 
+                    sequencerRingBuffer
+                );
+                log.info("Attempting to connect TCP slave client to master at {}:{}", 
+                        boltConfig.masterHost(), boltConfig.masterPort());
+                tcpSlaveClient.connect();
+                log.info("TCP slave client connected to master at {}:{}", boltConfig.masterHost(), boltConfig.masterPort());
+            } catch (Exception e) {
+                log.error("Failed to connect TCP slave client to master at {}:{}: {}", 
+                        boltConfig.masterHost(), boltConfig.masterPort(), e.getMessage(), e);
+            }
+        } else {
+            log.info("Skipping TCP slave client initialization - isMaster: {}, enableReplication: {}", 
+                    boltConfig.isMaster(), boltConfig.enableReplication());
+        }
     }
 
     private List<SequencerDispatcher> createSequencerDispatchers() {
@@ -138,6 +172,20 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
             dispatchers.add(new MatchDispatcher(group, i));
         }
         return dispatchers;
+    }
+    
+    /**
+     * 关闭EnvoyServer，断开TCP客户端连接
+     */
+    public void shutdown() {
+        if (tcpSlaveClient != null) {
+            try {
+                tcpSlaveClient.disconnect();
+                log.info("TCP slave client disconnected");
+            } catch (Exception e) {
+                log.warn("Error disconnecting TCP slave client", e);
+            }
+        }
     }
 
     private AccountService getAccountService(int accountId) {

@@ -10,6 +10,9 @@ dependencies {
     implementation "io.aeron:aeron-driver:${versions.aeron}"
     implementation "io.aeron:aeron-client:${versions.aeron}"
     
+    // Netty 依赖（用于TCP复制服务）
+    implementation "io.netty:netty-all:4.1.100.Final"
+    
     // Prometheus 监控
     implementation "io.prometheus:simpleclient:${versions.prometheus}"
     

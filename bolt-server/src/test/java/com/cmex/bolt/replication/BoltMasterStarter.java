@@ -2,10 +2,10 @@ package com.cmex.bolt.replication;
 
 import java.io.IOException;
 
-import com.cmex.bolt.Bolt;
+import com.cmex.bolt.BoltMaster;
 import com.cmex.bolt.core.BoltConfig;
 
-public class BoltMaster {
+public class BoltMasterStarter {
     public static void main(String[] args) throws IOException, InterruptedException {
         BoltConfig masterConfig = new BoltConfig(
                 9090,  // port
@@ -28,7 +28,7 @@ public class BoltMaster {
                 true,  // enableJournal
                 "/Users/stam/Source/Java/bolt/master" // boltHome
         );
-        Bolt master = new Bolt(masterConfig);
+        BoltMaster master = new BoltMaster(masterConfig);
         master.start();
     }
 }
