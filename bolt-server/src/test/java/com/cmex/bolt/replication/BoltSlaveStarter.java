@@ -21,7 +21,6 @@ public class BoltSlaveStarter {
                 "127.0.0.1", // masterHost
                 9092,  // masterPort - 指向master的TCP复制服务端口
                 9095,  // replicationPort
-                true,  // enableReplication
                 100,   // batchSize
                 5000,  // batchTimeoutMs
                 true,  // enableJournal

@@ -22,7 +22,6 @@ public class BoltMasterStarter {
                 "localhost", // masterHost
                 9090,  // masterPort
                 9092,  // replicationPort
-                true,  // enableReplication
                 100,   // batchSize
                 5000,  // batchTimeoutMs
                 true,  // enableJournal

@@ -192,18 +192,24 @@ public class TcpSlaveClient {
      * 处理来自主节点的消息
      */
     private void processMessage() throws IOException {
+        log.debug("开始读取来自主节点的消息 - slave: {}", slaveNodeId);
+        
         // 读取消息头
         int magic = inputStream.readInt();
+        log.debug("读取到magic number: {} (期望: {}) - slave: {}", 
+                Integer.toHexString(magic), Integer.toHexString(MAGIC_NUMBER), slaveNodeId);
         if (magic != MAGIC_NUMBER) {
             throw new IOException("Invalid magic number: " + Integer.toHexString(magic));
         }
         
         int version = inputStream.readInt();
+        log.debug("读取到version: {} (期望: {}) - slave: {}", version, VERSION, slaveNodeId);
         if (version != VERSION) {
             throw new IOException("Unsupported version: " + version);
         }
         
         int messageType = inputStream.readInt();
+        log.debug("读取到message type: {} - slave: {}", messageType, slaveNodeId);
         
         switch (messageType) {
             case 1: // Batch
@@ -228,15 +234,20 @@ public class TcpSlaveClient {
      * 处理批次数据
      */
     private void handleBatch() throws IOException {
+        log.debug("开始处理批次数据 - slave: {}", slaveNodeId);
+        
         long batchId = inputStream.readLong();
         int eventCount = inputStream.readInt();
         long sequenceStart = inputStream.readLong();
         long sequenceEnd = inputStream.readLong();
         
-        log.debug("Received batch {} with {} events, sequences {}-{}", batchId, eventCount, sequenceStart, sequenceEnd);
+        log.info("读取到批次数据 - batchId: {}, eventCount: {}, sequences: {}-{}, slave: {}", 
+                batchId, eventCount, sequenceStart, sequenceEnd, slaveNodeId);
         
         // 处理批次中的每个NexusWrapper
+        log.debug("开始处理批次中的 {} 个事件 - batchId: {}, slave: {}", eventCount, batchId, slaveNodeId);
         for (int i = 0; i < eventCount; i++) {
+            log.debug("处理第 {}/{} 个事件 - batchId: {}, slave: {}", i+1, eventCount, batchId, slaveNodeId);
             NexusWrapper wrapper = readNexusWrapper();
             if (wrapper != null) {
                 // 将NexusWrapper发送到sequencerDisruptor
@@ -253,25 +264,37 @@ public class TcpSlaveClient {
                     
                     sequencerRingBuffer.publish(sequence);
                     
-                    log.debug("Published NexusWrapper {} to sequencerDisruptor at sequence {}", wrapper.getId(), sequence);
+                    log.debug("成功发布NexusWrapper到sequencerDisruptor - id: {}, sequence: {}, batchId: {}, slave: {}", 
+                            wrapper.getId(), sequence, batchId, slaveNodeId);
                 } catch (Exception e) {
-                    log.error("Failed to publish NexusWrapper to sequencerDisruptor", e);
+                    log.error("发布NexusWrapper到sequencerDisruptor失败 - id: {}, sequence: {}, batchId: {}, slave: {}", 
+                            wrapper.getId(), sequence, batchId, slaveNodeId, e);
                     sequencerRingBuffer.publish(sequence); // 确保序列号被释放
                 }
+            } else {
+                log.warn("读取到空的NexusWrapper - 第 {}/{} 个事件, batchId: {}, slave: {}", 
+                        i+1, eventCount, batchId, slaveNodeId);
             }
         }
         
         // 发送批次确认
+        log.debug("发送批次确认 - batchId: {}, sequenceEnd: {}, slave: {}", batchId, sequenceEnd, slaveNodeId);
         sendBatchAcknowledgment(batchId, sequenceEnd);
+        log.info("批次处理完成 - batchId: {}, eventCount: {}, slave: {}", batchId, eventCount, slaveNodeId);
     }
     
     /**
      * 读取NexusWrapper数据
      */
     private NexusWrapper readNexusWrapper() throws IOException {
+        log.debug("开始读取NexusWrapper数据 - slave: {}", slaveNodeId);
+        
         long id = inputStream.readLong();
         int partition = inputStream.readInt();
         int dataLength = inputStream.readInt();
+        
+        log.debug("读取NexusWrapper头信息 - id: {}, partition: {}, dataLength: {}, slave: {}", 
+                id, partition, dataLength, slaveNodeId);
         
         // 创建NexusWrapper
         NexusWrapper wrapper = new NexusWrapper(PooledByteBufAllocator.DEFAULT, dataLength);
@@ -280,9 +303,13 @@ public class TcpSlaveClient {
         
         // 读取数据
         if (dataLength > 0) {
+            log.debug("读取NexusWrapper数据内容 - dataLength: {}, slave: {}", dataLength, slaveNodeId);
             byte[] data = new byte[dataLength];
             inputStream.readFully(data);
             wrapper.getBuffer().writeBytes(data);
+            log.debug("成功读取NexusWrapper数据 - id: {}, dataLength: {}, slave: {}", id, dataLength, slaveNodeId);
+        } else {
+            log.debug("NexusWrapper无数据内容 - id: {}, slave: {}", id, slaveNodeId);
         }
         
         return wrapper;
@@ -318,10 +345,13 @@ public class TcpSlaveClient {
      */
     public void sendHeartbeat() throws IOException {
         if (!isConnected()) {
+            log.debug("无法发送心跳 - 连接未建立, slave: {}", slaveNodeId);
             return;
         }
         
-        ByteBuffer heartbeat = ByteBuffer.allocate(16);
+        log.debug("开始发送心跳 - slave: {}", slaveNodeId);
+        
+        ByteBuffer heartbeat = ByteBuffer.allocate(20);
         heartbeat.putInt(MAGIC_NUMBER);
         heartbeat.putInt(VERSION);
         heartbeat.putInt(3); // Message Type: 3 = Heartbeat
@@ -330,7 +360,7 @@ public class TcpSlaveClient {
         outputStream.write(heartbeat.array());
         outputStream.flush();
         
-        log.debug("Heartbeat sent to master");
+        log.debug("心跳发送成功 - slave: {}", slaveNodeId);
     }
     
     /**
@@ -338,9 +368,12 @@ public class TcpSlaveClient {
      */
     public void sendBatchAcknowledgment(long batchId, long processedSequence) {
         if (!isConnected()) {
-            log.warn("Cannot send batch acknowledgment - client not connected");
+            log.warn("无法发送批次确认 - 客户端未连接, batchId: {}, slave: {}", batchId, slaveNodeId);
             return;
         }
+        
+        log.debug("开始发送批次确认 - batchId: {}, processedSequence: {}, slave: {}", 
+                batchId, processedSequence, slaveNodeId);
         
         try {
             ByteBuffer ack = ByteBuffer.allocate(28);
@@ -354,10 +387,40 @@ public class TcpSlaveClient {
             outputStream.write(ack.array());
             outputStream.flush();
             
-            log.debug("Batch acknowledgment sent for batch {}", batchId);
+            log.info("批次确认发送成功 - batchId: {}, processedSequence: {}, slave: {}", 
+                    batchId, processedSequence, slaveNodeId);
         } catch (Exception e) {
-            log.error("Failed to send batch acknowledgment for batch {}", batchId, e);
+            log.error("发送批次确认失败 - batchId: {}, processedSequence: {}, slave: {}", 
+                    batchId, processedSequence, slaveNodeId, e);
             handleConnectionError(e);
+        }
+    }
+    
+    /**
+     * 发送确认消息给主节点（用于屏障机制）
+     */
+    public void sendConfirmation(long batchId, long sequence) throws IOException {
+        if (!isConnected()) {
+            log.warn("Cannot send confirmation - client not connected");
+            return;
+        }
+        
+        try {
+            ByteBuffer confirmation = ByteBuffer.allocate(28);
+            confirmation.putInt(MAGIC_NUMBER);
+            confirmation.putInt(VERSION);
+            confirmation.putInt(7); // Message Type: 7 = Confirmation
+            confirmation.putLong(batchId);
+            confirmation.putLong(sequence);
+            confirmation.putLong(System.currentTimeMillis());
+            
+            outputStream.write(confirmation.array());
+            outputStream.flush();
+            
+            log.debug("Confirmation sent to master for batch {} sequence {}", batchId, sequence);
+        } catch (IOException e) {
+            log.error("Failed to send confirmation to master for batch {} sequence {}", batchId, sequence, e);
+            throw e;
         }
     }
     

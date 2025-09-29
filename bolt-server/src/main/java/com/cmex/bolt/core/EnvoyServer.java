@@ -10,8 +10,10 @@ import com.cmex.bolt.EnvoyServerGrpc;
 import com.cmex.bolt.handler.SequencerDispatcher;
 import com.cmex.bolt.handler.MatchDispatcher;
 import com.cmex.bolt.handler.JournalHandler;
+import com.cmex.bolt.handler.EnhancedJournalHandler;
 import com.cmex.bolt.handler.JournalReplayer;
 import com.cmex.bolt.handler.ReplicationHandler;
+import com.cmex.bolt.handler.BarrierHandler;
 import com.cmex.bolt.handler.TcpSlaveClient;
 import com.cmex.bolt.replication.ReplicationState;
 import com.cmex.bolt.repository.impl.CurrencyRepository;
@@ -29,6 +31,8 @@ import com.lmax.disruptor.util.DaemonThreadFactory;
 import io.grpc.stub.StreamObserver;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -40,6 +44,8 @@ import java.util.stream.Collectors;
 
 @Slf4j
 public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
+
+    private static final Logger log = LoggerFactory.getLogger(EnvoyServer.class);
 
     @Getter
     private final RingBuffer<NexusWrapper> sequencerRingBuffer;
@@ -58,14 +64,18 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
     //分组数量
     private final int group;
-    
+
     // TCP从节点客户端（仅在从节点模式下使用）
     private TcpSlaveClient tcpSlaveClient;
 
+    // 复制相关组件
+    private final ReplicationHandler replicationHandler;
+    private final BarrierHandler barrierHandler;
+
     public EnvoyServer(BoltConfig boltConfig) {
-        log.info("EnvoyServer constructor called with config: isMaster={}, enableReplication={}, masterHost={}, masterPort={}", 
-                boltConfig.isMaster(), boltConfig.enableReplication(), boltConfig.masterHost(), boltConfig.masterPort());
-        
+        log.info("EnvoyServer constructor called with config: isMaster={}, masterHost={}, masterPort={}",
+                boltConfig.isMaster(), boltConfig.masterHost(), boltConfig.masterPort());
+
         this.group = boltConfig.group();
         observers = new ConcurrentHashMap<>();
         WaitStrategy waitStrategy;
@@ -86,25 +96,30 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
         List<SequencerDispatcher> sequencerDispatchers = createSequencerDispatchers();
         List<MatchDispatcher> matchDispatchers = createMatchingDispatchers();
-        
-        JournalHandler journalHandler = new JournalHandler(boltConfig);
-        
+
+        // 根据节点类型选择JournalHandler
+        EventHandler<NexusWrapper> journalHandler;
+        if (!boltConfig.isMaster()) {
+            // 从节点模式，使用EnhancedJournalHandler
+            journalHandler = new EnhancedJournalHandler(boltConfig, null); // TcpSlaveClient将在后面设置
+        } else {
+            // 主节点模式，使用普通JournalHandler
+            journalHandler = new JournalHandler(boltConfig);
+        }
+
         // 初始化复制相关组件
         ReplicationState replicationState = new ReplicationState();
-        ReplicationHandler replicationHandler = new ReplicationHandler(boltConfig, replicationState);
+        this.replicationHandler = new ReplicationHandler(boltConfig, replicationState);
+        this.barrierHandler = new BarrierHandler(boltConfig, replicationState, this.replicationHandler);
 
         matchingDisruptor.handleEventsWith(matchDispatchers.toArray(new MatchDispatcher[0]));
         responseDisruptor.handleEventsWith(new ResponseEventHandler());
-        
-        // 配置 sequencerRingBuffer 的事件处理链：JournalHandler -> ReplicationHandler -> SequencerDispatcher
-        if (boltConfig.enableReplication()) {
-            sequencerDisruptor.handleEventsWith(journalHandler)
-                    .then(replicationHandler)
-                    .then(sequencerDispatchers.toArray(new SequencerDispatcher[0]));
-        } else {
-            sequencerDisruptor.handleEventsWith(journalHandler)
-                    .then(sequencerDispatchers.toArray(new SequencerDispatcher[0]));
-        }
+
+        // 配置 sequencerRingBuffer 的事件处理链：JournalHandler -> ReplicationHandler -> BarrierHandler -> SequencerDispatcher
+        sequencerDisruptor.handleEventsWith(journalHandler)
+                .then(replicationHandler)
+                .then(barrierHandler)
+                .then(sequencerDispatchers.toArray(new SequencerDispatcher[0]));
 
         sequencerRingBuffer = sequencerDisruptor.start();
         matchingRingBuffer = matchingDisruptor.start();
@@ -112,7 +127,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
         // 初始化性能导出器
         performanceExporter = new PerformanceExporter(sequencerRingBuffer);
-        
+
         // 如果存在 journal 文件，则进行重放
         JournalReplayer replayer = new JournalReplayer(sequencerRingBuffer, boltConfig);
         replayer.replayFromJournal();
@@ -130,32 +145,9 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
             accountServices.add(dispatcher.getAccountService());
         }
         transfer = new Transfer();
-        
-        // 如果是从节点且启用复制，启动TCP客户端连接到主节点
-        if (!boltConfig.isMaster() && boltConfig.enableReplication()) {
-            log.info("Initializing TCP slave client - masterHost: {}, masterPort: {}", 
-                    boltConfig.masterHost(), boltConfig.masterPort());
-            try {
-                String slaveNodeId = "slave-" + System.currentTimeMillis();
-                log.info("Creating TcpSlaveClient with nodeId: {}", slaveNodeId);
-                tcpSlaveClient = new TcpSlaveClient(
-                    boltConfig.masterHost(), 
-                    boltConfig.masterPort(), 
-                    slaveNodeId, 
-                    sequencerRingBuffer
-                );
-                log.info("Attempting to connect TCP slave client to master at {}:{}", 
-                        boltConfig.masterHost(), boltConfig.masterPort());
-                tcpSlaveClient.connect();
-                log.info("TCP slave client connected to master at {}:{}", boltConfig.masterHost(), boltConfig.masterPort());
-            } catch (Exception e) {
-                log.error("Failed to connect TCP slave client to master at {}:{}: {}", 
-                        boltConfig.masterHost(), boltConfig.masterPort(), e.getMessage(), e);
-            }
-        } else {
-            log.info("Skipping TCP slave client initialization - isMaster: {}, enableReplication: {}", 
-                    boltConfig.isMaster(), boltConfig.enableReplication());
-        }
+
+        // TcpSlaveClient的创建和管理由BoltSlave负责
+        // 这里不再创建TcpSlaveClient，避免重复连接
     }
 
     private List<SequencerDispatcher> createSequencerDispatchers() {
@@ -173,7 +165,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         }
         return dispatchers;
     }
-    
+
     /**
      * 关闭EnvoyServer，断开TCP客户端连接
      */
@@ -419,5 +411,38 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     private Optional<Symbol> getSymbol(int symbolId) {
         return matchServices.get(symbolId % group).getSymbol(symbolId);
     }
-    
+
+    /**
+     * 获取复制处理器
+     */
+    public ReplicationHandler getReplicationHandler() {
+        return replicationHandler;
+    }
+
+    /**
+     * 获取屏障处理器
+     */
+    public BarrierHandler getBarrierHandler() {
+        return barrierHandler;
+    }
+
+    /**
+     * 设置TcpSlaveClient引用（由BoltSlave调用）
+     */
+    public void setTcpSlaveClient(TcpSlaveClient tcpSlaveClient) {
+        this.tcpSlaveClient = tcpSlaveClient;
+        log.info("TcpSlaveClient reference set in EnvoyServer");
+        
+        // 如果使用的是EnhancedJournalHandler，设置TcpSlaveClient引用
+        // 注意：journalHandler是局部变量，这里无法直接访问
+        // EnhancedJournalHandler的TcpSlaveClient引用将在其内部设置
+    }
+
+    /**
+     * 获取TcpSlaveClient
+     */
+    public TcpSlaveClient getTcpSlaveClient() {
+        return tcpSlaveClient;
+    }
+
 }

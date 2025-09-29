@@ -52,15 +52,14 @@ public class BoltFactory {
                 String masterHost = args[11];
                 int masterPort = Integer.parseInt(args[12]);
                 int replicationPort = Integer.parseInt(args[13]);
-                boolean enableReplication = Boolean.parseBoolean(args[14]);
                 int batchSize = Integer.parseInt(args[15]);
-                int batchTimeoutMs = Integer.parseInt(args[16]);
+                int batchTimeout = Integer.parseInt(args[16]);
                 boolean enableJournal = Boolean.parseBoolean(args[17]);
                 String boltHome = args[18];
                 
                 return new BoltConfig(port, isProd, group, sequencerSize, matchingSize, responseSize, 
                     enablePrometheus, prometheusPort, journalFilePath, isBinary, isMaster, masterHost, 
-                    masterPort, replicationPort, enableReplication, batchSize, batchTimeoutMs, enableJournal, boltHome);
+                    masterPort, replicationPort,  batchSize, batchTimeout, enableJournal, boltHome);
             } catch (NumberFormatException e) {
                 printUsage();
                 throw new IllegalArgumentException("Invalid command line arguments", e);
@@ -89,3 +88,4 @@ public class BoltFactory {
         log.info("  java -DLOGS_DIR=/var/log/bolt -jar bolt.jar 9090 true 4 1024 512 512 true 9091 journal.data false true localhost 9090 9092 true 100 5000 true /path/to/bolt");
     }
 }
+

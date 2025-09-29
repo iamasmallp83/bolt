@@ -13,12 +13,15 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 复制处理器 - 负责将事件复制到从节点
- * 实现批量确认机制，确保强一致性
- * 整合了客户端管理功能，无需单独的ReplicationClientManager
+ * 整合了高性能特性：并行发送、异步处理、性能监控
+ * 配合BarrierHandler实现强一致性保证
  */
 @Slf4j
 public class ReplicationHandler implements EventHandler<NexusWrapper>, LifecycleAware {
@@ -32,16 +35,41 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
     private final AtomicLong batchSequenceStart = new AtomicLong(-1);
     private final AtomicLong batchSequenceEnd = new AtomicLong(-1);
     
-    // 客户端连接管理
+    // TCP复制服务器引用（用于通过现有连接发送数据）
+    private TcpReplicationServer tcpReplicationServer;
+    
+    // 客户端连接管理（保留用于兼容性）
     private final Map<String, TcpReplicationClient> clients = new ConcurrentHashMap<>();
+    
+    // 并行处理线程池（从OptimizedReplicationHandler整合）
+    private final ExecutorService replicationExecutor;
+    
+    // 性能统计（从OptimizedReplicationHandler整合）
+    private final AtomicLong totalEventsProcessed = new AtomicLong(0);
+    private final AtomicLong totalBatchesSent = new AtomicLong(0);
+    private final AtomicLong totalSendTime = new AtomicLong(0);
+    
+    // 批次ID生成器和当前批次跟踪
+    private final AtomicLong batchIdGenerator = new AtomicLong(1);
+    private volatile long currentBatchId = -1;
     
     public ReplicationHandler(BoltConfig config, ReplicationState replicationState) {
         this.config = config;
         this.replicationState = replicationState;
         this.currentBatch = new ArrayList<>(config.batchSize());
         
-        log.info("ReplicationHandler initialized - batchSize: {}, replicationPort: {}", 
-                config.batchSize(), config.replicationPort());
+        // 创建专用线程池用于并行发送
+        this.replicationExecutor = Executors.newFixedThreadPool(
+            Math.max(2, Runtime.getRuntime().availableProcessors() / 2),
+            r -> {
+                Thread t = new Thread(r, "replication-sender-" + r.hashCode());
+                t.setDaemon(true);
+                return t;
+            }
+        );
+        
+        log.info("ReplicationHandler initialized - batchSize: {}, replicationPort: {}, threads: {}", 
+                config.batchSize(), config.replicationPort(), Runtime.getRuntime().availableProcessors());
     }
 
     @Override
@@ -51,6 +79,8 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
             this.sequence.set(sequence);
             return;
         }
+        
+        totalEventsProcessed.incrementAndGet();
         
         // 添加到当前批次
         synchronized (currentBatch) {
@@ -66,6 +96,7 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
             boolean shouldSendBatch = currentBatch.size() >= config.batchSize() || endOfBatch;
             
             if (shouldSendBatch) {
+                // 同步发送批次，确保消息顺序和状态一致性
                 sendBatchToSlaves();
             }
         }
@@ -74,9 +105,9 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
     }
     
     /**
-     * 发送批次到从节点
+     * 异步发送批次到从节点
      */
-    private void sendBatchToSlaves() {
+    private void sendBatchToSlavesAsync() {
         List<NexusWrapper> batchToSend;
         long sequenceStart, sequenceEnd;
         
@@ -98,16 +129,60 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
         
         // 创建批次跟踪器
         ReplicationState.BatchAckTracker tracker = replicationState.createBatchTracker(
-                config.batchTimeoutMs(), sequenceStart, sequenceEnd);
+                config.batchTimeout(), sequenceStart, sequenceEnd);
         
         log.info("Sending batch {} with {} events, sequences {}-{}", 
                 tracker.getBatchId(), batchToSend.size(), sequenceStart, sequenceEnd);
         
-        // 发送到所有从节点
-        sendBatchToSlaves(tracker.getBatchId(), batchToSend, sequenceStart, sequenceEnd);
+        // 并行发送到所有从节点
+        sendBatchToSlavesParallel(tracker.getBatchId(), batchToSend, sequenceStart, sequenceEnd);
+        
+        totalBatchesSent.incrementAndGet();
+    }
+    
+    /**
+     * 发送批次到从节点（同步版本，确保消息顺序）
+     */
+    private void sendBatchToSlaves() {
+        List<NexusWrapper> batchToSend;
+        long sequenceStart, sequenceEnd;
+        long batchId;
+        
+        synchronized (currentBatch) {
+            if (currentBatch.isEmpty()) {
+                log.debug("No events in current batch, skipping send");
+                return;
+            }
+            
+            batchToSend = new ArrayList<>(currentBatch);
+            sequenceStart = batchSequenceStart.get();
+            sequenceEnd = batchSequenceEnd.get();
+            
+            // 生成批次ID并设置当前批次ID
+            batchId = batchIdGenerator.getAndIncrement();
+            currentBatchId = batchId;
+            
+            // 清空当前批次
+            currentBatch.clear();
+            batchSequenceStart.set(-1);
+            batchSequenceEnd.set(-1);
+        }
+        
+        // 创建批次跟踪器
+        ReplicationState.BatchAckTracker tracker = replicationState.createBatchTracker(
+                config.batchTimeout(), sequenceStart, sequenceEnd);
+        
+        log.info("Sending batch {} with {} events, sequences {}-{}", 
+                batchId, batchToSend.size(), sequenceStart, sequenceEnd);
+        
+        // 发送到所有从节点（同步发送，确保顺序）
+        sendBatchToSlaves(batchId, batchToSend, sequenceStart, sequenceEnd);
         
         // 等待确认（非阻塞方式）
         waitForBatchAcknowledgment(tracker);
+        
+        // 重置当前批次ID
+        currentBatchId = -1;
     }
     
     /**
@@ -170,7 +245,7 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
     }
     
     /**
-     * 发送批次到所有从节点
+     * 发送批次到所有从节点（通过现有连接）
      */
     private void sendBatchToSlaves(long batchId, List<NexusWrapper> events, long sequenceStart, long sequenceEnd) {
         Map<String, ReplicationState.SlaveNode> slaves = replicationState.getAllSlaves();
@@ -182,6 +257,11 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
             return;
         }
         
+        if (tcpReplicationServer == null) {
+            log.error("TcpReplicationServer reference not set, cannot send batch {}", batchId);
+            return;
+        }
+        
         for (Map.Entry<String, ReplicationState.SlaveNode> entry : slaves.entrySet()) {
             String slaveNodeId = entry.getKey();
             ReplicationState.SlaveNode slave = entry.getValue();
@@ -190,26 +270,81 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
                     slaveNodeId, slave.getHost(), slave.getPort(), slave.isHealthy(30000));
             
             if (slave.isHealthy(30000)) { // 30秒超时
-                TcpReplicationClient client = getOrCreateClient(slaveNodeId, slave);
-                if (client != null) {
-                    try {
-                        log.debug("Sending batch {} to slave {} ({}:{})", 
-                                batchId, slaveNodeId, slave.getHost(), slave.getPort());
-                        client.sendBatch(batchId, events, sequenceStart, sequenceEnd);
-                        log.debug("Successfully sent batch {} to slave {}", batchId, slaveNodeId);
-                    } catch (Exception e) {
-                        log.error("Failed to send batch {} to slave {} ({}:{}): {}", 
-                                batchId, slaveNodeId, slave.getHost(), slave.getPort(), e.getMessage(), e);
-                        replicationState.setSlaveConnected(slaveNodeId, false);
-                    }
-                } else {
-                    log.warn("Failed to create client for slave {} ({}:{})", 
-                            slaveNodeId, slave.getHost(), slave.getPort());
+                try {
+                    log.debug("Sending batch {} to slave {} via existing connection", 
+                            batchId, slaveNodeId);
+                    tcpReplicationServer.sendBatchToSlave(slaveNodeId, batchId, events, sequenceStart, sequenceEnd);
+                    log.debug("Successfully sent batch {} to slave {}", batchId, slaveNodeId);
+                } catch (Exception e) {
+                    log.error("Failed to send batch {} to slave {}: {}", 
+                            batchId, slaveNodeId, e.getMessage(), e);
+                    replicationState.setSlaveConnected(slaveNodeId, false);
                 }
             } else {
                 log.debug("Skipping unhealthy slave {} for batch {}", slaveNodeId, batchId);
             }
         }
+    }
+    
+    /**
+     * 并行发送批次到所有从节点（高性能版本）
+     */
+    private void sendBatchToSlavesParallel(long batchId, List<NexusWrapper> events, long sequenceStart, long sequenceEnd) {
+        Map<String, ReplicationState.SlaveNode> slaves = replicationState.getAllSlaves();
+        
+        if (slaves.isEmpty()) {
+            log.warn("No slaves available for batch {}", batchId);
+            return;
+        }
+        
+        long startTime = System.currentTimeMillis();
+        
+        // 创建并行发送任务
+        List<CompletableFuture<Void>> sendTasks = new ArrayList<>();
+        
+        for (Map.Entry<String, ReplicationState.SlaveNode> entry : slaves.entrySet()) {
+            String slaveNodeId = entry.getKey();
+            ReplicationState.SlaveNode slave = entry.getValue();
+            
+            if (slave.isHealthy(30000)) {
+                CompletableFuture<Void> sendTask = CompletableFuture.runAsync(() -> {
+                    try {
+                        TcpReplicationClient client = getOrCreateClient(slaveNodeId, slave);
+                        if (client != null) {
+                            log.debug("Sending batch {} to slave {} ({}:{})", 
+                                    batchId, slaveNodeId, slave.getHost(), slave.getPort());
+                            client.sendBatch(batchId, events, sequenceStart, sequenceEnd);
+                            log.debug("Successfully sent batch {} to slave {}", batchId, slaveNodeId);
+                        } else {
+                            log.warn("Failed to create client for slave {} ({}:{})", 
+                                    slaveNodeId, slave.getHost(), slave.getPort());
+                        }
+                    } catch (Exception e) {
+                        log.error("Failed to send batch {} to slave {} ({}:{}): {}", 
+                                batchId, slaveNodeId, slave.getHost(), slave.getPort(), e.getMessage(), e);
+                        replicationState.setSlaveConnected(slaveNodeId, false);
+                    }
+                }, replicationExecutor);
+                
+                sendTasks.add(sendTask);
+            } else {
+                log.debug("Skipping unhealthy slave {} for batch {}", slaveNodeId, batchId);
+            }
+        }
+        
+        // 等待所有发送任务完成
+        CompletableFuture.allOf(sendTasks.toArray(new CompletableFuture[0]))
+            .whenComplete((result, throwable) -> {
+                long sendTime = System.currentTimeMillis() - startTime;
+                totalSendTime.addAndGet(sendTime);
+                
+                if (throwable != null) {
+                    log.error("Error in parallel batch sending for batch {}: {}", batchId, throwable.getMessage());
+                } else {
+                    log.debug("Parallel batch {} sent to {} slaves in {}ms", 
+                            batchId, sendTasks.size(), sendTime);
+                }
+            });
     }
     
     /**
@@ -301,5 +436,93 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
             }
         }
         clients.clear();
+        
+        // 关闭线程池
+        if (replicationExecutor != null) {
+            replicationExecutor.shutdown();
+            try {
+                if (!replicationExecutor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                    replicationExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                replicationExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+        
+        // 打印性能统计
+        logPerformanceStats();
+    }
+    
+    /**
+     * 打印性能统计
+     */
+    private void logPerformanceStats() {
+        long totalEvents = totalEventsProcessed.get();
+        long totalBatches = totalBatchesSent.get();
+        long totalTime = totalSendTime.get();
+        
+        if (totalBatches > 0) {
+            double avgBatchSize = (double) totalEvents / totalBatches;
+            double avgSendTime = (double) totalTime / totalBatches;
+            double eventsPerSecond = totalEvents * 1000.0 / Math.max(totalTime, 1);
+            
+            log.info("ReplicationHandler Performance Stats - Events: {}, Batches: {}, Avg Batch Size: {:.2f}, " +
+                    "Avg Send Time: {:.2f}ms, Events/sec: {:.2f}", 
+                    totalEvents, totalBatches, avgBatchSize, avgSendTime, eventsPerSecond);
+        }
+    }
+    
+    /**
+     * 设置TCP复制服务器引用
+     */
+    public void setTcpReplicationServer(TcpReplicationServer tcpReplicationServer) {
+        this.tcpReplicationServer = tcpReplicationServer;
+        log.info("TcpReplicationServer reference set in ReplicationHandler");
+    }
+    
+    /**
+     * 获取当前批次ID（供BarrierHandler使用）
+     */
+    public long getCurrentBatchId() {
+        return currentBatchId;
+    }
+    
+    /**
+     * 获取性能统计信息
+     */
+    public PerformanceStats getPerformanceStats() {
+        return new PerformanceStats(
+            totalEventsProcessed.get(),
+            totalBatchesSent.get(),
+            totalSendTime.get(),
+            clients.size()
+        );
+    }
+    
+    /**
+     * 性能统计数据结构
+     */
+    public static class PerformanceStats {
+        public final long totalEventsProcessed;
+        public final long totalBatchesSent;
+        public final long totalSendTimeMs;
+        public final int activeSlaveCount;
+        
+        public PerformanceStats(long totalEventsProcessed, long totalBatchesSent, 
+                               long totalSendTimeMs, int activeSlaveCount) {
+            this.totalEventsProcessed = totalEventsProcessed;
+            this.totalBatchesSent = totalBatchesSent;
+            this.totalSendTimeMs = totalSendTimeMs;
+            this.activeSlaveCount = activeSlaveCount;
+        }
+        
+        @Override
+        public String toString() {
+            return String.format("PerformanceStats{events=%d, batches=%d, avgSendTime=%.2fms, slaves=%d}",
+                    totalEventsProcessed, totalBatchesSent, 
+                    totalBatchesSent > 0 ? (double) totalSendTimeMs / totalBatchesSent : 0.0,
+                    activeSlaveCount);
+        }
     }
 }

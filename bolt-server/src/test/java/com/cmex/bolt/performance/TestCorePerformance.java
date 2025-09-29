@@ -27,7 +27,7 @@ public class TestCorePerformance {
     static void setUp() {
         bolt = new BoltMaster(new BoltConfig(9090, true, 10,
                 1024 * 1024 * 8, 1024 * 1024 * 4, 1024 * 1024 * 4, true, 9091, "journal", false,
-                false, "localhost", 9090, 9092, false, 100, 5000, true, "./bolt-home"));
+                false, "localhost", 9090, 9092, 100, 5000, true, "./bolt-home"));
         service = bolt.getEnvoyServer();
     }
 

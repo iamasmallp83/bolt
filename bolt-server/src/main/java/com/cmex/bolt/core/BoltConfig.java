@@ -16,16 +16,16 @@ public record BoltConfig(
         String masterHost,
         int masterPort,
         int replicationPort,
-        boolean enableReplication,
         int batchSize,
-        int batchTimeoutMs,
+        // 毫秒
+        int batchTimeout,
         // 日志配置
         boolean enableJournal,
         // 目录配置
         String boltHome
 ) {
     public static final BoltConfig DEFAULT = new BoltConfig(9090, false, 4, 1024,
-            512, 512, true, 9091, "journal", false, true, "localhost", 9090, 9092, false, 100, 5000, false, ".");
+            512, 512, true, 9091, "journal", false, true, "localhost", 9090, 9092, 100, 5000, false, ".");
 
     public String journalFilePath() {
         return boltHome + "/journal/" + journalFilePath + (isBinary ? ".data" : ".json");

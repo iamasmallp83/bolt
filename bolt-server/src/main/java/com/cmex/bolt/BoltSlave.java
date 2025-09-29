@@ -13,54 +13,52 @@ import java.io.IOException;
  */
 @Slf4j
 public class BoltSlave extends BoltBase {
-    
+
     private TcpSlaveClient slaveClient;
-    
+
     public BoltSlave(BoltConfig config) {
         super(config);
-        
+
         // 验证从节点配置
         if (config.isMaster()) {
             throw new IllegalArgumentException("BoltSlave requires isMaster=false in config");
         }
-        
-        log.info("BoltSlave initialized - master host: {}, master port: {}, replication enabled: {}", 
-                config.masterHost(), config.masterPort(), config.enableReplication());
+
+        log.info("BoltSlave initialized - master host: {}, master port: {}",
+                config.masterHost(), config.masterPort());
     }
-    
+
     @Override
     protected void startNodeSpecificServices() throws IOException, InterruptedException {
-        // 启动从节点客户端（如果启用复制）
-        if (config.enableReplication()) {
-            log.info("Starting slave client connection to master at {}:{}", 
+        log.info("Starting slave client connection to master at {}:{}",
+                config.masterHost(), config.masterPort());
+
+        // 获取sequencer ring buffer用于接收复制数据
+        RingBuffer<NexusWrapper> sequencerRingBuffer = envoyServer.getSequencerRingBuffer();
+
+        // 创建从节点客户端
+        String slaveNodeId = generateSlaveNodeId();
+        this.slaveClient = new TcpSlaveClient(
+                config.masterHost(),
+                config.masterPort(),
+                slaveNodeId,
+                sequencerRingBuffer
+        );
+
+        try {
+            slaveClient.connect();
+            log.info("Slave client connected successfully to master at {}:{}",
                     config.masterHost(), config.masterPort());
             
-            // 获取sequencer ring buffer用于接收复制数据
-            RingBuffer<NexusWrapper> sequencerRingBuffer = envoyServer.getSequencerRingBuffer();
-            
-            // 创建从节点客户端
-            String slaveNodeId = generateSlaveNodeId();
-            this.slaveClient = new TcpSlaveClient(
-                    config.masterHost(), 
-                    config.masterPort(), 
-                    slaveNodeId, 
-                    sequencerRingBuffer
-            );
-            
-            try {
-                slaveClient.connect();
-                log.info("Slave client connected successfully to master at {}:{}", 
-                        config.masterHost(), config.masterPort());
-            } catch (Exception e) {
-                log.error("Failed to connect slave client to master at {}:{}: {}", 
-                        config.masterHost(), config.masterPort(), e.getMessage(), e);
-                throw new RuntimeException("Failed to connect to master", e);
-            }
-        } else {
-            log.info("Slave client not started - replication disabled");
+            // 设置TcpSlaveClient引用到EnvoyServer
+            envoyServer.setTcpSlaveClient(slaveClient);
+        } catch (Exception e) {
+            log.error("Failed to connect slave client to master at {}:{}: {}",
+                    config.masterHost(), config.masterPort(), e.getMessage(), e);
+            throw new RuntimeException("Failed to connect to master", e);
         }
     }
-    
+
     @Override
     protected void stopNodeSpecificServices() {
         if (slaveClient != null) {
@@ -69,14 +67,14 @@ public class BoltSlave extends BoltBase {
             log.info("Slave client disconnected from master");
         }
     }
-    
+
     @Override
     public boolean isRunning() {
         boolean baseRunning = super.isRunning();
         boolean slaveConnected = slaveClient == null || slaveClient.isConnected();
         return baseRunning && slaveConnected;
     }
-    
+
     /**
      * 生成从节点ID
      */
@@ -85,35 +83,35 @@ public class BoltSlave extends BoltBase {
         String hostname = System.getProperty("user.name", "unknown");
         return String.format("slave-%s-%d-%d", hostname, config.port(), System.currentTimeMillis());
     }
-    
+
     /**
      * 获取从节点客户端
      */
     public TcpSlaveClient getSlaveClient() {
         return slaveClient;
     }
-    
+
     /**
      * 检查从节点是否连接到主节点
      */
     public boolean isConnectedToMaster() {
         return slaveClient != null && slaveClient.isConnected();
     }
-    
+
     /**
      * 获取从节点ID
      */
     public String getSlaveNodeId() {
         return slaveClient != null ? slaveClient.getSlaveNodeId() : null;
     }
-    
+
     /**
      * 获取重连状态
      */
     public boolean shouldReconnect() {
         return slaveClient != null && slaveClient.shouldReconnect();
     }
-    
+
     /**
      * 获取重连尝试次数
      */
@@ -121,3 +119,4 @@ public class BoltSlave extends BoltBase {
         return slaveClient != null ? slaveClient.getReconnectAttempts() : 0;
     }
 }
+

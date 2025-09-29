@@ -3,13 +3,12 @@ package com.cmex.bolt.handler;
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.replication.ReplicationState;
+import com.cmex.bolt.handler.BarrierHandler;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
-import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import lombok.extern.slf4j.Slf4j;
 
@@ -30,7 +29,8 @@ public class TcpReplicationServer {
     private final int port;
     private final BoltConfig config;
     private final ReplicationState replicationState;
-    private final ReplicationHandler replicationHandler;
+    private final BarrierHandler barrierHandler; // BarrierHandler用于协调
+    private final ReplicationHandler replicationHandler; // ReplicationHandler用于发送数据
     private final ExecutorService executorService;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final ConcurrentHashMap<String, SlaveConnection> slaveConnections = new ConcurrentHashMap<>();
@@ -43,11 +43,12 @@ public class TcpReplicationServer {
     private static final int MAGIC_NUMBER = 0x424F4C54; // "BOLT"
     private static final int VERSION = 1;
     
-    public TcpReplicationServer(int port, BoltConfig config) {
+    public TcpReplicationServer(int port, BoltConfig config, BarrierHandler barrierHandler, ReplicationHandler replicationHandler) {
         this.port = port;
         this.config = config;
         this.replicationState = new ReplicationState();
-        this.replicationHandler = new ReplicationHandler(config, replicationState);
+        this.barrierHandler = barrierHandler;
+        this.replicationHandler = replicationHandler;
         this.executorService = Executors.newCachedThreadPool(r -> {
             Thread t = new Thread(r, "tcp-replication-server-" + r.hashCode());
             t.setDaemon(true);
@@ -77,10 +78,8 @@ public class TcpReplicationServer {
                         protected void initChannel(SocketChannel ch) {
                             ChannelPipeline pipeline = ch.pipeline();
                             
-                            // 添加长度字段解码器（4字节长度字段）
-                            pipeline.addLast("lengthDecoder", new LengthFieldBasedFrameDecoder(
-                                    Integer.MAX_VALUE, 0, 4, 0, 4));
-                            pipeline.addLast("lengthEncoder", new LengthFieldPrepender(4));
+                            // 移除长度字段解码器，直接处理原始TCP数据
+                            // 从节点发送的是原始TCP数据，不需要长度字段
                             
                             // 添加业务处理器
                             pipeline.addLast("replicationHandler", new ReplicationChannelHandler());
@@ -121,7 +120,12 @@ public class TcpReplicationServer {
         
         // 关闭复制处理器
         try {
-            replicationHandler.onShutdown();
+            if (barrierHandler != null) {
+                barrierHandler.onShutdown();
+            }
+            if (replicationHandler != null) {
+                replicationHandler.onShutdown();
+            }
         } catch (Exception e) {
             log.warn("Error shutting down replication handler", e);
         }
@@ -171,11 +175,27 @@ public class TcpReplicationServer {
         public void channelActive(ChannelHandlerContext ctx) {
             this.ctx = ctx;
             slaveNodeId = ctx.channel().remoteAddress().toString();
-            log.info("New slave connection from {}", slaveNodeId);
+            log.info("新的从节点连接 - slave: {}, 远程地址: {}", slaveNodeId, ctx.channel().remoteAddress());
             
             // 创建从节点连接
             SlaveConnection connection = new SlaveConnection(slaveNodeId, ctx.channel());
             slaveConnections.put(slaveNodeId, connection);
+            log.info("从节点连接已建立 - slave: {}, 当前活跃连接数: {}", slaveNodeId, slaveConnections.size());
+            
+            // 注册从节点到ReplicationHandler
+            if (replicationHandler != null) {
+                // 使用配置的replicationPort而不是随机端口
+                String[] parts = slaveNodeId.replace("/", "").split(":");
+                if (parts.length >= 2) {
+                    String host = parts[0];
+                    // 使用slave配置的replicationPort，而不是随机端口
+                    int port = config.replicationPort();
+                    replicationHandler.registerSlave(slaveNodeId, host, port);
+                    log.info("从节点已注册到ReplicationHandler - slave: {} at {}:{}", slaveNodeId, host, port);
+                } else {
+                    log.warn("无法解析从节点地址: {}", slaveNodeId);
+                }
+            }
         }
         
         @Override
@@ -183,10 +203,15 @@ public class TcpReplicationServer {
             try {
                 if (msg instanceof io.netty.buffer.ByteBuf) {
                     io.netty.buffer.ByteBuf buffer = (io.netty.buffer.ByteBuf) msg;
-                    processMessage(buffer);
+                    log.debug("接收到来自从节点的消息 - slave: {}, 消息大小: {} bytes", slaveNodeId, buffer.readableBytes());
+                    
+                    // 处理消息，可能需要处理多个消息或部分消息
+                    processRawMessage(buffer);
+                    
+                    log.debug("消息处理完成 - slave: {}", slaveNodeId);
                 }
             } catch (Exception e) {
-                log.error("Error processing message from slave {}", slaveNodeId, e);
+                log.error("处理来自从节点的消息时发生错误 - slave: {}", slaveNodeId, e);
             } finally {
                 if (msg instanceof io.netty.buffer.ByteBuf) {
                     ((io.netty.buffer.ByteBuf) msg).release();
@@ -209,46 +234,98 @@ public class TcpReplicationServer {
         }
         
         /**
-         * 处理来自从节点的消息
+         * 处理原始TCP消息
          */
-        private void processMessage(io.netty.buffer.ByteBuf buffer) {
-            // 读取消息头
-            int magic = buffer.readInt();
-            if (magic != MAGIC_NUMBER) {
-                throw new IllegalArgumentException("Invalid magic number: " + Integer.toHexString(magic));
+        private void processRawMessage(io.netty.buffer.ByteBuf buffer) {
+            log.debug("开始处理原始TCP消息 - slave: {}, 可读字节数: {}", slaveNodeId, buffer.readableBytes());
+            
+            // 循环处理缓冲区中的所有完整消息
+            while (buffer.readableBytes() >= 12) { // 最小消息头大小：Magic(4) + Version(4) + MessageType(4)
+                // 标记读取位置，以便在消息不完整时回退
+                buffer.markReaderIndex();
+                
+                try {
+                    // 读取消息头
+                    int magic = buffer.readInt();
+                    log.debug("读取到magic number: {} (期望: {}) - slave: {}", 
+                            Integer.toHexString(magic), Integer.toHexString(MAGIC_NUMBER), slaveNodeId);
+                    
+                    if (magic != MAGIC_NUMBER) {
+                        log.error("无效的magic number: {} - slave: {}", Integer.toHexString(magic), slaveNodeId);
+                        break; // 停止处理，避免解析错误
+                    }
+                    
+                    int version = buffer.readInt();
+                    log.debug("读取到version: {} (期望: {}) - slave: {}", version, VERSION, slaveNodeId);
+                    
+                    if (version != VERSION) {
+                        log.error("不支持的版本: {} - slave: {}", version, slaveNodeId);
+                        break;
+                    }
+                    
+                    int messageType = buffer.readInt();
+                    log.debug("读取到message type: {} - slave: {}", messageType, slaveNodeId);
+                    
+                    // 根据消息类型处理
+                    boolean processed = processMessageByType(buffer, messageType);
+                    if (!processed) {
+                        log.warn("消息处理失败，停止处理后续消息 - slave: {}, messageType: {}", slaveNodeId, messageType);
+                        break;
+                    }
+                    
+                } catch (Exception e) {
+                    log.error("处理消息时发生错误 - slave: {}, 回退到标记位置", slaveNodeId, e);
+                    buffer.resetReaderIndex(); // 回退到标记位置
+                    break;
+                }
             }
             
-            int version = buffer.readInt();
-            if (version != VERSION) {
-                throw new IllegalArgumentException("Unsupported version: " + version);
-            }
-            
-            int messageType = buffer.readInt();
-            
-            switch (messageType) {
-                case 3: // Heartbeat
-                    handleHeartbeat(buffer);
-                    break;
-                case 4: // Batch Ack
-                    handleBatchAck(buffer);
-                    break;
-                default:
-                    log.warn("Unknown message type: {}", messageType);
-                    break;
+            log.debug("原始TCP消息处理完成 - slave: {}, 剩余字节数: {}", slaveNodeId, buffer.readableBytes());
+        }
+        
+        /**
+         * 根据消息类型处理消息
+         */
+        private boolean processMessageByType(io.netty.buffer.ByteBuf buffer, int messageType) {
+            try {
+                switch (messageType) {
+                    case 3: // Heartbeat
+                        return handleHeartbeat(buffer);
+                    case 4: // Batch Ack
+                        return handleBatchAck(buffer);
+                    case 7: // Confirmation
+                        return handleConfirmation(buffer);
+                    default:
+                        log.warn("未知的消息类型: {} - slave: {}", messageType, slaveNodeId);
+                        return false;
+                }
+            } catch (Exception e) {
+                log.error("处理消息类型 {} 时发生错误 - slave: {}", messageType, slaveNodeId, e);
+                return false;
             }
         }
         
         /**
          * 处理心跳
          */
-        private void handleHeartbeat(io.netty.buffer.ByteBuf buffer) {
-            long timestamp = buffer.readLong();
-            log.debug("Received heartbeat from slave {} at {}", slaveNodeId, timestamp);
+        private boolean handleHeartbeat(io.netty.buffer.ByteBuf buffer) {
+            // 心跳消息：Magic(4) + Version(4) + MessageType(4) + Timestamp(8) = 20字节
+            if (buffer.readableBytes() < 8) {
+                log.warn("心跳消息不完整 - slave: {}, 需要8字节，实际: {}字节", slaveNodeId, buffer.readableBytes());
+                return false;
+            }
             
-            // 更新心跳
-            replicationHandler.handleSlaveHeartbeat(slaveNodeId);
+            long timestamp = buffer.readLong();
+            log.debug("接收到心跳 - slave: {}, timestamp: {}", slaveNodeId, timestamp);
+            
+            // 更新ReplicationState中SlaveNode的心跳时间
+            if (replicationHandler != null) {
+                replicationHandler.handleSlaveHeartbeat(slaveNodeId);
+                log.debug("已更新slave心跳时间 - slave: {}", slaveNodeId);
+            }
             
             // 发送心跳响应
+            log.debug("开始发送心跳响应 - slave: {}", slaveNodeId);
             io.netty.buffer.ByteBuf response = ctx.alloc().buffer(16);
             response.writeInt(MAGIC_NUMBER);
             response.writeInt(VERSION);
@@ -256,23 +333,30 @@ public class TcpReplicationServer {
             response.writeLong(System.currentTimeMillis());
             
             ctx.writeAndFlush(response);
+            log.debug("心跳响应发送成功 - slave: {}", slaveNodeId);
+            
+            return true;
         }
         
         /**
          * 处理批次确认
          */
-        private void handleBatchAck(io.netty.buffer.ByteBuf buffer) {
+        private boolean handleBatchAck(io.netty.buffer.ByteBuf buffer) {
+            // 批次确认消息：Magic(4) + Version(4) + MessageType(4) + BatchId(8) + ProcessedSequence(8) + Timestamp(8) = 36字节
+            if (buffer.readableBytes() < 24) {
+                log.warn("批次确认消息不完整 - slave: {}, 需要24字节，实际: {}字节", slaveNodeId, buffer.readableBytes());
+                return false;
+            }
+            
             long batchId = buffer.readLong();
             long processedSequence = buffer.readLong();
             long timestamp = buffer.readLong();
             
-            log.debug("Received batch ack from slave {}: batch={}, sequence={}", 
-                    slaveNodeId, batchId, processedSequence);
-            
-            // 处理确认
-            replicationHandler.handleBatchAcknowledgment(batchId, slaveNodeId);
+            log.info("接收到批次确认 - slave: {}, batchId: {}, processedSequence: {}, timestamp: {}", 
+                    slaveNodeId, batchId, processedSequence, timestamp);
             
             // 发送确认响应
+            log.debug("开始发送批次确认响应 - slave: {}, batchId: {}", slaveNodeId, batchId);
             io.netty.buffer.ByteBuf response = ctx.alloc().buffer(20);
             response.writeInt(MAGIC_NUMBER);
             response.writeInt(VERSION);
@@ -281,6 +365,50 @@ public class TcpReplicationServer {
             response.writeLong(System.currentTimeMillis());
             
             ctx.writeAndFlush(response);
+            log.debug("批次确认响应发送成功 - slave: {}, batchId: {}", slaveNodeId, batchId);
+            
+            return true;
+        }
+        
+        /**
+         * 处理确认消息（用于屏障机制）
+         */
+        private boolean handleConfirmation(io.netty.buffer.ByteBuf buffer) {
+            // 确认消息：Magic(4) + Version(4) + MessageType(4) + BatchId(8) + Sequence(8) + Timestamp(8) = 36字节
+            if (buffer.readableBytes() < 24) {
+                log.warn("确认消息不完整 - slave: {}, 需要24字节，实际: {}字节", slaveNodeId, buffer.readableBytes());
+                return false;
+            }
+            
+            long batchId = buffer.readLong();
+            long sequence = buffer.readLong();
+            long timestamp = buffer.readLong();
+            
+            log.info("接收到确认消息 - slave: {}, batchId: {}, sequence: {}, timestamp: {}", 
+                    slaveNodeId, batchId, sequence, timestamp);
+            
+            // 处理确认（需要传递给BarrierHandler）
+            if (barrierHandler != null) {
+                log.debug("将确认消息传递给BarrierHandler - slave: {}, batchId: {}, sequence: {}", 
+                        slaveNodeId, batchId, sequence);
+                barrierHandler.handleSlaveConfirmation(batchId, slaveNodeId, sequence);
+            } else {
+                log.warn("BarrierHandler为空，无法处理确认消息 - slave: {}", slaveNodeId);
+            }
+            
+            // 发送确认响应
+            log.debug("开始发送确认响应 - slave: {}, batchId: {}", slaveNodeId, batchId);
+            io.netty.buffer.ByteBuf response = ctx.alloc().buffer(20);
+            response.writeInt(MAGIC_NUMBER);
+            response.writeInt(VERSION);
+            response.writeInt(8); // Message Type: 8 = Confirmation Response
+            response.writeLong(batchId);
+            response.writeLong(System.currentTimeMillis());
+            
+            ctx.writeAndFlush(response);
+            log.debug("确认响应发送成功 - slave: {}, batchId: {}", slaveNodeId, batchId);
+            
+            return true;
         }
     }
     
@@ -319,13 +447,6 @@ public class TcpReplicationServer {
     }
     
     /**
-     * 获取复制处理器
-     */
-    public ReplicationHandler getReplicationHandler() {
-        return replicationHandler;
-    }
-    
-    /**
      * 获取活跃从节点数量
      */
     public int getActiveSlaveCount() {
@@ -337,5 +458,61 @@ public class TcpReplicationServer {
      */
     public java.util.Set<String> getActiveSlaveIds() {
         return new java.util.HashSet<>(slaveConnections.keySet());
+    }
+    
+    /**
+     * 发送批次到指定的从节点
+     */
+    public void sendBatchToSlave(String slaveNodeId, long batchId, java.util.List<com.cmex.bolt.core.NexusWrapper> events, long sequenceStart, long sequenceEnd) {
+        SlaveConnection connection = slaveConnections.get(slaveNodeId);
+        if (connection != null && connection.getChannel().isActive()) {
+            try {
+                log.debug("通过现有连接发送批次到slave - batchId: {}, eventCount: {}, slave: {}", 
+                        batchId, events.size(), slaveNodeId);
+                
+                // 发送批次头
+                io.netty.buffer.ByteBuf header = connection.getChannel().alloc().buffer(40);
+                header.writeInt(MAGIC_NUMBER);
+                header.writeInt(VERSION);
+                header.writeInt(1); // Message Type: 1 = Batch
+                header.writeLong(batchId);
+                header.writeInt(events.size());
+                header.writeLong(sequenceStart);
+                header.writeLong(sequenceEnd);
+                
+                connection.getChannel().writeAndFlush(header);
+                
+                // 发送每个NexusWrapper
+                for (com.cmex.bolt.core.NexusWrapper wrapper : events) {
+                    io.netty.buffer.ByteBuf wrapperBuf = connection.getChannel().alloc().buffer(16 + wrapper.getBuffer().readableBytes());
+                    wrapperBuf.writeLong(wrapper.getId());
+                    wrapperBuf.writeInt(wrapper.getPartition());
+                    wrapperBuf.writeInt(wrapper.getBuffer().readableBytes());
+                    
+                    // 复制ByteBuf数据
+                    byte[] data = new byte[wrapper.getBuffer().readableBytes()];
+                    wrapper.getBuffer().getBytes(wrapper.getBuffer().readerIndex(), data);
+                    wrapperBuf.writeBytes(data);
+                    
+                    connection.getChannel().writeAndFlush(wrapperBuf);
+                }
+                
+                // 发送批次结束标记
+                io.netty.buffer.ByteBuf endMarker = connection.getChannel().alloc().buffer(12);
+                endMarker.writeInt(MAGIC_NUMBER);
+                endMarker.writeInt(VERSION);
+                endMarker.writeInt(2); // Message Type: 2 = Batch End
+                
+                connection.getChannel().writeAndFlush(endMarker);
+                
+                log.info("成功通过现有连接发送批次到slave - batchId: {}, eventCount: {}, slave: {}", 
+                        batchId, events.size(), slaveNodeId);
+                        
+            } catch (Exception e) {
+                log.error("通过现有连接发送批次失败 - batchId: {}, slave: {}", batchId, slaveNodeId, e);
+            }
+        } else {
+            log.warn("Slave连接不存在或已断开 - slave: {}", slaveNodeId);
+        }
     }
 }

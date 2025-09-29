@@ -165,30 +165,36 @@ public class TcpReplicationClient {
      */
     public void sendBatch(long batchId, List<NexusWrapper> events, long sequenceStart, long sequenceEnd) {
         if (!isConnected()) {
-            log.warn("Cannot send batch {} - client not connected, attempting reconnection", batchId);
+            log.warn("无法发送批次 - 客户端未连接, batchId: {}, slave: {}", batchId, slaveNodeId);
             scheduleReconnect();
             throw new IllegalStateException("Client not connected");
         }
         
         try {
-            log.debug("Sending batch {} with {} events to slave {}", batchId, events.size(), slaveNodeId);
+            log.info("开始发送批次到从节点 - batchId: {}, eventCount: {}, sequences: {}-{}, slave: {}", 
+                    batchId, events.size(), sequenceStart, sequenceEnd, slaveNodeId);
             
             // 发送批次头
             sendBatchHeader(batchId, events.size(), sequenceStart, sequenceEnd);
             
             // 发送每个NexusWrapper
-            for (NexusWrapper wrapper : events) {
+            log.debug("开始发送批次中的 {} 个事件 - batchId: {}, slave: {}", events.size(), batchId, slaveNodeId);
+            for (int i = 0; i < events.size(); i++) {
+                NexusWrapper wrapper = events.get(i);
+                log.debug("发送第 {}/{} 个事件 - batchId: {}, eventId: {}, slave: {}", 
+                        i+1, events.size(), batchId, wrapper.getId(), slaveNodeId);
                 sendNexusWrapper(wrapper);
             }
             
             // 发送批次结束标记
             sendBatchEnd();
             
-            log.debug("Successfully sent batch {} to slave {}", batchId, slaveNodeId);
+            log.info("批次发送成功 - batchId: {}, eventCount: {}, slave: {}", batchId, events.size(), slaveNodeId);
             lastSuccessfulHeartbeat.set(System.currentTimeMillis());
             
         } catch (Exception e) {
-            log.error("Failed to send batch {} to slave {}", batchId, slaveNodeId, e);
+            log.error("发送批次失败 - batchId: {}, eventCount: {}, slave: {}", 
+                    batchId, events.size(), slaveNodeId, e);
             handleConnectionError(e);
             throw new RuntimeException("Failed to send batch", e);
         }
@@ -198,6 +204,9 @@ public class TcpReplicationClient {
      * 发送批次头
      */
     private void sendBatchHeader(long batchId, int eventCount, long sequenceStart, long sequenceEnd) throws IOException {
+        log.debug("开始发送批次头 - batchId: {}, eventCount: {}, sequences: {}-{}, slave: {}", 
+                batchId, eventCount, sequenceStart, sequenceEnd, slaveNodeId);
+        
         // 协议格式：
         // Magic Number (4 bytes) + Version (4 bytes) + Message Type (4 bytes) + 
         // Batch ID (8 bytes) + Event Count (4 bytes) + Sequence Start (8 bytes) + Sequence End (8 bytes)
@@ -213,14 +222,22 @@ public class TcpReplicationClient {
         
         outputStream.write(header.array());
         outputStream.flush();
+        
+        log.debug("批次头发送成功 - batchId: {}, eventCount: {}, slave: {}", batchId, eventCount, slaveNodeId);
     }
     
     /**
      * 发送NexusWrapper数据
      */
     private void sendNexusWrapper(NexusWrapper wrapper) throws IOException {
+        log.debug("开始发送NexusWrapper - id: {}, partition: {}, slave: {}", 
+                wrapper.getId(), wrapper.getPartition(), slaveNodeId);
+        
         ByteBuf buffer = wrapper.getBuffer();
         int readableBytes = buffer.readableBytes();
+        
+        log.debug("NexusWrapper数据大小 - id: {}, dataLength: {}, slave: {}", 
+                wrapper.getId(), readableBytes, slaveNodeId);
         
         // 发送NexusWrapper头：ID (8 bytes) + Partition (4 bytes) + Data Length (4 bytes)
         ByteBuffer wrapperHeader = ByteBuffer.allocate(16);
@@ -235,15 +252,22 @@ public class TcpReplicationClient {
             byte[] data = new byte[readableBytes];
             buffer.getBytes(buffer.readerIndex(), data);
             outputStream.write(data);
+            log.debug("NexusWrapper数据发送完成 - id: {}, dataLength: {}, slave: {}", 
+                    wrapper.getId(), readableBytes, slaveNodeId);
+        } else {
+            log.debug("NexusWrapper无数据内容 - id: {}, slave: {}", wrapper.getId(), slaveNodeId);
         }
         
         outputStream.flush();
+        log.debug("NexusWrapper发送成功 - id: {}, slave: {}", wrapper.getId(), slaveNodeId);
     }
     
     /**
      * 发送批次结束标记
      */
     private void sendBatchEnd() throws IOException {
+        log.debug("开始发送批次结束标记 - slave: {}", slaveNodeId);
+        
         ByteBuffer endMarker = ByteBuffer.allocate(12);
         endMarker.putInt(MAGIC_NUMBER);
         endMarker.putInt(VERSION);
@@ -251,6 +275,8 @@ public class TcpReplicationClient {
         
         outputStream.write(endMarker.array());
         outputStream.flush();
+        
+        log.debug("批次结束标记发送成功 - slave: {}", slaveNodeId);
     }
     
     /**
@@ -258,8 +284,11 @@ public class TcpReplicationClient {
      */
     public void sendHeartbeat() throws IOException {
         if (!isConnected()) {
+            log.debug("无法发送心跳 - 连接未建立, slave: {}", slaveNodeId);
             return;
         }
+        
+        log.debug("开始发送心跳 - slave: {}", slaveNodeId);
         
         ByteBuffer heartbeat = ByteBuffer.allocate(16);
         heartbeat.putInt(MAGIC_NUMBER);
@@ -270,7 +299,7 @@ public class TcpReplicationClient {
         outputStream.write(heartbeat.array());
         outputStream.flush();
         
-        log.debug("Heartbeat sent to slave {}", slaveNodeId);
+        log.debug("心跳发送成功 - slave: {}", slaveNodeId);
     }
     
     /**
