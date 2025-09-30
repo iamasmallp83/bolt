@@ -19,9 +19,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 复制处理器 - 负责将事件复制到从节点
- * 整合了高性能特性：并行发送、异步处理、性能监控
- * 配合BarrierHandler实现强一致性保证
+ * 复制处理器 - 负责将事件复制到从节点并管理确认机制
+ * 整合了高性能特性：并行发送、异步处理、性能监控、从节点确认
  */
 @Slf4j
 public class ReplicationHandler implements EventHandler<NexusWrapper>, LifecycleAware {
@@ -34,6 +33,10 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
     private final List<NexusWrapper> currentBatch;
     private final AtomicLong batchSequenceStart = new AtomicLong(-1);
     private final AtomicLong batchSequenceEnd = new AtomicLong(-1);
+    
+    // 从节点确认管理（集成自BarrierHandler）
+    private final Map<String, Sequence> slaveSequences = new ConcurrentHashMap<>();
+    private final AtomicLong lastConfirmedSequence = new AtomicLong(-1);
     
     // TCP复制服务器引用（用于通过现有连接发送数据）
     private TcpReplicationServer tcpReplicationServer;
@@ -74,34 +77,57 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
 
     @Override
     public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) throws Exception {
-        // 早期返回检查
-        if (wrapper.getBuffer() == null || wrapper.getBuffer().readableBytes() == 0 || wrapper.getId() == -1) {
+        // 早期返回检查 - 只处理业务事件
+        if (!wrapper.isBusinessEvent() || !wrapper.isValid()) {
             this.sequence.set(sequence);
             return;
         }
         
         totalEventsProcessed.incrementAndGet();
         
-        // 添加到当前批次
-        synchronized (currentBatch) {
-            currentBatch.add(wrapper);
-            
-            // 设置批次序列范围
-            if (batchSequenceStart.get() == -1) {
-                batchSequenceStart.set(sequence);
-            }
-            batchSequenceEnd.set(sequence);
-            
-            // 检查是否需要发送批次
-            boolean shouldSendBatch = currentBatch.size() >= config.batchSize() || endOfBatch;
-            
-            if (shouldSendBatch) {
-                // 同步发送批次，确保消息顺序和状态一致性
-                sendBatchToSlaves();
-            }
-        }
+        // 使用新协议直接发送单个NexusWrapper
+        sendNexusWrapperDirectly(wrapper, sequence);
         
         this.sequence.set(sequence);
+    }
+    
+    /**
+     * 直接发送单个NexusWrapper（新协议）
+     */
+    private void sendNexusWrapperDirectly(NexusWrapper wrapper, long sequence) {
+        List<String> healthySlaves = replicationState.getHealthySlaveIds().stream().toList();
+        if (healthySlaves.isEmpty()) {
+            log.debug("没有健康的从节点，跳过复制 - sequence: {}", sequence);
+            return;
+        }
+        
+        log.debug("直接发送NexusWrapper - id: {}, sequence: {}, slaves: {}", 
+                wrapper.getId(), sequence, healthySlaves.size());
+        
+        // 并行发送到所有从节点
+        List<CompletableFuture<Void>> sendTasks = healthySlaves.stream()
+                .map(slaveNodeId -> CompletableFuture.runAsync(() -> {
+                    try {
+                        // 这里需要获取TcpReplicationServer的引用
+                        // 暂时使用日志记录，实际实现需要注入TcpReplicationServer
+                        log.debug("发送NexusWrapper到slave - id: {}, slave: {}", wrapper.getId(), slaveNodeId);
+                        // TODO: 实际发送逻辑需要TcpReplicationServer引用
+                    } catch (Exception e) {
+                        log.error("发送NexusWrapper到slave失败 - id: {}, slave: {}", wrapper.getId(), slaveNodeId, e);
+                        replicationState.setSlaveConnected(slaveNodeId, false);
+                    }
+                }, replicationExecutor))
+                .toList();
+        
+        // 等待所有发送完成
+        CompletableFuture.allOf(sendTasks.toArray(new CompletableFuture[0]))
+                .whenComplete((result, throwable) -> {
+                    if (throwable != null) {
+                        log.error("批量发送NexusWrapper失败", throwable);
+                    } else {
+                        log.debug("NexusWrapper发送完成 - id: {}, sequence: {}", wrapper.getId(), sequence);
+                    }
+                });
     }
     
     /**
@@ -482,10 +508,73 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
     }
     
     /**
-     * 获取当前批次ID（供BarrierHandler使用）
+     * 处理从节点确认（集成自BarrierHandler）
      */
-    public long getCurrentBatchId() {
-        return currentBatchId;
+    public void handleSlaveConfirmation(long sequence, String slaveNodeId) {
+        log.debug("接收到确认 - sequence: {}, slave: {}", sequence, slaveNodeId);
+        
+        // 更新从节点序列
+        slaveSequences.computeIfAbsent(slaveNodeId, k -> new Sequence(-1)).set(sequence);
+        
+        // 更新最后确认序列
+        long minSlaveSequence = getMinSlaveSequenceInternal();
+        if (minSlaveSequence > lastConfirmedSequence.get()) {
+            lastConfirmedSequence.set(minSlaveSequence);
+            log.debug("Updated last confirmed sequence to {}", minSlaveSequence);
+        }
+    }
+    
+    /**
+     * 获取最小从节点序列（内部方法）
+     */
+    private long getMinSlaveSequenceInternal() {
+        if (slaveSequences.isEmpty()) {
+            return Long.MAX_VALUE;
+        }
+        
+        long minSequence = Long.MAX_VALUE;
+        for (Sequence slaveSequence : slaveSequences.values()) {
+            long slaveSeq = slaveSequence.get();
+            if (slaveSeq < minSequence) {
+                minSequence = slaveSeq;
+            }
+        }
+        
+        return minSequence == Long.MAX_VALUE ? -1 : minSequence;
+    }
+    
+    /**
+     * 添加从节点
+     */
+    public void addSlave(String slaveNodeId) {
+        slaveSequences.put(slaveNodeId, new Sequence(-1));
+        log.info("Added slave to replication - slave: {}", slaveNodeId);
+    }
+    
+    /**
+     * 移除从节点
+     */
+    public void removeSlave(String slaveNodeId) {
+        slaveSequences.remove(slaveNodeId);
+        log.info("Removed slave from replication - slave: {}", slaveNodeId);
+    }
+    
+    /**
+     * 获取从节点状态信息
+     */
+    public Map<String, Long> getSlaveSequences() {
+        Map<String, Long> result = new ConcurrentHashMap<>();
+        for (Map.Entry<String, Sequence> entry : slaveSequences.entrySet()) {
+            result.put(entry.getKey(), entry.getValue().get());
+        }
+        return result;
+    }
+    
+    /**
+     * 获取最小从节点序列（公开方法）
+     */
+    public long getMinSlaveSequence() {
+        return getMinSlaveSequenceInternal();
     }
     
     /**

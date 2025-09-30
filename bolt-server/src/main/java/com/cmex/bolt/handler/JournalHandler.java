@@ -26,7 +26,7 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
     private final FileChannel journalChannel;
     private final BoltConfig config;
     private final ByteBuffer lengthBuffer = ByteBuffer.allocate(4);
-    private final ByteBuffer headerBuffer = ByteBuffer.allocate(24); // 8+8+4 = 20, with some padding
+    private final ByteBuffer headerBuffer = ByteBuffer.allocate(20); // 8+8+4 = 20, with some padding
 
     public JournalHandler(BoltConfig config) {
         this.config = config;
@@ -69,17 +69,16 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
                 return;
             }
             
-            // 早期返回检查
-            var buffer = wrapper.getBuffer();
-            if (buffer == null || buffer.readableBytes() == 0 || wrapper.getId() == -1) {
+            // 早期返回检查 - 只记录业务事件
+            if (!wrapper.isBusinessEvent() || !wrapper.isValid()) {
                 this.sequence.set(sequence);
                 return;
             }
 
             if (config.isBinary()) {
-                writeBinaryMode(wrapper, buffer);
+                writeBinaryMode(wrapper, wrapper.getBuffer());
             } else {
-                writeJsonMode(wrapper, buffer);
+                writeJsonMode(wrapper, wrapper.getBuffer());
             }
 
             // 强制刷新到磁盘（可选，根据性能需求调整）
@@ -102,7 +101,7 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
     private void writeBinaryMode(NexusWrapper wrapper, io.grpc.netty.shaded.io.netty.buffer.ByteBuf buffer) throws IOException {
         int messageLength = buffer.readableBytes();
         
-        // 计算总长度：消息长度 + 时间戳(8字节) + ID(8字节) + partition(4字节)
+        // 计算总长度：消息长度 + 时间戳(8字节) + ID(8字节) + combinedPartitionAndEventType(4字节)
         int totalLength = messageLength + 20; // 8+8+4 = 20
 
         // 写入总长度（4字节）
@@ -111,11 +110,11 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
         lengthBuffer.flip();
         journalChannel.write(lengthBuffer);
 
-        // 使用单个headerBuffer写入时间戳、ID和partition，减少系统调用
+        // 使用单个headerBuffer写入时间戳、ID和combinedPartitionAndEventType，减少系统调用
         headerBuffer.clear();
         headerBuffer.putLong(System.currentTimeMillis());
         headerBuffer.putLong(wrapper.getId());
-        headerBuffer.putInt(wrapper.getPartition());
+        headerBuffer.putInt(wrapper.getCombinedPartitionAndEventType());
         headerBuffer.flip();
         journalChannel.write(headerBuffer);
 
@@ -154,6 +153,7 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
             json.append("{\"timestamp\":\"").append(Instant.now().toString())
                 .append("\",\"id\":").append(wrapper.getId())
                 .append(",\"partition\":").append(wrapper.getPartition())
+                .append(",\"eventType\":").append(wrapper.getEventType().ordinal())
                 .append(",\"data\":");
 
             // 将Nexus事件转换为JSON

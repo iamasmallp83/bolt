@@ -35,11 +35,11 @@ public class SequencerDispatcher implements EventHandler<NexusWrapper>, Lifecycl
         switch (payload.which()) {
             case INCREASE:
                 Nexus.Increase.Reader increase = reader.getPayload().getIncrease();
-                accountService.on(wrapper.getId(), increase);
+                accountService.on(wrapper, increase);
                 break;
             case DECREASE:
                 Nexus.Decrease.Reader decrease = reader.getPayload().getDecrease();
-                accountService.on(wrapper.getId(), decrease);
+                accountService.on(wrapper, decrease);
                 break;
             case CLEAR:
                 Nexus.Clear.Reader clear = reader.getPayload().getClear();
@@ -51,7 +51,7 @@ public class SequencerDispatcher implements EventHandler<NexusWrapper>, Lifecycl
                 break;
             case PLACE_ORDER:
                 Nexus.PlaceOrder.Reader placeOrder = reader.getPayload().getPlaceOrder();
-                accountService.on(wrapper.getId(), placeOrder);
+                accountService.on(wrapper, placeOrder);
                 break;
             default:
                 break;

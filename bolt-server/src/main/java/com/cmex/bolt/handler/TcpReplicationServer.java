@@ -3,7 +3,6 @@ package com.cmex.bolt.handler;
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.replication.ReplicationState;
-import com.cmex.bolt.handler.BarrierHandler;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -29,8 +28,7 @@ public class TcpReplicationServer {
     private final int port;
     private final BoltConfig config;
     private final ReplicationState replicationState;
-    private final BarrierHandler barrierHandler; // BarrierHandler用于协调
-    private final ReplicationHandler replicationHandler; // ReplicationHandler用于发送数据
+    private final ReplicationHandler replicationHandler; // ReplicationHandler用于发送数据和确认管理
     private final ExecutorService executorService;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final ConcurrentHashMap<String, SlaveConnection> slaveConnections = new ConcurrentHashMap<>();
@@ -43,11 +41,10 @@ public class TcpReplicationServer {
     private static final int MAGIC_NUMBER = 0x424F4C54; // "BOLT"
     private static final int VERSION = 1;
     
-    public TcpReplicationServer(int port, BoltConfig config, BarrierHandler barrierHandler, ReplicationHandler replicationHandler) {
+    public TcpReplicationServer(int port, BoltConfig config, ReplicationHandler replicationHandler) {
         this.port = port;
         this.config = config;
         this.replicationState = new ReplicationState();
-        this.barrierHandler = barrierHandler;
         this.replicationHandler = replicationHandler;
         this.executorService = Executors.newCachedThreadPool(r -> {
             Thread t = new Thread(r, "tcp-replication-server-" + r.hashCode());
@@ -120,9 +117,6 @@ public class TcpReplicationServer {
         
         // 关闭复制处理器
         try {
-            if (barrierHandler != null) {
-                barrierHandler.onShutdown();
-            }
             if (replicationHandler != null) {
                 replicationHandler.onShutdown();
             }
@@ -289,11 +283,13 @@ public class TcpReplicationServer {
         private boolean processMessageByType(io.netty.buffer.ByteBuf buffer, int messageType) {
             try {
                 switch (messageType) {
+                    case 2: // Confirmation (新协议)
+                        return handleNewConfirmation(buffer);
                     case 3: // Heartbeat
                         return handleHeartbeat(buffer);
-                    case 4: // Batch Ack
+                    case 4: // Batch Ack (旧协议)
                         return handleBatchAck(buffer);
-                    case 7: // Confirmation
+                    case 7: // Confirmation (旧协议)
                         return handleConfirmation(buffer);
                     default:
                         log.warn("未知的消息类型: {} - slave: {}", messageType, slaveNodeId);
@@ -301,6 +297,30 @@ public class TcpReplicationServer {
                 }
             } catch (Exception e) {
                 log.error("处理消息类型 {} 时发生错误 - slave: {}", messageType, slaveNodeId, e);
+                return false;
+            }
+        }
+        
+        /**
+         * 处理新的确认消息（新协议）
+         */
+        private boolean handleNewConfirmation(io.netty.buffer.ByteBuf buffer) {
+            try {
+                // 转换为grpc ByteBuf
+                io.grpc.netty.shaded.io.netty.buffer.ByteBuf grpcBuffer = 
+                    io.grpc.netty.shaded.io.netty.buffer.Unpooled.wrappedBuffer(buffer.nioBuffer());
+                
+                ReplicationProtocol.ConfirmationMessage confirmation = ReplicationProtocol.deserializeConfirmation(grpcBuffer);
+                log.debug("接收到新协议确认消息 - slave: {}, sequence: {}", confirmation.getSlaveNodeId(), confirmation.getSequence());
+                
+                // 直接通知ReplicationHandler
+                if (replicationHandler != null) {
+                    replicationHandler.handleSlaveConfirmation(confirmation.getSequence(), confirmation.getSlaveNodeId());
+                }
+                
+                return true;
+            } catch (Exception e) {
+                log.error("处理新协议确认消息失败 - slave: {}", slaveNodeId, e);
                 return false;
             }
         }
@@ -387,18 +407,18 @@ public class TcpReplicationServer {
             log.info("接收到确认消息 - slave: {}, batchId: {}, sequence: {}, timestamp: {}", 
                     slaveNodeId, batchId, sequence, timestamp);
             
-            // 处理确认（需要传递给BarrierHandler）
-            if (barrierHandler != null) {
-                log.debug("将确认消息传递给BarrierHandler - slave: {}, batchId: {}, sequence: {}", 
-                        slaveNodeId, batchId, sequence);
-                barrierHandler.handleSlaveConfirmation(batchId, slaveNodeId, sequence);
+            // 处理确认（需要传递给ReplicationHandler）
+            if (replicationHandler != null) {
+                log.debug("将确认消息传递给ReplicationHandler - slave: {}, sequence: {}", 
+                        slaveNodeId, sequence);
+                replicationHandler.handleSlaveConfirmation(sequence, slaveNodeId);
             } else {
-                log.warn("BarrierHandler为空，无法处理确认消息 - slave: {}", slaveNodeId);
+                log.warn("ReplicationHandler为空，无法处理确认消息 - slave: {}", slaveNodeId);
             }
             
             // 发送确认响应
             log.debug("开始发送确认响应 - slave: {}, batchId: {}", slaveNodeId, batchId);
-            io.netty.buffer.ByteBuf response = ctx.alloc().buffer(20);
+            io.netty.buffer.ByteBuf response = ctx.alloc().buffer(21);
             response.writeInt(MAGIC_NUMBER);
             response.writeInt(VERSION);
             response.writeInt(8); // Message Type: 8 = Confirmation Response
@@ -461,7 +481,35 @@ public class TcpReplicationServer {
     }
     
     /**
-     * 发送批次到指定的从节点
+     * 发送单个NexusWrapper到指定的从节点（新协议）
+     */
+    public void sendNexusWrapperToSlave(String slaveNodeId, com.cmex.bolt.core.NexusWrapper wrapper) {
+        SlaveConnection connection = slaveConnections.get(slaveNodeId);
+        if (connection != null && connection.getChannel().isActive()) {
+            try {
+                log.debug("发送NexusWrapper到slave - id: {}, slave: {}", wrapper.getId(), slaveNodeId);
+                
+                // 使用新的协议序列化NexusWrapper
+                io.grpc.netty.shaded.io.netty.buffer.ByteBuf grpcMessage = ReplicationProtocol.serializeNexusWrapper(wrapper);
+                
+                // 转换为netty ByteBuf
+                io.netty.buffer.ByteBuf message = io.netty.buffer.Unpooled.wrappedBuffer(grpcMessage.nioBuffer());
+                connection.getChannel().writeAndFlush(message);
+                
+                // 释放grpc ByteBuf
+                grpcMessage.release();
+                
+                log.debug("成功发送NexusWrapper到slave - id: {}, slave: {}", wrapper.getId(), slaveNodeId);
+            } catch (Exception e) {
+                log.error("发送NexusWrapper到slave失败 - id: {}, slave: {}", wrapper.getId(), slaveNodeId, e);
+            }
+        } else {
+            log.warn("无法发送NexusWrapper到slave - 连接不存在或未激活 - slave: {}", slaveNodeId);
+        }
+    }
+    
+    /**
+     * 发送批次到指定的从节点（保留旧协议用于兼容性）
      */
     public void sendBatchToSlave(String slaveNodeId, long batchId, java.util.List<com.cmex.bolt.core.NexusWrapper> events, long sequenceStart, long sequenceEnd) {
         SlaveConnection connection = slaveConnections.get(slaveNodeId);
@@ -486,7 +534,7 @@ public class TcpReplicationServer {
                 for (com.cmex.bolt.core.NexusWrapper wrapper : events) {
                     io.netty.buffer.ByteBuf wrapperBuf = connection.getChannel().alloc().buffer(16 + wrapper.getBuffer().readableBytes());
                     wrapperBuf.writeLong(wrapper.getId());
-                    wrapperBuf.writeInt(wrapper.getPartition());
+                    wrapperBuf.writeInt(wrapper.getCombinedPartitionAndEventType());
                     wrapperBuf.writeInt(wrapper.getBuffer().readableBytes());
                     
                     // 复制ByteBuf数据

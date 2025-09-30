@@ -1,7 +1,7 @@
 package com.cmex.bolt;
 
 import com.cmex.bolt.core.BoltConfig;
-import com.cmex.bolt.handler.TcpSlaveClient;
+import com.cmex.bolt.handler.TcpReplicationClient;
 import com.lmax.disruptor.RingBuffer;
 import com.cmex.bolt.core.NexusWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -14,7 +14,7 @@ import java.io.IOException;
 @Slf4j
 public class BoltSlave extends BoltBase {
 
-    private TcpSlaveClient slaveClient;
+    private TcpReplicationClient slaveClient;
 
     public BoltSlave(BoltConfig config) {
         super(config);
@@ -38,7 +38,7 @@ public class BoltSlave extends BoltBase {
 
         // 创建从节点客户端
         String slaveNodeId = generateSlaveNodeId();
-        this.slaveClient = new TcpSlaveClient(
+        this.slaveClient = new TcpReplicationClient(
                 config.masterHost(),
                 config.masterPort(),
                 slaveNodeId,
@@ -50,8 +50,8 @@ public class BoltSlave extends BoltBase {
             log.info("Slave client connected successfully to master at {}:{}",
                     config.masterHost(), config.masterPort());
             
-            // 设置TcpSlaveClient引用到EnvoyServer
-            envoyServer.setTcpSlaveClient(slaveClient);
+            // 设置TcpReplicationClient引用到EnvoyServer
+            envoyServer.setTcpReplicationClient(slaveClient);
         } catch (Exception e) {
             log.error("Failed to connect slave client to master at {}:{}: {}",
                     config.masterHost(), config.masterPort(), e.getMessage(), e);
@@ -87,7 +87,7 @@ public class BoltSlave extends BoltBase {
     /**
      * 获取从节点客户端
      */
-    public TcpSlaveClient getSlaveClient() {
+    public TcpReplicationClient getSlaveClient() {
         return slaveClient;
     }
 
@@ -102,7 +102,7 @@ public class BoltSlave extends BoltBase {
      * 获取从节点ID
      */
     public String getSlaveNodeId() {
-        return slaveClient != null ? slaveClient.getSlaveNodeId() : null;
+        return slaveClient != null ? slaveClient.getNodeId() : null;
     }
 
     /**

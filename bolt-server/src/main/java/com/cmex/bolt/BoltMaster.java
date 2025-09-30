@@ -33,7 +33,6 @@ public class BoltMaster extends BoltBase {
             this.replicationServer = new TcpReplicationServer(
                 config.replicationPort(), 
                 config, 
-                envoyServer.getBarrierHandler(),
                 envoyServer.getReplicationHandler()
             );
             replicationServer.start();

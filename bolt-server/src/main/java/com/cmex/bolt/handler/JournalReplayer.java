@@ -125,7 +125,7 @@ public class JournalReplayer {
 
                 // 验证总长度合理性 - 使用配置的最大消息大小
                 int maxMessageSize = getMaxMessageSize();
-                if (totalLength <= 20 || totalLength > maxMessageSize + 20) { // 20 = 8(timestamp) + 8(ID) + 4(partition)
+                if (totalLength <= 20 || totalLength > maxMessageSize + 20) { // 20 = 8(timestamp) + 8(ID) + 4(combinedPartitionAndEventType)
                     log.warn("Invalid total length: {} (max allowed: {}), stopping replay",
                             totalLength, maxMessageSize + 20);
                     break;
@@ -151,18 +151,18 @@ public class JournalReplayer {
                 idBuffer.flip();
                 long id = idBuffer.getLong();
 
-                // 读取partition（4字节）
-                ByteBuffer partitionBuffer = ByteBuffer.allocate(4);
-                bytesRead = journalChannel.read(partitionBuffer);
+                // 读取合并的partition和eventType（4字节）
+                ByteBuffer combinedBuffer = ByteBuffer.allocate(4);
+                bytesRead = journalChannel.read(combinedBuffer);
                 if (bytesRead != 4) {
-                    log.warn("Incomplete partition data at position {}, stopping replay", journalChannel.position());
+                    log.warn("Incomplete combinedPartitionAndEventType data at position {}, stopping replay", journalChannel.position());
                     break;
                 }
-                partitionBuffer.flip();
-                int partition = partitionBuffer.getInt();
+                combinedBuffer.flip();
+                int combinedPartitionAndEventType = combinedBuffer.getInt();
 
                 // 计算消息内容长度
-                int messageLength = totalLength - 20; // 总长度 - 时间戳(8) - ID(8) - partition(4)
+                int messageLength = totalLength - 20; // 总长度 - 时间戳(8) - ID(8) - combinedPartitionAndEventType(4)
 
                 // 读取消息内容
                 ByteBuffer messageBuffer = ByteBuffer.allocate(messageLength);
@@ -172,9 +172,9 @@ public class JournalReplayer {
                     break;
                 }
 
-                // 发布事件到 RingBuffer，包含ID和partition信息
+                // 发布事件到 RingBuffer，包含ID、partition和eventType信息
                 messageBuffer.flip();
-                publishEventToRingBuffer(messageBuffer, partition);
+                publishEventToRingBuffer(messageBuffer, combinedPartitionAndEventType);
                 totalEvents++;
 
                 // 批量处理日志记录
@@ -289,9 +289,9 @@ public class JournalReplayer {
                     buffer.clear();
                     buffer.writeBytes(capnProtoBuffer);
 
-                    // 设置wrapper的元数据
-                    wrapper.setId(-1);
+                    wrapper.setId(rootNode.get("id").asLong());
                     wrapper.setPartition(rootNode.get("partition").asInt());
+                    wrapper.setEventType(NexusWrapper.EventType.JOURNAL_REPLAY);
                 });
 
                 return capnProtoBuffer; // 返回用于统计，但不会重复处理
@@ -455,17 +455,16 @@ public class JournalReplayer {
 
 
     /**
-     * 将事件发布到目标 RingBuffer，包含ID和partition信息
+     * 将事件发布到目标 RingBuffer，包含ID、partition和eventType信息
      */
-    private void publishEventToRingBuffer(ByteBuffer messageBuffer, int partition) {
+    private void publishEventToRingBuffer(ByteBuffer messageBuffer, int combined) {
         targetRingBuffer.publishEvent((wrapper, sequence) -> {
             // 将 ByteBuffer 内容复制到 NexusWrapper 的 ByteBuf
             ByteBuf buffer = wrapper.getBuffer();
             buffer.clear();
             buffer.writeBytes(messageBuffer);
-
-            wrapper.setId(-1);
-            wrapper.setPartition(partition);
+            wrapper.setPartitionByCombined(combined);
+            wrapper.setEventType(NexusWrapper.EventType.JOURNAL_REPLAY);
         });
     }
 
