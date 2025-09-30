@@ -1,6 +1,6 @@
 package com.cmex.bolt.performance;
 
-import com.cmex.bolt.Bolt;
+import com.cmex.bolt.BoltMaster;
 import com.cmex.bolt.Envoy;
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.EnvoyServer;
@@ -21,13 +21,13 @@ import java.util.concurrent.atomic.AtomicLong;
 public class TestCorePerformance {
 
     private static EnvoyServer service;
-    private static Bolt bolt;
+    private static BoltMaster bolt;
 
     @BeforeAll
     static void setUp() {
-        bolt = new Bolt(new BoltConfig(9090, true, 10,
+        bolt = new BoltMaster(new BoltConfig(9090, true, 10,
                 1024 * 1024 * 8, 1024 * 1024 * 4, 1024 * 1024 * 4, true, 9091, "journal", false,
-                false, "localhost", 9090, 9092, false, 100, 5000, true, "./bolt-home"));
+                false, "localhost", 9090, 9092, 100, 5000, true, "./bolt-home"));
         service = bolt.getEnvoyServer();
     }
 

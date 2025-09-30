@@ -29,7 +29,7 @@
     </root>
 
     <!-- 项目特定包的日志级别设置 -->
-    <logger name="com.cmex.bolt" level="INFO" additivity="false">
+    <logger name="com.cmex.bolt" level="DEBUG" additivity="false">
         <appender-ref ref="CONSOLE" />
         <appender-ref ref="FILE" />
     </logger>
