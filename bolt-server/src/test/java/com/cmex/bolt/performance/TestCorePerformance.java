@@ -1,7 +1,7 @@
 package com.cmex.bolt.performance;
 
-import com.cmex.bolt.BoltMaster;
 import com.cmex.bolt.Envoy;
+import com.cmex.bolt.BoltMaster;
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.EnvoyServer;
 import com.cmex.bolt.util.EnvoyUtil;

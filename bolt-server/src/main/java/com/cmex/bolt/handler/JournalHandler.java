@@ -75,11 +75,21 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
                 return;
             }
 
+            // 添加调试信息
+            log.debug("JournalHandler processing - sequence: {}, id: {}, readableBytes: {}, readerIndex: {}, writerIndex: {}", 
+                    sequence, wrapper.getId(), wrapper.getBuffer().readableBytes(), 
+                    wrapper.getBuffer().readerIndex(), wrapper.getBuffer().writerIndex());
+
             if (config.isBinary()) {
                 writeBinaryMode(wrapper, wrapper.getBuffer());
             } else {
                 writeJsonMode(wrapper, wrapper.getBuffer());
             }
+            
+            // 处理后的buffer状态
+            log.debug("JournalHandler after processing - sequence: {}, readableBytes: {}, readerIndex: {}, writerIndex: {}", 
+                    sequence, wrapper.getBuffer().readableBytes(), 
+                    wrapper.getBuffer().readerIndex(), wrapper.getBuffer().writerIndex());
 
             // 强制刷新到磁盘（可选，根据性能需求调整）
             if (endOfBatch) {
@@ -99,6 +109,9 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
      * 优化的二进制模式写入
      */
     private void writeBinaryMode(NexusWrapper wrapper, io.grpc.netty.shaded.io.netty.buffer.ByteBuf buffer) throws IOException {
+        // 保存原始buffer状态
+        int originalReaderIndex = buffer.readerIndex();
+        int originalWriterIndex = buffer.writerIndex();
         int messageLength = buffer.readableBytes();
         
         // 计算总长度：消息长度 + 时间戳(8字节) + ID(8字节) + combinedPartitionAndEventType(4字节)
@@ -118,9 +131,14 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
         headerBuffer.flip();
         journalChannel.write(headerBuffer);
 
-        // 直接写入消息内容，避免额外的字节数组复制
-        ByteBuffer messageBuffer = buffer.nioBuffer(buffer.readerIndex(), messageLength);
+        // 创建buffer副本用于写入，避免影响原始buffer
+        io.grpc.netty.shaded.io.netty.buffer.ByteBuf bufferCopy = buffer.duplicate();
+        ByteBuffer messageBuffer = bufferCopy.nioBuffer(bufferCopy.readerIndex(), messageLength);
         journalChannel.write(messageBuffer);
+        
+        // 确保原始buffer状态不变
+        buffer.readerIndex(originalReaderIndex);
+        buffer.writerIndex(originalWriterIndex);
     }
 
     /**
@@ -139,14 +157,19 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
     private String convertToJson(NexusWrapper wrapper, io.grpc.netty.shaded.io.netty.buffer.ByteBuf buffer) {
         // 保存原始readerIndex，避免影响其他处理器
         int originalReaderIndex = buffer.readerIndex();
+        int originalWriterIndex = buffer.writerIndex();
 
         try {
+            // 创建buffer的副本用于反序列化，避免影响原始buffer
+            io.grpc.netty.shaded.io.netty.buffer.ByteBuf bufferCopy = buffer.duplicate();
+            
             // 反序列化Cap'n Proto数据
             com.cmex.bolt.domain.Transfer transfer = new com.cmex.bolt.domain.Transfer();
-            com.cmex.bolt.Nexus.NexusEvent.Reader nexusEvent = transfer.from(buffer);
+            com.cmex.bolt.Nexus.NexusEvent.Reader nexusEvent = transfer.from(bufferCopy);
 
-            // 重置readerIndex，确保其他处理器能正常读取
+            // 确保原始buffer状态不变
             buffer.readerIndex(originalReaderIndex);
+            buffer.writerIndex(originalWriterIndex);
 
             // 使用StringBuilder预分配容量，减少内存重新分配
             StringBuilder json = new StringBuilder(512);
@@ -162,11 +185,12 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
 
             return json.toString();
         } catch (Exception e) {
-            // 确保即使出现异常也重置readerIndex
+            // 确保即使出现异常也恢复原始buffer状态
             try {
                 buffer.readerIndex(originalReaderIndex);
+                buffer.writerIndex(originalWriterIndex);
             } catch (Exception resetException) {
-                log.warn("Failed to reset readerIndex after exception", resetException);
+                log.warn("Failed to reset buffer state after exception", resetException);
             }
 
             log.error("Failed to convert to JSON", e);

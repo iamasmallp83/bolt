@@ -1,0 +1,93 @@
+syntax = "proto3";
+option java_package = "com.cmex.bolt.replication";
+option java_outer_classname = "ReplicationProto";
+
+// 消息类型枚举
+enum MessageType {
+  REGISTER = 0;      // 注册消息
+  HEARTBEAT = 1;     // 心跳消息
+  BUSINESS = 2;      // 业务消息
+  CONFIRMATION = 3;  // 确认消息
+}
+
+// 节点类型枚举
+enum NodeType {
+  MASTER = 0;        // 主节点
+  SLAVE = 1;         // 从节点
+}
+
+// 协议头部
+message ProtocolHeader {
+  int32 magic_number = 1;     // Magic Number: 0x424F4C54 ("BOLT")
+  int32 version = 2;          // 协议版本
+  MessageType message_type = 3; // 消息类型
+  int64 sequence = 4;         // 序列号
+  int32 data_length = 5;      // 数据长度
+  int64 timestamp = 6;        // 时间戳
+}
+
+// 注册消息
+message RegisterMessage {
+  NodeType node_type = 1;     // 节点类型
+  string node_id = 2;         // 节点ID
+  string host = 3;            // 主机地址
+  int32 port = 4;            // 端口号
+  int32 replication_port = 5; // 复制端口
+  map<string, string> metadata = 6; // 元数据
+}
+
+// 注册响应
+message RegisterResponse {
+  bool success = 1;           // 是否成功
+  string message = 2;        // 响应消息
+  string assigned_node_id = 3; // 分配的节点ID
+  int64 server_time = 4;     // 服务器时间
+}
+
+// 心跳消息
+message HeartbeatMessage {
+  string node_id = 1;        // 节点ID
+  int64 timestamp = 2;      // 心跳时间戳
+  int32 sequence = 3;       // 心跳序列号
+  map<string, string> status = 4; // 状态信息
+}
+
+// 心跳响应
+message HeartbeatResponse {
+  bool success = 1;          // 是否成功
+  int64 server_time = 2;     // 服务器时间
+  int32 next_heartbeat_interval = 3; // 下次心跳间隔(秒)
+}
+
+// 业务消息
+message BusinessMessage {
+  int64 sequence = 1;       // 序列号
+  int32 partition = 2;      // 分区
+  int32 event_type = 3;     // 事件类型
+  bytes data = 4;           // 业务数据
+  int64 timestamp = 5;      // 时间戳
+}
+
+// 确认消息
+message ConfirmationMessage {
+  int64 sequence = 1;       // 确认的序列号
+  string node_id = 2;       // 节点ID
+  int64 timestamp = 3;      // 确认时间戳
+  bool success = 4;         // 是否成功处理
+  string error_message = 5; // 错误消息(如果有)
+}
+
+// 主协议消息 - 包含所有类型的消息
+message ReplicationMessage {
+  ProtocolHeader header = 1;           // 协议头部
+  
+  // 消息内容 - 根据 header.message_type 确定使用哪个字段
+  oneof message {
+    RegisterMessage register = 2;      // 注册消息
+    RegisterResponse register_response = 3; // 注册响应
+    HeartbeatMessage heartbeat = 4;    // 心跳消息
+    HeartbeatResponse heartbeat_response = 5; // 心跳响应
+    BusinessMessage business = 6;      // 业务消息
+    ConfirmationMessage confirmation = 7; // 确认消息
+  }
+}
