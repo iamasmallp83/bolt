@@ -1,27 +1,22 @@
 package com.cmex.bolt.core;
 
 import com.cmex.bolt.Envoy;
-import com.cmex.bolt.Nexus;
-import com.cmex.bolt.domain.*;
-import com.cmex.bolt.domain.Balance;
-import com.cmex.bolt.dto.DepthDto;
 import com.cmex.bolt.Envoy.*;
 import com.cmex.bolt.EnvoyServerGrpc;
-import com.cmex.bolt.handler.SequencerDispatcher;
-import com.cmex.bolt.handler.MatchDispatcher;
-import com.cmex.bolt.handler.JournalHandler;
-import com.cmex.bolt.handler.JournalReplayer;
-import com.cmex.bolt.handler.ReplicationHandler;
-import com.cmex.bolt.handler.TcpReplicationClient;
+import com.cmex.bolt.Nexus;
+import com.cmex.bolt.domain.Balance;
+import com.cmex.bolt.domain.Symbol;
+import com.cmex.bolt.domain.Transfer;
+import com.cmex.bolt.dto.DepthDto;
+import com.cmex.bolt.handler.*;
 import com.cmex.bolt.replication.ReplicationState;
 import com.cmex.bolt.repository.impl.CurrencyRepository;
 import com.cmex.bolt.service.AccountService;
 import com.cmex.bolt.service.MatchService;
-import com.cmex.bolt.util.PerformanceExporter;
 import com.cmex.bolt.util.OrderIdGenerator;
+import com.cmex.bolt.util.PerformanceExporter;
 import com.cmex.bolt.util.SystemBusyResponseFactory;
 import com.cmex.bolt.util.SystemBusyResponses;
-
 import com.lmax.disruptor.*;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
@@ -43,6 +38,11 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
     @Getter
     private final RingBuffer<NexusWrapper> sequencerRingBuffer;
+    /**
+     * -- GETTER --
+     * 获取MatchingRingBuffer
+     */
+    @Getter
     private final RingBuffer<NexusWrapper> matchingRingBuffer;
     private final AtomicLong requestId = new AtomicLong();
     private final ConcurrentHashMap<Long, StreamObserver<?>> observers;
@@ -59,15 +59,20 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     //分组数量
     private final int group;
 
-    // TCP从节点客户端（仅在从节点模式下使用）
-    private TcpReplicationClient tcpReplicationClient;
-
     // 复制相关组件
+    @Getter
     private final ReplicationHandler replicationHandler;
+    @Getter
+    private final ConfirmHandler confirmHandler;
+    @Getter
+    private final AckHandler ackHandler;
+    @Getter
+    private final ReplicationState replicationState;
 
+    // 公共构造函数
     public EnvoyServer(BoltConfig boltConfig) {
-        log.info("EnvoyServer constructor called with config: isMaster={}, masterHost={}, masterPort={}",
-                boltConfig.isMaster(), boltConfig.masterHost(), boltConfig.masterPort());
+        transfer = new Transfer();
+        log.info("EnvoyServer constructor called with config: {}", boltConfig);
 
         this.group = boltConfig.group();
         observers = new ConcurrentHashMap<>();
@@ -94,16 +99,33 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         EventHandler<NexusWrapper> journalHandler = new JournalHandler(boltConfig);
 
         // 初始化复制相关组件
-        ReplicationState replicationState = new ReplicationState();
-        this.replicationHandler = new ReplicationHandler(boltConfig, replicationState);
+        this.replicationState = new ReplicationState();
 
+        // 根据节点类型初始化不同的处理器
+        if (boltConfig.isMaster()) {
+            // 主节点：JournalHandler -> ReplicationHandler -> ConfirmHandler -> SequencerDispatcher
+            this.replicationHandler = new ReplicationHandler(boltConfig, this.replicationState);
+            this.confirmHandler = new ConfirmHandler(boltConfig);
+            this.ackHandler = null; // 主节点不需要AckHandler
+
+            // 配置主节点的处理链
+            sequencerDisruptor.handleEventsWith(journalHandler)
+                    .then(replicationHandler)
+                    .then(confirmHandler)
+                    .then(sequencerDispatchers.toArray(new SequencerDispatcher[0]));
+        } else {
+            // 从节点：JournalHandler -> AckHandler -> SequencerDispatcher
+            this.replicationHandler = null; // 从节点不需要ReplicationHandler
+            this.confirmHandler = null; // 从节点不需要ConfirmHandler
+            this.ackHandler = new AckHandler(boltConfig); // 稍后设置TcpReplicationClient
+
+            // 配置从节点的处理链
+            sequencerDisruptor.handleEventsWith(journalHandler)
+                    .then(ackHandler)
+                    .then(sequencerDispatchers.toArray(new SequencerDispatcher[0]));
+        }
         matchingDisruptor.handleEventsWith(matchDispatchers.toArray(new MatchDispatcher[0]));
         responseDisruptor.handleEventsWith(new ResponseEventHandler());
-
-        // 配置 sequencerRingBuffer 的事件处理链：JournalHandler -> ReplicationHandler -> SequencerDispatcher
-        sequencerDisruptor.handleEventsWith(journalHandler)
-                .then(replicationHandler)
-                .then(sequencerDispatchers.toArray(new SequencerDispatcher[0]));
 
         sequencerRingBuffer = sequencerDisruptor.start();
         matchingRingBuffer = matchingDisruptor.start();
@@ -128,10 +150,6 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
             dispatcher.getAccountService().setResponseRingBuffer(responseRingBuffer);
             accountServices.add(dispatcher.getAccountService());
         }
-        transfer = new Transfer();
-
-        // TcpReplicationClient的创建和管理由BoltSlave负责
-        // 这里不再创建TcpReplicationClient，避免重复连接
     }
 
     private List<SequencerDispatcher> createSequencerDispatchers() {
@@ -154,14 +172,6 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
      * 关闭EnvoyServer，断开TCP客户端连接
      */
     public void shutdown() {
-        if (tcpReplicationClient != null) {
-            try {
-                tcpReplicationClient.disconnect();
-                log.info("TCP replication client disconnected");
-            } catch (Exception e) {
-                log.warn("Error disconnecting TCP replication client", e);
-            }
-        }
     }
 
     private AccountService getAccountService(int accountId) {
@@ -396,30 +406,14 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     }
 
     /**
-     * 获取复制处理器
-     */
-    public ReplicationHandler getReplicationHandler() {
-        return replicationHandler;
-    }
-
-
-    /**
      * 设置TcpReplicationClient引用（由BoltSlave调用）
      */
     public void setTcpReplicationClient(TcpReplicationClient tcpReplicationClient) {
-        this.tcpReplicationClient = tcpReplicationClient;
-        log.info("TcpReplicationClient reference set in EnvoyServer");
-        
-        // 如果使用的是EnhancedJournalHandler，设置TcpReplicationClient引用
-        // 注意：journalHandler是局部变量，这里无法直接访问
-        // EnhancedJournalHandler的TcpReplicationClient引用将在其内部设置
-    }
-
-    /**
-     * 获取matching ring buffer
-     */
-    public RingBuffer<NexusWrapper> getMatchingRingBuffer() {
-        return matchingRingBuffer;
+        // 设置到AckHandler
+        if (ackHandler != null) {
+            ackHandler.setTcpReplicationClient(tcpReplicationClient);
+            log.info("TcpReplicationClient reference set in EnvoyServer and AckHandler");
+        }
     }
 
 }
