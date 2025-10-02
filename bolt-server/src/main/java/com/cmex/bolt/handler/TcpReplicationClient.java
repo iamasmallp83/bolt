@@ -2,7 +2,6 @@ package com.cmex.bolt.handler;
 
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
-import com.cmex.bolt.domain.Transfer;
 import com.cmex.bolt.replication.ReplicationProto;
 import com.lmax.disruptor.RingBuffer;
 import io.netty.bootstrap.Bootstrap;
@@ -30,7 +29,7 @@ public class TcpReplicationClient {
     private final String masterHost;
     private final int masterPort;
     private final BoltConfig config;
-    private final String nodeId;
+    private final int nodeId;
     private final RingBuffer<NexusWrapper> sequencerRingBuffer;
     
     private EventLoopGroup workerGroup;
@@ -45,11 +44,11 @@ public class TcpReplicationClient {
     private static final int HEARTBEAT_INTERVAL_SECONDS = 30;
     
     public TcpReplicationClient(String masterHost, int masterPort, BoltConfig config, 
-                               String nodeId, RingBuffer<NexusWrapper> sequencerRingBuffer) {
+                               RingBuffer<NexusWrapper> sequencerRingBuffer) {
         this.masterHost = masterHost;
         this.masterPort = masterPort;
         this.config = config;
-        this.nodeId = nodeId;
+        this.nodeId = config.nodeId();
         this.sequencerRingBuffer = sequencerRingBuffer;
     }
     
@@ -233,7 +232,7 @@ public class TcpReplicationClient {
     /**
      * 获取节点ID
      */
-    public String getNodeId() {
+    public int getNodeId() {
         return nodeId;
     }
     
@@ -353,7 +352,7 @@ public class TcpReplicationClient {
                     // 设置wrapper属性
                     wrapper.setId(businessMessage.getSequence());
                     wrapper.setPartition(businessMessage.getPartition());
-                    wrapper.setEventType(NexusWrapper.EventType.SLAVE_REPLAY);
+                    wrapper.setEventType(NexusWrapper.EventType.fromValue(businessMessage.getEventType()));
                     byte[] data = businessMessage.getData().toByteArray();
                     wrapper.getBuffer().clear();
                     wrapper.getBuffer().writeBytes(data);

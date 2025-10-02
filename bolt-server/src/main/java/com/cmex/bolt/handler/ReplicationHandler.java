@@ -22,9 +22,6 @@ import java.util.concurrent.atomic.AtomicLong;
 @Slf4j
 public class ReplicationHandler implements EventHandler<NexusWrapper>, LifecycleAware {
 
-    @Getter
-    private final Sequence sequence = new Sequence();
-
     private final BoltConfig config;
     private final ReplicationState replicationState;
 
@@ -58,8 +55,7 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
     @Override
     public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) throws Exception {
         // 早期返回检查 - 只处理业务事件
-        if (!wrapper.isBusinessEvent() || !wrapper.isValid()) {
-            this.sequence.set(sequence);
+        if (wrapper.shouldSkipProcessing()) {
             return;
         }
 
@@ -72,7 +68,6 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
             log.warn("NexusWrapper buffer has no readable bytes - sequence: {}, id: {}",
                     sequence, wrapper.getId());
             // 跳过复制，但继续处理链
-            this.sequence.set(sequence);
             return;
         }
 
@@ -81,9 +76,6 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
         // 发送复制请求到从节点
         sendReplicationRequest(wrapper, sequence);
         
-        // 重要：立即设置sequence继续处理链，不等待确认
-        // ConfirmHandler会在后台等待从节点确认，但不阻塞处理链
-        this.sequence.set(sequence);
     }
 
     /**
@@ -101,15 +93,18 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
 
         // 并行发送到所有从节点
         List<CompletableFuture<Void>> sendTasks = healthySlaves.stream()
-                .map(slaveNodeId -> CompletableFuture.runAsync(() -> {
+                .map(slaveNodeIdStr -> CompletableFuture.runAsync(() -> {
                     try {
+                        // 将String转换为int nodeId
+                        int nodeId = Integer.parseInt(slaveNodeIdStr);
+                        
                         // 通过TcpReplicationServer发送复制请求
                         if (tcpReplicationServer != null) {
-                            tcpReplicationServer.sendReplicationRequest(slaveNodeId, wrapper, sequence);
+                            tcpReplicationServer.sendReplicationRequest(nodeId, wrapper, sequence);
                         }
                     } catch (Exception e) {
-                        log.error("发送复制请求失败 - slave: {}, sequence: {}", slaveNodeId, sequence, e);
-                        replicationState.setSlaveConnected(slaveNodeId, false);
+                        log.error("发送复制请求失败 - slave: {}, sequence: {}", slaveNodeIdStr, sequence, e);
+                        replicationState.setSlaveConnected(Integer.parseInt(slaveNodeIdStr), false);
                     }
                 }, replicationExecutor))
                 .toList();

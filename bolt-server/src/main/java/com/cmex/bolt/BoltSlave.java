@@ -30,7 +30,6 @@ public class BoltSlave extends BoltBase {
             config.masterHost(),
             config.masterPort(),
             config,
-            "slave-" + config.replicationPort(),
             envoyServer.getSequencerRingBuffer()
         );
         

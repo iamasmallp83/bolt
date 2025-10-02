@@ -291,7 +291,7 @@ public class JournalReplayer {
 
                     wrapper.setId(rootNode.get("id").asLong());
                     wrapper.setPartition(rootNode.get("partition").asInt());
-                    wrapper.setEventType(NexusWrapper.EventType.JOURNAL_REPLAY);
+                    wrapper.setEventType(NexusWrapper.EventType.JOURNAL);
                 });
 
                 return capnProtoBuffer; // 返回用于统计，但不会重复处理
@@ -429,7 +429,6 @@ public class JournalReplayer {
                     }
                     default -> {
                         log.warn("Unsupported payload type for replay: {}", payloadType);
-                        buffer.release();
                         return null;
                     }
                 }
@@ -439,11 +438,11 @@ public class JournalReplayer {
                 buffer.getBytes(buffer.readerIndex(), result);
                 result.flip();
 
-                buffer.release(); // 释放ByteBuf
+                // 注意：不要释放buffer，它是NexusWrapper中的池化ByteBuf
                 return result;
 
             } catch (Exception e) {
-                buffer.release(); // 确保释放ByteBuf
+                // 注意：不要释放buffer，它是NexusWrapper中的池化ByteBuf
                 throw e;
             }
 
@@ -464,7 +463,7 @@ public class JournalReplayer {
             buffer.clear();
             buffer.writeBytes(messageBuffer);
             wrapper.setPartitionByCombined(combined);
-            wrapper.setEventType(NexusWrapper.EventType.JOURNAL_REPLAY);
+            wrapper.setEventType(NexusWrapper.EventType.JOURNAL);
         });
     }
 

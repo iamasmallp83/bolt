@@ -36,6 +36,8 @@ import java.util.stream.Collectors;
 @Slf4j
 public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
+    private final BoltConfig config;
+
     @Getter
     private final RingBuffer<NexusWrapper> sequencerRingBuffer;
     /**
@@ -56,72 +58,59 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
     private final Transfer transfer;
 
-    //分组数量
-    private final int group;
-
     // 复制相关组件
     @Getter
     private final ReplicationHandler replicationHandler;
     @Getter
-    private final ConfirmHandler confirmHandler;
-    @Getter
-    private final AckHandler ackHandler;
-    @Getter
     private final ReplicationState replicationState;
 
     // 公共构造函数
-    public EnvoyServer(BoltConfig boltConfig) {
+    public EnvoyServer(BoltConfig config) {
+        this.config = config;
         transfer = new Transfer();
-        log.info("EnvoyServer constructor called with config: {}", boltConfig);
+        log.info("EnvoyServer constructor called with config: {}", config);
 
-        this.group = boltConfig.group();
         observers = new ConcurrentHashMap<>();
         WaitStrategy waitStrategy;
-        if (boltConfig.isProd()) {
+        if (config.isProd()) {
             waitStrategy = new BusySpinWaitStrategy();
         } else {
             waitStrategy = new BlockingWaitStrategy();
         }
         Disruptor<NexusWrapper> sequencerDisruptor =
-                new Disruptor<>(new NexusWrapper.Factory(256), boltConfig.sequencerSize(), DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(new NexusWrapper.Factory(256), config.sequencerSize(), DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, waitStrategy);
         Disruptor<NexusWrapper> matchingDisruptor =
-                new Disruptor<>(new NexusWrapper.Factory(256), boltConfig.matchingSize(), DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(new NexusWrapper.Factory(256), config.matchingSize(), DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, waitStrategy);
         Disruptor<NexusWrapper> responseDisruptor =
-                new Disruptor<>(new NexusWrapper.Factory(256), boltConfig.responseSize(), DaemonThreadFactory.INSTANCE,
+                new Disruptor<>(new NexusWrapper.Factory(256), config.responseSize(), DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, waitStrategy);// Response通常是单生产者
 
         List<SequencerDispatcher> sequencerDispatchers = createSequencerDispatchers();
         List<MatchDispatcher> matchDispatchers = createMatchingDispatchers();
 
         // 根据节点类型选择JournalHandler
-        EventHandler<NexusWrapper> journalHandler = new JournalHandler(boltConfig);
+        EventHandler<NexusWrapper> journalHandler = new JournalHandler(config);
 
         // 初始化复制相关组件
         this.replicationState = new ReplicationState();
 
         // 根据节点类型初始化不同的处理器
-        if (boltConfig.isMaster()) {
-            // 主节点：JournalHandler -> ReplicationHandler -> ConfirmHandler -> SequencerDispatcher
-            this.replicationHandler = new ReplicationHandler(boltConfig, this.replicationState);
-            this.confirmHandler = new ConfirmHandler(boltConfig);
-            this.ackHandler = null; // 主节点不需要AckHandler
+        if (config.isMaster()) {
+            // 主节点：JournalHandler -> ReplicationHandler -> SequencerDispatcher
+            this.replicationHandler = new ReplicationHandler(config, this.replicationState);
 
             // 配置主节点的处理链
             sequencerDisruptor.handleEventsWith(journalHandler)
                     .then(replicationHandler)
-                    .then(confirmHandler)
                     .then(sequencerDispatchers.toArray(new SequencerDispatcher[0]));
         } else {
-            // 从节点：JournalHandler -> AckHandler -> SequencerDispatcher
+            // 从节点：JournalHandler -> SequencerDispatcher
             this.replicationHandler = null; // 从节点不需要ReplicationHandler
-            this.confirmHandler = null; // 从节点不需要ConfirmHandler
-            this.ackHandler = new AckHandler(boltConfig); // 稍后设置TcpReplicationClient
 
             // 配置从节点的处理链
             sequencerDisruptor.handleEventsWith(journalHandler)
-                    .then(ackHandler)
                     .then(sequencerDispatchers.toArray(new SequencerDispatcher[0]));
         }
         matchingDisruptor.handleEventsWith(matchDispatchers.toArray(new MatchDispatcher[0]));
@@ -135,16 +124,16 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         performanceExporter = new PerformanceExporter(sequencerRingBuffer);
 
         // 如果存在 journal 文件，则进行重放
-        JournalReplayer replayer = new JournalReplayer(sequencerRingBuffer, boltConfig);
+        JournalReplayer replayer = new JournalReplayer(sequencerRingBuffer, config);
         replayer.replayFromJournal();
 
-        matchServices = new ArrayList<>(group);
+        matchServices = new ArrayList<>(config.group());
         for (MatchDispatcher dispatcher : matchDispatchers) {
             dispatcher.getMatchService().setSequencerRingBuffer(sequencerRingBuffer);
             dispatcher.getMatchService().setResponseRingBuffer(responseRingBuffer);
             matchServices.add(dispatcher.getMatchService());
         }
-        accountServices = new ArrayList<>(group);
+        accountServices = new ArrayList<>(config.group());
         for (SequencerDispatcher dispatcher : sequencerDispatchers) {
             dispatcher.getAccountService().setMatchingRingBuffer(matchingRingBuffer);
             dispatcher.getAccountService().setResponseRingBuffer(responseRingBuffer);
@@ -154,16 +143,16 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
     private List<SequencerDispatcher> createSequencerDispatchers() {
         List<SequencerDispatcher> dispatchers = new ArrayList<>();
-        for (int i = 0; i < group; i++) {
-            dispatchers.add(new SequencerDispatcher(group, i));
+        for (int i = 0; i < config.group(); i++) {
+            dispatchers.add(new SequencerDispatcher(config.group(), i));
         }
         return dispatchers;
     }
 
     private List<MatchDispatcher> createMatchingDispatchers() {
         List<MatchDispatcher> dispatchers = new ArrayList<>();
-        for (int i = 0; i < group; i++) {
-            dispatchers.add(new MatchDispatcher(group, i));
+        for (int i = 0; i < config.group(); i++) {
+            dispatchers.add(new MatchDispatcher(config.group(), i));
         }
         return dispatchers;
     }
@@ -179,7 +168,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     }
 
     private int getPartition(int accountId) {
-        return accountId % group;
+        return accountId % config.group();
     }
 
     /**
@@ -347,7 +336,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
             observers.put(id, responseObserver);
             matchingRingBuffer.publishEvent((wrapper, sequence) -> {
                 wrapper.setId(id);
-                wrapper.setPartition(OrderIdGenerator.getSymbolId(request.getOrderId()) % group);
+                wrapper.setPartition(OrderIdGenerator.getSymbolId(request.getOrderId()) % config.group());
                 transfer.writeCancelOrderRequest(request, wrapper.getBuffer());
             });
             timer.recordSuccess();
@@ -361,7 +350,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     public void getDepth(Envoy.GetDepthRequest request, StreamObserver<Envoy.GetDepthResponse> responseObserver) {
         try (PerformanceExporter.GrpcTimer timer = performanceExporter.createGrpcTimer("getDepth")) {
             int symbolId = request.getSymbolId();
-            MatchService matchService = matchServices.get(symbolId % group);
+            MatchService matchService = matchServices.get(symbolId % config.group());
             DepthDto dto = matchService.getDepth(symbolId);
             GetDepthResponse response = GetDepthResponse.newBuilder()
                     .setCode(1)
@@ -381,7 +370,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         @SuppressWarnings("unchecked")
         @Override
         public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) {
-            if (wrapper.isBusinessEvent()) {
+            if (config.isMaster() && wrapper.isBusinessEvent()) {
                 StreamObserver<Object> observer = (StreamObserver<Object>) observers.get(wrapper.getId());
                 Object object = transfer.to(CurrencyRepository.getInstance(), wrapper.getBuffer());
                 observer.onNext(object);
@@ -402,18 +391,15 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     }
 
     private Optional<Symbol> getSymbol(int symbolId) {
-        return matchServices.get(symbolId % group).getSymbol(symbolId);
+        return matchServices.get(symbolId % config.group()).getSymbol(symbolId);
     }
 
     /**
      * 设置TcpReplicationClient引用（由BoltSlave调用）
      */
     public void setTcpReplicationClient(TcpReplicationClient tcpReplicationClient) {
-        // 设置到AckHandler
-        if (ackHandler != null) {
-            ackHandler.setTcpReplicationClient(tcpReplicationClient);
-            log.info("TcpReplicationClient reference set in EnvoyServer and AckHandler");
-        }
+        // 从节点架构调整后不再需要AckHandler
+        log.info("TcpReplicationClient reference set in EnvoyServer");
     }
 
 }

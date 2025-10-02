@@ -26,17 +26,14 @@ public class BoltMaster extends BoltBase {
         
         // 创建TcpReplicationServer
         this.replicationServer = new TcpReplicationServer(config.replicationPort(), 
-            envoyServer.getReplicationState(), envoyServer.getConfirmHandler());
+            envoyServer.getReplicationState());
         
         // 设置TcpReplicationServer引用到ReplicationHandler
         if (envoyServer.getReplicationHandler() != null) {
             envoyServer.getReplicationHandler().setTcpReplicationServer(replicationServer);
         }
         
-        // 设置TcpReplicationServer引用到ConfirmHandler
-        if (envoyServer.getConfirmHandler() != null) {
-            envoyServer.getConfirmHandler().setTcpReplicationServer(replicationServer);
-        }
+        // ConfirmHandler已移除，不再需要设置引用
         
         log.info("BoltMaster initialized with EnvoyServer and TcpReplicationServer");
     }

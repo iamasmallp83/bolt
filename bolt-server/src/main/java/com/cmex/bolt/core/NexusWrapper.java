@@ -47,9 +47,8 @@ public class NexusWrapper {
      */
     public enum EventType {
         BUSINESS(0),        // 业务产生的事件
-        JOURNAL_REPLAY(1), // 日志回放的事件
-        SLAVE_REPLAY(2),   // 从节点回放的事件
-        INTERNAL(3);       // 内部产生的事件（如撮合产生的Clear事件）
+        JOURNAL(1), // 日志回放的事件
+        INTERNAL(2);       // 内部产生的事件（如撮合产生的Clear事件）
 
         private final int value;
 
@@ -82,8 +81,7 @@ public class NexusWrapper {
      * @return true 如果应该跳过处理，false 如果需要处理
      */
     public boolean shouldSkipProcessing() {
-        return eventType == EventType.JOURNAL_REPLAY ||
-                eventType == EventType.SLAVE_REPLAY;
+        return eventType == EventType.JOURNAL;
     }
 
     /**
@@ -100,8 +98,8 @@ public class NexusWrapper {
      *
      * @return true 如果是回放事件，false 如果不是
      */
-    public boolean isReplayEvent() {
-        return eventType == EventType.JOURNAL_REPLAY || eventType == EventType.SLAVE_REPLAY;
+    public boolean isJournalEvent() {
+        return eventType == EventType.JOURNAL;
     }
 
     /**
@@ -111,15 +109,6 @@ public class NexusWrapper {
      */
     public boolean isInternalEvent() {
         return eventType == EventType.INTERNAL;
-    }
-
-    /**
-     * 检查事件是否有效（有数据内容）
-     *
-     * @return true 如果事件有效，false 如果事件无效
-     */
-    public boolean isValid() {
-        return buffer != null && buffer.readableBytes() > 0;
     }
 
     /**

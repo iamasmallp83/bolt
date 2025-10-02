@@ -26,10 +26,10 @@ public class TcpReplicationServer {
 
     private final int port;
     private final ReplicationState replicationState;
-    private final ConfirmHandler confirmHandler; // 用于处理确认响应
     private final ExecutorService executorService;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final ConcurrentHashMap<String, SlaveConnection> slaveConnections = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Integer> connectionToNodeId = new ConcurrentHashMap<>();
 
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
@@ -39,10 +39,9 @@ public class TcpReplicationServer {
     private static final int MAGIC_NUMBER = 0x424F4C54; // "BOLT"
     private static final int VERSION = 1;
 
-    public TcpReplicationServer(int port, ReplicationState replicationState, ConfirmHandler confirmHandler) {
+    public TcpReplicationServer(int port, ReplicationState replicationState) {
         this.port = port;
         this.replicationState = replicationState;
-        this.confirmHandler = confirmHandler;
         this.executorService = Executors.newCachedThreadPool(r -> {
             Thread t = new Thread(r, "tcp-replication-server-" + r.hashCode());
             t.setDaemon(true);
@@ -132,7 +131,21 @@ public class TcpReplicationServer {
     /**
      * 发送复制请求到指定从节点
      */
-    public void sendReplicationRequest(String slaveNodeId, NexusWrapper wrapper, long sequence) {
+    public void sendReplicationRequest(int nodeId, NexusWrapper wrapper, long sequence) {
+        // 通过nodeId找到对应的连接地址
+        String slaveNodeId = null;
+        for (java.util.Map.Entry<String, Integer> entry : connectionToNodeId.entrySet()) {
+            if (entry.getValue().equals(nodeId)) {
+                slaveNodeId = entry.getKey();
+                break;
+            }
+        }
+        
+        if (slaveNodeId == null) {
+            log.warn("No connection found for nodeId: {}", nodeId);
+            return;
+        }
+        
         SlaveConnection connection = slaveConnections.get(slaveNodeId);
         if (connection == null) {
             log.warn("No connection found for slave: {}", slaveNodeId);
@@ -142,52 +155,13 @@ public class TcpReplicationServer {
         try {
             // 发送复制请求
             connection.sendReplicationRequest(wrapper, sequence);
-            log.debug("Sent replication request to slave {} - sequence: {}", slaveNodeId, sequence);
+            log.debug("Sent replication request to slave {} (nodeId: {}) - sequence: {}", slaveNodeId, nodeId, sequence);
         } catch (Exception e) {
-            log.error("Failed to send replication request to slave {} - sequence: {}", slaveNodeId, sequence, e);
-            replicationState.setSlaveConnected(slaveNodeId, false);
+            log.error("Failed to send replication request to slave {} (nodeId: {}) - sequence: {}", slaveNodeId, nodeId, sequence, e);
+            replicationState.setSlaveConnected(nodeId, false);
         }
     }
 
-    /**
-     * 处理从节点确认响应
-     */
-    public void handleSlaveConfirmation(long sequence, String slaveNodeId) {
-        log.debug("Received confirmation from slave {} - sequence: {}", slaveNodeId, sequence);
-
-        // 通知ConfirmHandler
-        if (confirmHandler != null) {
-            confirmHandler.handleSlaveConfirmation(sequence, slaveNodeId);
-        }
-    }
-    
-    /**
-     * 发送确认消息到主节点（从节点使用）
-     */
-    public static void sendConfirmation(Channel channel, long sequence, String nodeId, boolean success, String errorMessage) {
-        if (channel == null || !channel.isActive()) {
-            log.warn("Channel is not active for sending confirmation");
-            return;
-        }
-        
-        try {
-            // 使用新的 Protocol Buffers 协议编码确认消息
-            ByteBuf message = ReplicationProtocolUtils.encodeConfirmationMessage(sequence, nodeId, success, errorMessage);
-            
-            // 发送消息
-            channel.writeAndFlush(message).addListener(future -> {
-                if (future.isSuccess()) {
-                    log.debug("Successfully sent confirmation - sequence: {}, nodeId: {}", sequence, nodeId);
-                } else {
-                    log.error("Failed to send confirmation - sequence: {}, nodeId: {}", sequence, nodeId, future.cause());
-                }
-            });
-            
-        } catch (Exception e) {
-            log.error("Exception while sending confirmation - sequence: {}, nodeId: {}", sequence, nodeId, e);
-        }
-    }
-    
     /**
      * 处理注册消息
      */
@@ -195,14 +169,12 @@ public class TcpReplicationServer {
         log.info("Received register message from slave: {} - nodeId: {}, host: {}, port: {}", 
                 slaveNodeId, registerMessage.getNodeId(), registerMessage.getHost(), registerMessage.getPort());
         
+        // 建立连接地址和nodeId的映射
+        connectionToNodeId.put(slaveNodeId, registerMessage.getNodeId());
+        
         // 注册从节点到ReplicationState
         replicationState.registerSlave(registerMessage.getNodeId(), registerMessage.getHost(), registerMessage.getPort());
         replicationState.setSlaveConnected(registerMessage.getNodeId(), true);
-        
-        // 注册到ConfirmHandler
-        if (confirmHandler != null) {
-            confirmHandler.addSlave(registerMessage.getNodeId());
-        }
         
         // 发送注册响应
         sendRegisterResponse(slaveNodeId, registerMessage.getNodeId(), true, "Registration successful");
@@ -240,16 +212,13 @@ public class TcpReplicationServer {
         log.debug("Received confirmation from slave: {} - sequence: {}, success: {}", 
                 slaveNodeId, confirmationMessage.getSequence(), confirmationMessage.getSuccess());
         
-        // 通知ConfirmHandler
-        if (confirmHandler != null) {
-            confirmHandler.handleSlaveConfirmation(confirmationMessage.getSequence(), confirmationMessage.getNodeId());
-        }
+        // ConfirmHandler已移除，不再需要处理确认
     }
     
     /**
      * 发送注册响应
      */
-    private void sendRegisterResponse(String slaveNodeId, String assignedNodeId, boolean success, String message) {
+    private void sendRegisterResponse(String slaveNodeId, int assignedNodeId, boolean success, String message) {
         // 这里可以实现发送注册响应的逻辑
         log.info("Sending register response to slave: {} - success: {}, message: {}", slaveNodeId, success, message);
     }
@@ -276,32 +245,27 @@ public class TcpReplicationServer {
             log.info("Slave connected: {}", slaveNodeId);
             
             // 注册从节点到ReplicationState
-            // 从slaveNodeId中提取host和port信息
-            String[] parts = slaveNodeId.replace("/", "").split(":");
-            String host = parts[0];
-            int port = parts.length > 1 ? Integer.parseInt(parts[1]) : 0;
-            replicationState.registerSlave(slaveNodeId, host, port);
-            replicationState.setSlaveConnected(slaveNodeId, true);
+            // 注意：这里暂时不注册，等待收到注册消息后再注册
+            // 因为我们需要从注册消息中获取正确的nodeId
 
-            // 注册到ConfirmHandler
-            if (confirmHandler != null) {
-                confirmHandler.addSlave(slaveNodeId);
-            }
+            // ConfirmHandler已移除，不再需要注册
         }
 
         @Override
         public void channelInactive(ChannelHandlerContext ctx) {
             String slaveNodeId = ctx.channel().remoteAddress().toString();
             slaveConnections.remove(slaveNodeId);
+            
+            // 获取对应的nodeId并清理
+            Integer nodeId = connectionToNodeId.remove(slaveNodeId);
+            if (nodeId != null) {
+                replicationState.setSlaveConnected(nodeId, false);
+                replicationState.unregisterSlave(nodeId);
+            }
 
             log.info("Slave disconnected: {}", slaveNodeId);
-            replicationState.setSlaveConnected(slaveNodeId, false);
-            replicationState.unregisterSlave(slaveNodeId);
 
-            // 从ConfirmHandler中移除
-            if (confirmHandler != null) {
-                confirmHandler.removeSlave(slaveNodeId);
-            }
+            // ConfirmHandler已移除，不再需要移除
         }
 
         @Override

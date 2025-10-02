@@ -29,18 +29,16 @@ public class ReplicationProtocolUtils {
                     .setEventType(wrapper.getEventType().getValue())
                     .setTimestamp(System.currentTimeMillis());
             
-            // 添加业务数据
-            wrapper.getBuffer().resetReaderIndex();
             int readableBytes = wrapper.getBuffer().readableBytes();
-            log.debug("Encoding business message - sequence: {}, readableBytes: {}, readerIndex: {}, writerIndex: {}", 
-                    sequence, readableBytes, wrapper.getBuffer().readerIndex(), wrapper.getBuffer().writerIndex());
-            
+
             if (readableBytes == 0) {
                 log.warn("Warning: NexusWrapper buffer has no readable bytes - sequence: {}", sequence);
             }
-            
+
             byte[] data = new byte[readableBytes];
-            wrapper.getBuffer().getBytes(wrapper.getBuffer().readerIndex(), data);
+            wrapper.getBuffer().readBytes(data);
+            
+            // 恢复原始状态
             businessBuilder.setData(com.google.protobuf.ByteString.copyFrom(data));
             
             ReplicationProto.BusinessMessage businessMessage = businessBuilder.build();
@@ -80,7 +78,7 @@ public class ReplicationProtocolUtils {
     /**
      * 编码确认消息
      */
-    public static ByteBuf encodeConfirmationMessage(long sequence, String nodeId, boolean success, String errorMessage) {
+    public static ByteBuf encodeConfirmationMessage(long sequence, int nodeId, boolean success, String errorMessage) {
         try {
             // 创建确认消息
             ReplicationProto.ConfirmationMessage.Builder confirmationBuilder = ReplicationProto.ConfirmationMessage.newBuilder()
@@ -130,13 +128,13 @@ public class ReplicationProtocolUtils {
     /**
      * 编码注册消息
      */
-    public static ByteBuf encodeRegisterMessage(String nodeId, String host, int port, int replicationPort, 
+    public static ByteBuf encodeRegisterMessage(int nodeId, String host, int port, int replicationPort,  
                                               ReplicationProto.NodeType nodeType) {
         try {
             // 创建注册消息
             ReplicationProto.RegisterMessage registerMessage = ReplicationProto.RegisterMessage.newBuilder()
-                    .setNodeType(nodeType)
                     .setNodeId(nodeId)
+                    .setNodeType(nodeType)
                     .setHost(host)
                     .setPort(port)
                     .setReplicationPort(replicationPort)
@@ -177,7 +175,7 @@ public class ReplicationProtocolUtils {
     /**
      * 编码心跳消息
      */
-    public static ByteBuf encodeHeartbeatMessage(String nodeId, int sequence) {
+    public static ByteBuf encodeHeartbeatMessage(int nodeId, int sequence) {
         try {
             // 创建心跳消息
             ReplicationProto.HeartbeatMessage heartbeatMessage = ReplicationProto.HeartbeatMessage.newBuilder()

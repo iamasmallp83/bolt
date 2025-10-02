@@ -28,10 +28,10 @@ message ProtocolHeader {
 
 // 注册消息
 message RegisterMessage {
-  NodeType node_type = 1;     // 节点类型
-  string node_id = 2;         // 节点ID
-  string host = 3;            // 主机地址
-  int32 port = 4;            // 端口号
+  int32 node_id = 1;         // 节点ID
+  NodeType node_type = 2;    // 节点类型
+  string host = 3;           // 主机地址
+  int32 port = 4;            // 端口
   int32 replication_port = 5; // 复制端口
   map<string, string> metadata = 6; // 元数据
 }
@@ -40,13 +40,13 @@ message RegisterMessage {
 message RegisterResponse {
   bool success = 1;           // 是否成功
   string message = 2;        // 响应消息
-  string assigned_node_id = 3; // 分配的节点ID
+  int32 assigned_node_id = 3; // 分配的节点ID
   int64 server_time = 4;     // 服务器时间
 }
 
 // 心跳消息
 message HeartbeatMessage {
-  string node_id = 1;        // 节点ID
+  int32 node_id = 1;        // 节点ID
   int64 timestamp = 2;      // 心跳时间戳
   int32 sequence = 3;       // 心跳序列号
   map<string, string> status = 4; // 状态信息
@@ -70,8 +70,8 @@ message BusinessMessage {
 
 // 确认消息
 message ConfirmationMessage {
-  int64 sequence = 1;       // 确认的序列号
-  string node_id = 2;       // 节点ID
+  int32 node_id = 1;       // 节点ID
+  int64 sequence = 2;       // 确认的序列号
   int64 timestamp = 3;      // 确认时间戳
   bool success = 4;         // 是否成功处理
   string error_message = 5; // 错误消息(如果有)

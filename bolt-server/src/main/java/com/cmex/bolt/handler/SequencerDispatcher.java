@@ -30,6 +30,16 @@ public class SequencerDispatcher implements EventHandler<NexusWrapper>, Lifecycl
             return;
         }
         
+        // 检查buffer状态，如果被之前的处理器消费了，需要恢复
+        int readableBytes = wrapper.getBuffer().readableBytes();
+        if (readableBytes == 0) {
+            // Buffer已被消费，跳过处理
+            return;
+        }
+        
+        // 确保buffer的readerIndex在正确位置
+        wrapper.getBuffer().readerIndex(0);
+        
         Nexus.NexusEvent.Reader reader = transfer.from(wrapper.getBuffer());
         Nexus.Payload.Reader payload = reader.getPayload();
         switch (payload.which()) {
