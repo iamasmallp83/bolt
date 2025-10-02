@@ -189,15 +189,6 @@ public class Transfer {
     }
 
     public Nexus.NexusEvent.Reader from(ByteBuf buffer) {
-        if (buffer == null) {
-            throw new IllegalArgumentException("Buffer cannot be null");
-        }
-        
-        // 检查buffer是否有足够的数据
-        if (buffer.readableBytes() == 0) {
-            throw new RuntimeException("Buffer has no readable bytes");
-        }
-        
         ByteBufReadableChannel channel = new ByteBufReadableChannel(buffer);
         MessageReader messageReader;
         try {
@@ -206,7 +197,8 @@ public class Transfer {
             System.err.println("Debug: Cap'n Proto deserialization failed - " + e.getMessage());
             System.err.println("Debug: Buffer state - readable: " + buffer.readableBytes() + 
                              ", readerIndex: " + buffer.readerIndex() + 
-                             ", writerIndex: " + buffer.writerIndex());
+                             ", writerIndex: " + buffer.writerIndex() +
+                             ", refCnt: " + buffer.refCnt());
             throw new RuntimeException("Cap'n Proto deserialization failed: " + e.getMessage(), e);
         }
         return messageReader.getRoot(Nexus.NexusEvent.factory);

@@ -171,7 +171,7 @@ public class BinaryToJsonConverter {
             json.append(convertNexusEventToJson(nexusEvent));
             json.append("}");
 
-            buffer.release();
+            // 注意：不要释放buffer，它是NexusWrapper中的池化ByteBuf
             return json.toString();
 
         } catch (Exception e) {

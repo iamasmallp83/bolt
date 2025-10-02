@@ -60,7 +60,7 @@ public class ReplicationProtocolHandlerTest {
     @Test
     void testEncodeDecodeConfirmationMessage() {
         long sequence = 200L;
-        String nodeId = "slave-001";
+        int nodeId = 1;
         boolean success = true;
         String errorMessage = null;
         
@@ -93,7 +93,7 @@ public class ReplicationProtocolHandlerTest {
     
     @Test
     void testEncodeDecodeRegisterMessage() {
-        String nodeId = "slave-001";
+        int nodeId = 1;
         String host = "192.168.1.100";
         int port = 8080;
         int replicationPort = 9090;
@@ -129,7 +129,7 @@ public class ReplicationProtocolHandlerTest {
     
     @Test
     void testEncodeDecodeHeartbeatMessage() {
-        String nodeId = "slave-001";
+        int nodeId = 1;
         int sequence = 5;
         
         // 编码心跳消息

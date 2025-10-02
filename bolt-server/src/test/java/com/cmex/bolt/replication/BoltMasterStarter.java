@@ -8,6 +8,8 @@ import com.cmex.bolt.core.BoltConfig;
 public class BoltMasterStarter {
     public static void main(String[] args) throws IOException, InterruptedException {
         BoltConfig masterConfig = new BoltConfig(
+                1,     // nodeId
+                "/Users/stam/Source/Java/bolt/master", // boltHome
                 9090,  // port
                 false, // isProd
                 4,     // group
@@ -16,8 +18,6 @@ public class BoltMasterStarter {
                 512,   // responseSize
                 false, // enablePrometheus
                 9091,  // prometheusPort
-                "master-journal", // journalFilePath
-                false, // isBinary
                 true,  // isMaster
                 "localhost", // masterHost
                 9090,  // masterPort
@@ -25,7 +25,8 @@ public class BoltMasterStarter {
                 100,   // batchSize
                 5000,  // batchTimeoutMs
                 true,  // enableJournal
-                "/Users/stam/Source/Java/bolt/master" // boltHome
+                "master-journal", // journalFilePath
+                false  // isBinary
         );
         BoltMaster master = new BoltMaster(masterConfig);
         master.start();

@@ -20,9 +20,6 @@ import java.time.Instant;
 @Slf4j
 public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAware {
 
-    @Getter
-    private final Sequence sequence = new Sequence();
-
     private final FileChannel journalChannel;
     private final BoltConfig config;
     private final ByteBuffer lengthBuffer = ByteBuffer.allocate(4);
@@ -30,25 +27,25 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
 
     public JournalHandler(BoltConfig config) {
         this.config = config;
-        
+
         // 如果禁用日志，不创建 journal 文件
         if (!config.enableJournal()) {
             log.info("Journal disabled, skipping journal file initialization");
             this.journalChannel = null;
             return;
         }
-        
+
         try {
             // 根据isBinary标志添加相应的文件后缀
             Path journalPath = Path.of(config.journalFilePath());
-            
+
             // 确保父目录存在
             Path parentDir = journalPath.getParent();
             if (parentDir != null && !Files.exists(parentDir)) {
                 Files.createDirectories(parentDir);
                 log.info("Created journal directory: {}", parentDir);
             }
-            
+
             this.journalChannel = FileChannel.open(journalPath,
                     StandardOpenOption.CREATE,
                     StandardOpenOption.WRITE,
@@ -64,40 +61,20 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
     public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) throws Exception {
         try {
             // 如果禁用日志，跳过 journal 写入
-            if (!config.enableJournal()) {
-                this.sequence.set(sequence);
+            if (!config.enableJournal() || wrapper.isJournalEvent()) {
                 return;
             }
-            
-            // 早期返回检查 - 只记录业务事件
-            if (!wrapper.isBusinessEvent() || !wrapper.isValid()) {
-                this.sequence.set(sequence);
-                return;
-            }
-
-            // 添加调试信息
-            log.debug("JournalHandler processing - sequence: {}, id: {}, readableBytes: {}, readerIndex: {}, writerIndex: {}", 
-                    sequence, wrapper.getId(), wrapper.getBuffer().readableBytes(), 
-                    wrapper.getBuffer().readerIndex(), wrapper.getBuffer().writerIndex());
 
             if (config.isBinary()) {
-                writeBinaryMode(wrapper, wrapper.getBuffer());
+                writeBinaryMode(wrapper);
             } else {
-                writeJsonMode(wrapper, wrapper.getBuffer());
+                writeJsonMode(wrapper);
             }
-            
-            // 处理后的buffer状态
-            log.debug("JournalHandler after processing - sequence: {}, readableBytes: {}, readerIndex: {}, writerIndex: {}", 
-                    sequence, wrapper.getBuffer().readableBytes(), 
-                    wrapper.getBuffer().readerIndex(), wrapper.getBuffer().writerIndex());
 
             // 强制刷新到磁盘（可选，根据性能需求调整）
             if (endOfBatch) {
                 journalChannel.force(false);
             }
-
-            // 更新 sequence
-            this.sequence.set(sequence);
 
         } catch (IOException e) {
             log.error("Failed to write to journal", e);
@@ -108,14 +85,9 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
     /**
      * 优化的二进制模式写入
      */
-    private void writeBinaryMode(NexusWrapper wrapper, io.grpc.netty.shaded.io.netty.buffer.ByteBuf buffer) throws IOException {
-        // 保存原始buffer状态
-        int originalReaderIndex = buffer.readerIndex();
-        int originalWriterIndex = buffer.writerIndex();
-        int messageLength = buffer.readableBytes();
-        
+    private void writeBinaryMode(NexusWrapper wrapper) throws IOException {
         // 计算总长度：消息长度 + 时间戳(8字节) + ID(8字节) + combinedPartitionAndEventType(4字节)
-        int totalLength = messageLength + 20; // 8+8+4 = 20
+        int totalLength = 64 + 20; // 8+8+4 = 20
 
         // 写入总长度（4字节）
         lengthBuffer.clear();
@@ -130,54 +102,35 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
         headerBuffer.putInt(wrapper.getCombinedPartitionAndEventType());
         headerBuffer.flip();
         journalChannel.write(headerBuffer);
-
-        // 创建buffer副本用于写入，避免影响原始buffer
-        io.grpc.netty.shaded.io.netty.buffer.ByteBuf bufferCopy = buffer.duplicate();
-        ByteBuffer messageBuffer = bufferCopy.nioBuffer(bufferCopy.readerIndex(), messageLength);
-        journalChannel.write(messageBuffer);
-        
-        // 确保原始buffer状态不变
-        buffer.readerIndex(originalReaderIndex);
-        buffer.writerIndex(originalWriterIndex);
     }
 
     /**
      * 优化的JSON模式写入
      */
-    private void writeJsonMode(NexusWrapper wrapper, io.grpc.netty.shaded.io.netty.buffer.ByteBuf buffer) throws IOException {
-        String jsonData = convertToJson(wrapper, buffer);
+    private void writeJsonMode(NexusWrapper wrapper) throws IOException {
+        String jsonData = convertToJson(wrapper);
         ByteBuffer jsonBuffer = ByteBuffer.wrap(jsonData.getBytes(StandardCharsets.UTF_8));
         journalChannel.write(jsonBuffer);
+        wrapper.getBuffer().resetReaderIndex();
     }
 
     /**
      * 优化的Cap'n Proto数据转换为JSON格式
      * 反序列化Cap'n Proto数据并转换为结构化的JSON
      */
-    private String convertToJson(NexusWrapper wrapper, io.grpc.netty.shaded.io.netty.buffer.ByteBuf buffer) {
-        // 保存原始readerIndex，避免影响其他处理器
-        int originalReaderIndex = buffer.readerIndex();
-        int originalWriterIndex = buffer.writerIndex();
-
+    private String convertToJson(NexusWrapper wrapper) {
         try {
-            // 创建buffer的副本用于反序列化，避免影响原始buffer
-            io.grpc.netty.shaded.io.netty.buffer.ByteBuf bufferCopy = buffer.duplicate();
-            
             // 反序列化Cap'n Proto数据
             com.cmex.bolt.domain.Transfer transfer = new com.cmex.bolt.domain.Transfer();
-            com.cmex.bolt.Nexus.NexusEvent.Reader nexusEvent = transfer.from(bufferCopy);
-
-            // 确保原始buffer状态不变
-            buffer.readerIndex(originalReaderIndex);
-            buffer.writerIndex(originalWriterIndex);
+            com.cmex.bolt.Nexus.NexusEvent.Reader nexusEvent = transfer.from(wrapper.getBuffer());
 
             // 使用StringBuilder预分配容量，减少内存重新分配
             StringBuilder json = new StringBuilder(512);
             json.append("{\"timestamp\":\"").append(Instant.now().toString())
-                .append("\",\"id\":").append(wrapper.getId())
-                .append(",\"partition\":").append(wrapper.getPartition())
-                .append(",\"eventType\":").append(wrapper.getEventType().ordinal())
-                .append(",\"data\":");
+                    .append("\",\"id\":").append(wrapper.getId())
+                    .append(",\"partition\":").append(wrapper.getPartition())
+                    .append(",\"eventType\":").append(wrapper.getEventType().ordinal())
+                    .append(",\"data\":");
 
             // 将Nexus事件转换为JSON
             json.append(convertNexusEventToJson(nexusEvent));
@@ -185,14 +138,6 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
 
             return json.toString();
         } catch (Exception e) {
-            // 确保即使出现异常也恢复原始buffer状态
-            try {
-                buffer.readerIndex(originalReaderIndex);
-                buffer.writerIndex(originalWriterIndex);
-            } catch (Exception resetException) {
-                log.warn("Failed to reset buffer state after exception", resetException);
-            }
-
             log.error("Failed to convert to JSON", e);
             // 如果转换失败，返回一个基本的错误JSON
             return "{\"error\":\"Failed to convert to JSON\",\"timestamp\":\"" +
@@ -207,34 +152,34 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
         // 预分配容量，减少内存重新分配
         StringBuilder json = new StringBuilder(256);
         json.append("{\"payloadType\":\"").append(nexusEvent.getPayload().which().toString())
-            .append("\",\"payload\":");
+                .append("\",\"payload\":");
 
         com.cmex.bolt.Nexus.Payload.Reader payload = nexusEvent.getPayload();
         switch (payload.which()) {
             case INCREASE -> {
                 com.cmex.bolt.Nexus.Increase.Reader increase = payload.getIncrease();
                 json.append("{\"accountId\":").append(increase.getAccountId())
-                    .append(",\"currencyId\":").append(increase.getCurrencyId())
-                    .append(",\"amount\":\"").append(increase.getAmount()).append("\"}");
+                        .append(",\"currencyId\":").append(increase.getCurrencyId())
+                        .append(",\"amount\":\"").append(increase.getAmount()).append("\"}");
             }
             case DECREASE -> {
                 com.cmex.bolt.Nexus.Decrease.Reader decrease = payload.getDecrease();
                 json.append("{\"accountId\":").append(decrease.getAccountId())
-                    .append(",\"currencyId\":").append(decrease.getCurrencyId())
-                    .append(",\"amount\":\"").append(decrease.getAmount()).append("\"}");
+                        .append(",\"currencyId\":").append(decrease.getCurrencyId())
+                        .append(",\"amount\":\"").append(decrease.getAmount()).append("\"}");
             }
             case PLACE_ORDER -> {
                 com.cmex.bolt.Nexus.PlaceOrder.Reader placeOrder = payload.getPlaceOrder();
                 json.append("{\"symbolId\":").append(placeOrder.getSymbolId())
-                    .append(",\"accountId\":").append(placeOrder.getAccountId())
-                    .append(",\"type\":\"").append(placeOrder.getType().toString())
-                    .append("\",\"side\":\"").append(placeOrder.getSide().toString())
-                    .append("\",\"price\":\"").append(placeOrder.getPrice())
-                    .append("\",\"quantity\":\"").append(placeOrder.getQuantity())
-                    .append("\",\"volume\":\"").append(placeOrder.getVolume())
-                    .append("\",\"frozen\":\"").append(placeOrder.getFrozen())
-                    .append("\",\"takerRate\":").append(placeOrder.getTakerRate())
-                    .append(",\"makerRate\":").append(placeOrder.getMakerRate()).append("}");
+                        .append(",\"accountId\":").append(placeOrder.getAccountId())
+                        .append(",\"type\":\"").append(placeOrder.getType().toString())
+                        .append("\",\"side\":\"").append(placeOrder.getSide().toString())
+                        .append("\",\"price\":\"").append(placeOrder.getPrice())
+                        .append("\",\"quantity\":\"").append(placeOrder.getQuantity())
+                        .append("\",\"volume\":\"").append(placeOrder.getVolume())
+                        .append("\",\"frozen\":\"").append(placeOrder.getFrozen())
+                        .append("\",\"takerRate\":").append(placeOrder.getTakerRate())
+                        .append(",\"makerRate\":").append(placeOrder.getMakerRate()).append("}");
             }
             case CANCEL_ORDER -> {
                 com.cmex.bolt.Nexus.CancelOrder.Reader cancelOrder = payload.getCancelOrder();
@@ -243,16 +188,16 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
             case INCREASED -> {
                 com.cmex.bolt.Nexus.Increased.Reader increased = payload.getIncreased();
                 json.append("{\"currencyId\":").append(increased.getCurrencyId())
-                    .append(",\"amount\":\"").append(increased.getAmount())
-                    .append("\",\"available\":\"").append(increased.getAvailable())
-                    .append("\",\"frozen\":\"").append(increased.getFrozen()).append("\"}");
+                        .append(",\"amount\":\"").append(increased.getAmount())
+                        .append("\",\"available\":\"").append(increased.getAvailable())
+                        .append("\",\"frozen\":\"").append(increased.getFrozen()).append("\"}");
             }
             case DECREASED -> {
                 com.cmex.bolt.Nexus.Decreased.Reader decreased = payload.getDecreased();
                 json.append("{\"currencyId\":").append(decreased.getCurrencyId())
-                    .append(",\"amount\":\"").append(decreased.getAmount())
-                    .append("\",\"available\":\"").append(decreased.getAvailable())
-                    .append("\",\"frozen\":\"").append(decreased.getFrozen()).append("\"}");
+                        .append(",\"amount\":\"").append(decreased.getAmount())
+                        .append("\",\"available\":\"").append(decreased.getAvailable())
+                        .append("\",\"frozen\":\"").append(decreased.getFrozen()).append("\"}");
             }
             case ORDER_CREATED -> {
                 com.cmex.bolt.Nexus.OrderCreated.Reader orderCreated = payload.getOrderCreated();
@@ -277,17 +222,17 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
             case UNFREEZE -> {
                 com.cmex.bolt.Nexus.Unfreeze.Reader unfreeze = payload.getUnfreeze();
                 json.append("{\"accountId\":").append(unfreeze.getAccountId())
-                    .append(",\"currencyId\":").append(unfreeze.getCurrencyId())
-                    .append(",\"amount\":\"").append(unfreeze.getAmount()).append("\"}");
+                        .append(",\"currencyId\":").append(unfreeze.getCurrencyId())
+                        .append(",\"amount\":\"").append(unfreeze.getAmount()).append("\"}");
             }
             case CLEAR -> {
                 com.cmex.bolt.Nexus.Clear.Reader clear = payload.getClear();
                 json.append("{\"accountId\":").append(clear.getAccountId())
-                    .append(",\"payCurrencyId\":").append(clear.getPayCurrencyId())
-                    .append(",\"payAmount\":\"").append(clear.getPayAmount())
-                    .append("\",\"refundAmount\":\"").append(clear.getRefundAmount())
-                    .append("\",\"incomeCurrencyId\":").append(clear.getIncomeCurrencyId())
-                    .append(",\"incomeAmount\":\"").append(clear.getIncomeAmount()).append("\"}");
+                        .append(",\"payCurrencyId\":").append(clear.getPayCurrencyId())
+                        .append(",\"payAmount\":\"").append(clear.getPayAmount())
+                        .append("\",\"refundAmount\":\"").append(clear.getRefundAmount())
+                        .append("\",\"incomeCurrencyId\":").append(clear.getIncomeCurrencyId())
+                        .append(",\"incomeAmount\":\"").append(clear.getIncomeAmount()).append("\"}");
             }
             default -> {
                 json.append("{\"unknown\":\"Unknown payload type: ").append(payload.which().toString()).append("\"}");

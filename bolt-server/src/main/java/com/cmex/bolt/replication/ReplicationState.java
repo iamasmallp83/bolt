@@ -22,14 +22,14 @@ public class ReplicationState {
      */
     @Getter
     public static class SlaveNode {
-        private final String nodeId;
+        private final int nodeId;
         private final String host;
         private final int port;
         private volatile boolean connected;
         private volatile long lastHeartbeat;
         private volatile long lastAcknowledgedSequence;
         
-        public SlaveNode(String nodeId, String host, int port) {
+        public SlaveNode(int nodeId, String host, int port) {
             this.nodeId = nodeId;
             this.host = host;
             this.port = port;
@@ -55,17 +55,17 @@ public class ReplicationState {
     /**
      * 注册从节点
      */
-    public void registerSlave(String nodeId, String host, int port) {
+    public void registerSlave(int nodeId, String host, int port) {
         SlaveNode slave = new SlaveNode(nodeId, host, port);
-        slaveNodes.put(nodeId, slave);
+        slaveNodes.put(String.valueOf(nodeId), slave);
         log.info("Registered slave node: {} at {}:{}", nodeId, host, port);
     }
     
     /**
      * 注销从节点
      */
-    public void unregisterSlave(String nodeId) {
-        SlaveNode removed = slaveNodes.remove(nodeId);
+    public void unregisterSlave(int nodeId) {
+        SlaveNode removed = slaveNodes.remove(String.valueOf(nodeId));
         if (removed != null) {
             log.info("Unregistered slave node: {}", nodeId);
         }
@@ -74,8 +74,8 @@ public class ReplicationState {
     /**
      * 更新从节点心跳
      */
-    public void updateSlaveHeartbeat(String nodeId) {
-        SlaveNode slave = slaveNodes.get(nodeId);
+    public void updateSlaveHeartbeat(int nodeId) {
+        SlaveNode slave = slaveNodes.get(String.valueOf(nodeId));
         if (slave != null) {
             slave.updateHeartbeat();
         }
@@ -84,8 +84,8 @@ public class ReplicationState {
     /**
      * 设置从节点连接状态
      */
-    public void setSlaveConnected(String nodeId, boolean connected) {
-        SlaveNode slave = slaveNodes.get(nodeId);
+    public void setSlaveConnected(int nodeId, boolean connected) {
+        SlaveNode slave = slaveNodes.get(String.valueOf(nodeId));
         if (slave != null) {
             slave.connected = connected;
             log.info("Slave node {} connection status: {}", nodeId, connected);

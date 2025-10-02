@@ -7,6 +7,8 @@ public class BoltSlaveStarter {
     public static void main(String[] args) throws Exception {
         // 创建从节点配置
         BoltConfig slaveConfig = new BoltConfig(
+                2,     // nodeId
+                "/Users/stam/Source/Java/bolt/slave", // boltHome
                 9093,  // port
                 false, // isProd
                 4,     // group
@@ -15,8 +17,6 @@ public class BoltSlaveStarter {
                 512,   // responseSize
                 false, // enablePrometheus
                 9094,  // prometheusPort
-                "slave-journal", // journalFilePath
-                false, // isBinary
                 false, // isMaster
                 "127.0.0.1", // masterHost
                 9092,  // masterPort - 指向master的TCP复制服务端口
@@ -24,7 +24,8 @@ public class BoltSlaveStarter {
                 100,   // batchSize
                 5000,  // batchTimeoutMs
                 true,  // enableJournal
-                "/Users/stam/Source/Java/bolt/slave" // boltHome
+                "slave-journal", // journalFilePath
+                false  // isBinary
         );
         
         BoltSlave slave = new BoltSlave(slaveConfig);
