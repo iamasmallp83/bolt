@@ -1,6 +1,5 @@
 package com.cmex.bolt.handler;
 
-import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.replication.ReplicationProto;
 import com.cmex.bolt.replication.ReplicationState;
 import io.netty.bootstrap.ServerBootstrap;
@@ -128,10 +127,11 @@ public class TcpReplicationServer {
         }
     }
 
+
     /**
-     * 发送复制请求到指定从节点
+     * 发送批处理复制请求到指定从节点
      */
-    public void sendReplicationRequest(int nodeId, NexusWrapper wrapper, long sequence) {
+    public void sendBatchReplicationRequest(int nodeId, ByteBuf batchMessage) {
         // 通过nodeId找到对应的连接地址
         String slaveNodeId = null;
         for (java.util.Map.Entry<String, Integer> entry : connectionToNodeId.entrySet()) {
@@ -153,11 +153,11 @@ public class TcpReplicationServer {
         }
 
         try {
-            // 发送复制请求
-            connection.sendReplicationRequest(wrapper, sequence);
-            log.debug("Sent replication request to slave {} (nodeId: {}) - sequence: {}", slaveNodeId, nodeId, sequence);
+            // 发送批处理复制请求
+            connection.sendBatchReplicationRequest(batchMessage);
+            log.debug("Sent batch replication request to slave {} (nodeId: {})", slaveNodeId, nodeId);
         } catch (Exception e) {
-            log.error("Failed to send replication request to slave {} (nodeId: {}) - sequence: {}", slaveNodeId, nodeId, sequence, e);
+            log.error("Failed to send batch replication request to slave {} (nodeId: {})", slaveNodeId, nodeId, e);
             replicationState.setSlaveConnected(nodeId, false);
         }
     }
@@ -213,6 +213,18 @@ public class TcpReplicationServer {
                 slaveNodeId, confirmationMessage.getSequence(), confirmationMessage.getSuccess());
         
         // ConfirmHandler已移除，不再需要处理确认
+    }
+
+    /**
+     * 处理批处理业务消息（从节点发送给主节点）
+     */
+    private void handleBatchBusinessMessage(ReplicationProto.BatchBusinessMessage batchMessage, String slaveNodeId) {
+        log.debug("Received batch business message from slave {} - batchSize: {}, startSequence: {}, endSequence: {}", 
+                slaveNodeId, batchMessage.getBatchSize(), batchMessage.getStartSequence(), batchMessage.getEndSequence());
+        
+        // 主节点通常不会收到从节点的批处理业务消息
+        // 这里可以添加相应的处理逻辑，比如日志记录或错误处理
+        log.warn("Unexpected batch business message received from slave {} - this should not happen", slaveNodeId);
     }
     
     /**
@@ -299,6 +311,9 @@ public class TcpReplicationServer {
                         case CONFIRMATION:
                             handleConfirmationMessage(message.getConfirmation(), slaveNodeId);
                             break;
+                        case BATCH_BUSINESS:
+                            handleBatchBusinessMessage(message.getBatchBusiness(), slaveNodeId);
+                            break;
                         default:
                             log.warn("Unknown message type: {}", header.getMessageType());
                     }
@@ -322,31 +337,31 @@ public class TcpReplicationServer {
          */
         private record SlaveConnection(Channel channel, String slaveNodeId) {
 
-        public void sendReplicationRequest(NexusWrapper wrapper, long sequence) {
+
+        public void sendBatchReplicationRequest(ByteBuf batchMessage) {
             if (channel == null || !channel.isActive()) {
                 log.warn("Channel is not active for slave: {}", slaveNodeId);
                 return;
             }
             
             try {
-                // 使用新的 Protocol Buffers 协议编码业务消息
-                ByteBuf message = ReplicationProtocolUtils.encodeBusinessMessage(wrapper, sequence);
+                // 复制消息以避免多次发送时的问题
+                ByteBuf messageCopy = batchMessage.copy();
                 
-                // 发送消息
-                channel.writeAndFlush(message).addListener(future -> {
+                // 发送批处理消息
+                channel.writeAndFlush(messageCopy).addListener(future -> {
                     if (future.isSuccess()) {
-                        log.debug("Successfully sent business message to slave {} - sequence: {}", 
-                                slaveNodeId, sequence);
+                        log.debug("Successfully sent batch business message to slave {}", slaveNodeId);
                     } else {
-                        log.error("Failed to send business message to slave {} - sequence: {}", 
-                                slaveNodeId, sequence, future.cause());
+                        log.error("Failed to send batch business message to slave {}", 
+                                slaveNodeId, future.cause());
                         // 注意：这里无法直接访问 replicationState，需要在外部处理
                     }
                 });
                 
             } catch (Exception e) {
-                log.error("Exception while sending business message to slave {} - sequence: {}", 
-                        slaveNodeId, sequence, e);
+                log.error("Exception while sending batch business message to slave {}", 
+                        slaveNodeId, e);
                 // 注意：这里无法直接访问 replicationState，需要在外部处理
             }
         }

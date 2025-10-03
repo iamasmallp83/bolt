@@ -113,7 +113,6 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
         journalChannel.write(jsonBuffer);
         wrapper.getBuffer().resetReaderIndex();
     }
-
     /**
      * 优化的Cap'n Proto数据转换为JSON格式
      * 反序列化Cap'n Proto数据并转换为结构化的JSON

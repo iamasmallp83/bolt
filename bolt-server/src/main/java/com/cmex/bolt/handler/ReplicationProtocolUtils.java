@@ -1,10 +1,11 @@
 package com.cmex.bolt.handler;
 
-import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.replication.ReplicationProto;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import lombok.extern.slf4j.Slf4j;
+
+import java.util.List;
 
 /**
  * 复制协议处理器 - 基于 Protocol Buffers
@@ -17,46 +18,53 @@ public class ReplicationProtocolUtils {
     public static final int MAGIC_NUMBER = 0x424F4C54; // "BOLT"
     public static final int VERSION = 1;
     
+    
     /**
-     * 编码业务消息
+     * 编码批处理业务消息
      */
-    public static ByteBuf encodeBusinessMessage(NexusWrapper wrapper, long sequence) {
+    public static ByteBuf encodeBatchBusinessMessage(List<ReplicationBatchProcessor.BatchItem> batchItems) {
         try {
-            // 创建业务消息
-            ReplicationProto.BusinessMessage.Builder businessBuilder = ReplicationProto.BusinessMessage.newBuilder()
-                    .setSequence(sequence)
-                    .setPartition(wrapper.getPartition())
-                    .setEventType(wrapper.getEventType().getValue())
+            if (batchItems.isEmpty()) {
+                throw new IllegalArgumentException("Batch items cannot be empty");
+            }
+            
+            // 创建批处理业务消息
+            ReplicationProto.BatchBusinessMessage.Builder batchBuilder = ReplicationProto.BatchBusinessMessage.newBuilder()
+                    .setBatchId(System.currentTimeMillis()) // 使用时间戳作为批次ID
+                    .setBatchSize(batchItems.size())
+                    .setStartSequence(batchItems.get(0).getSequence())
+                    .setEndSequence(batchItems.get(batchItems.size() - 1).getSequence())
                     .setTimestamp(System.currentTimeMillis());
             
-            int readableBytes = wrapper.getBuffer().readableBytes();
-
-            if (readableBytes == 0) {
-                log.warn("Warning: NexusWrapper buffer has no readable bytes - sequence: {}", sequence);
+            // 添加所有业务消息
+            for (ReplicationBatchProcessor.BatchItem item : batchItems) {
+                ReplicationProto.BusinessMessage businessMessage = ReplicationProto.BusinessMessage.newBuilder()
+                        .setSequence(item.getSequence())
+                        .setPartition(item.getWrapper().getPartition())
+                        .setEventType(item.getWrapper().getEventType().getValue())
+                        .setData(com.google.protobuf.ByteString.copyFrom(item.getBufferCopy()))
+                        .setTimestamp(item.getTimestamp())
+                        .build();
+                
+                batchBuilder.addMessages(businessMessage);
             }
-
-            byte[] data = new byte[readableBytes];
-            wrapper.getBuffer().readBytes(data);
             
-            // 恢复原始状态
-            businessBuilder.setData(com.google.protobuf.ByteString.copyFrom(data));
-            
-            ReplicationProto.BusinessMessage businessMessage = businessBuilder.build();
+            ReplicationProto.BatchBusinessMessage batchMessage = batchBuilder.build();
             
             // 创建协议头部
             ReplicationProto.ProtocolHeader header = ReplicationProto.ProtocolHeader.newBuilder()
                     .setMagicNumber(MAGIC_NUMBER)
                     .setVersion(VERSION)
-                    .setMessageType(ReplicationProto.MessageType.BUSINESS)
-                    .setSequence(sequence)
-                    .setDataLength(businessMessage.getSerializedSize())
+                    .setMessageType(ReplicationProto.MessageType.BATCH_BUSINESS)
+                    .setSequence(batchItems.get(0).getSequence()) // 使用第一个消息的sequence
+                    .setDataLength(batchMessage.getSerializedSize())
                     .setTimestamp(System.currentTimeMillis())
                     .build();
             
             // 创建主消息
             ReplicationProto.ReplicationMessage message = ReplicationProto.ReplicationMessage.newBuilder()
                     .setHeader(header)
-                    .setBusiness(businessMessage)
+                    .setBatchBusiness(batchMessage)
                     .build();
             
             // 序列化为字节数组
@@ -66,12 +74,14 @@ public class ReplicationProtocolUtils {
             ByteBuf buffer = Unpooled.directBuffer(messageBytes.length);
             buffer.writeBytes(messageBytes);
             
-            log.debug("Encoded business message - sequence: {}, size: {}", sequence, messageBytes.length);
+            log.debug("Encoded batch business message - batchSize: {}, startSequence: {}, endSequence: {}, size: {}", 
+                    batchItems.size(), batchItems.get(0).getSequence(), 
+                    batchItems.get(batchItems.size() - 1).getSequence(), messageBytes.length);
             return buffer;
             
         } catch (Exception e) {
-            log.error("Failed to encode business message - sequence: {}", sequence, e);
-            throw new RuntimeException("Failed to encode business message", e);
+            log.error("Failed to encode batch business message - batchSize: {}", batchItems.size(), e);
+            throw new RuntimeException("Failed to encode batch business message", e);
         }
     }
     
