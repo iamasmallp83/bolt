@@ -8,6 +8,7 @@ enum MessageType {
   HEARTBEAT = 1;     // 心跳消息
   BUSINESS = 2;      // 业务消息
   CONFIRMATION = 3;  // 确认消息
+  BATCH_BUSINESS = 4; // 批处理业务消息
 }
 
 // 节点类型枚举
@@ -68,6 +69,16 @@ message BusinessMessage {
   int64 timestamp = 5;      // 时间戳
 }
 
+// 批处理业务消息
+message BatchBusinessMessage {
+  int64 batch_id = 1;       // 批次ID
+  int32 batch_size = 2;     // 批次大小
+  int64 start_sequence = 3; // 起始序列号
+  int64 end_sequence = 4;   // 结束序列号
+  int64 timestamp = 5;      // 批次时间戳
+  repeated BusinessMessage messages = 6; // 业务消息列表
+}
+
 // 确认消息
 message ConfirmationMessage {
   int32 node_id = 1;       // 节点ID
@@ -89,5 +100,6 @@ message ReplicationMessage {
     HeartbeatResponse heartbeat_response = 5; // 心跳响应
     BusinessMessage business = 6;      // 业务消息
     ConfirmationMessage confirmation = 7; // 确认消息
+    BatchBusinessMessage batch_business = 8; // 批处理业务消息
   }
 }

@@ -87,7 +87,8 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
      */
     private void writeBinaryMode(NexusWrapper wrapper) throws IOException {
         // 计算总长度：消息长度 + 时间戳(8字节) + ID(8字节) + combinedPartitionAndEventType(4字节)
-        int totalLength = 64 + 20; // 8+8+4 = 20
+        int messageLength = wrapper.getBuffer().readableBytes();
+        int totalLength = messageLength + 20; // 8+8+4 = 20
 
         // 写入总长度（4字节）
         lengthBuffer.clear();
@@ -102,6 +103,10 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
         headerBuffer.putInt(wrapper.getCombinedPartitionAndEventType());
         headerBuffer.flip();
         journalChannel.write(headerBuffer);
+
+        // 写入消息内容
+        ByteBuffer messageBuffer = wrapper.getBuffer().nioBuffer();
+        journalChannel.write(messageBuffer);
     }
 
     /**
@@ -113,7 +118,6 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
         journalChannel.write(jsonBuffer);
         wrapper.getBuffer().resetReaderIndex();
     }
-
     /**
      * 优化的Cap'n Proto数据转换为JSON格式
      * 反序列化Cap'n Proto数据并转换为结构化的JSON

@@ -293,6 +293,9 @@ public class TcpReplicationClient {
                         case BUSINESS:
                             handleBusinessMessage(message.getBusiness());
                             break;
+                        case BATCH_BUSINESS:
+                            handleBatchBusinessMessage(message.getBatchBusiness());
+                            break;
                         case CONFIRMATION:
                             // 从节点通常不会收到确认消息
                             log.warn("Received unexpected confirmation message from master");
@@ -379,6 +382,53 @@ public class TcpReplicationClient {
                 log.error("Failed to handle business message - sequence: {}", businessMessage.getSequence(), e);
                 // 发送失败确认
                 sendConfirmation(businessMessage.getSequence(), false, e.getMessage());
+            }
+        }
+
+        /**
+         * 处理批处理业务消息
+         */
+        private void handleBatchBusinessMessage(ReplicationProto.BatchBusinessMessage batchMessage) {
+            try {
+                log.debug("Received batch business message - batchSize: {}, startSequence: {}, endSequence: {}", 
+                        batchMessage.getBatchSize(), batchMessage.getStartSequence(), batchMessage.getEndSequence());
+                
+                // 批量处理所有业务消息
+                for (ReplicationProto.BusinessMessage businessMessage : batchMessage.getMessagesList()) {
+                    try {
+                        // 发布事件到SequencerRingBuffer
+                        long sequence = sequencerRingBuffer.next();
+                        NexusWrapper wrapper = sequencerRingBuffer.get(sequence);
+                        
+                        // 设置wrapper属性
+                        wrapper.setId(businessMessage.getSequence());
+                        wrapper.setPartition(businessMessage.getPartition());
+                        wrapper.setEventType(NexusWrapper.EventType.fromValue(businessMessage.getEventType()));
+                        byte[] data = businessMessage.getData().toByteArray();
+                        wrapper.getBuffer().clear();
+                        wrapper.getBuffer().writeBytes(data);
+                        
+                        // 确保buffer的readerIndex在正确位置
+                        wrapper.getBuffer().readerIndex(0);
+                        
+                        // 发布事件
+                        sequencerRingBuffer.publish(sequence);
+                        
+                        log.debug("Published batch business event to sequencer - sequence: {}", sequence);
+                        
+                    } catch (Exception e) {
+                        log.error("Failed to publish batch business event - sequence: {}", businessMessage.getSequence(), e);
+                        // 发送失败确认
+                        sendConfirmation(businessMessage.getSequence(), false, e.getMessage());
+                    }
+                }
+                
+                log.debug("Successfully processed batch business message - batchSize: {}", batchMessage.getBatchSize());
+                
+            } catch (Exception e) {
+                log.error("Failed to handle batch business message - batchSize: {}", batchMessage.getBatchSize(), e);
+                // 对于批处理消息，我们可以发送整个批次的失败确认
+                sendConfirmation(batchMessage.getStartSequence(), false, e.getMessage());
             }
         }
     }

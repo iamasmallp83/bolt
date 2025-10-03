@@ -5,19 +5,15 @@ import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.replication.ReplicationState;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
-import com.lmax.disruptor.Sequence;
-import lombok.Getter;
+import io.netty.buffer.ByteBuf;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 复制处理器 - 负责将事件复制到从节点
- * 主节点专用：发送复制请求
+ * 主节点专用：按顺序批处理发送复制请求
  */
 @Slf4j
 public class ReplicationHandler implements EventHandler<NexusWrapper>, LifecycleAware {
@@ -28,8 +24,8 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
     // TCP复制服务器引用（用于通过现有连接发送数据）
     private TcpReplicationServer tcpReplicationServer;
 
-    // 并行处理线程池
-    private final ExecutorService replicationExecutor;
+    // 批处理器
+    private final ReplicationBatchProcessor batchProcessor;
 
     // 性能统计
     private final AtomicLong totalEventsProcessed = new AtomicLong(0);
@@ -38,18 +34,15 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
         this.config = config;
         this.replicationState = replicationState;
 
-        // 创建专用线程池用于并行发送
-        this.replicationExecutor = Executors.newFixedThreadPool(
-            Math.max(2, Runtime.getRuntime().availableProcessors() / 2),
-            r -> {
-                Thread t = new Thread(r, "replication-sender-" + r.hashCode());
-                t.setDaemon(true);
-                return t;
-            }
+        // 创建批处理器
+        this.batchProcessor = new ReplicationBatchProcessor(
+            config.batchSize(),
+            config.batchTimeout(),
+            this::sendBatchToSlaves
         );
 
-        log.info("ReplicationHandler initialized - replicationPort: {}, threads: {}",
-                config.replicationPort(), Runtime.getRuntime().availableProcessors());
+        log.info("ReplicationHandler initialized - replicationPort: {}, batchSize: {}, batchTimeout: {}",
+                config.replicationPort(), config.batchSize(), config.batchTimeout());
     }
 
     @Override
@@ -59,65 +52,54 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
             return;
         }
 
-        // 检查buffer状态，如果被之前的处理器消费了，需要恢复
-        int readableBytes = wrapper.getBuffer().readableBytes();
-        log.debug("ReplicationHandler processing - sequence: {}, id: {}, readableBytes: {}, readerIndex: {}, writerIndex: {}",
-                sequence, wrapper.getId(), readableBytes, wrapper.getBuffer().readerIndex(), wrapper.getBuffer().writerIndex());
-
-        if (readableBytes == 0) {
-            log.warn("NexusWrapper buffer has no readable bytes - sequence: {}, id: {}",
-                    sequence, wrapper.getId());
-            // 跳过复制，但继续处理链
-            return;
-        }
-
         totalEventsProcessed.incrementAndGet();
         
-        // 发送复制请求到从节点
-        sendReplicationRequest(wrapper, sequence);
-        
+        // 将事件添加到批处理器，按顺序处理
+        batchProcessor.addEvent(wrapper, sequence, endOfBatch);
     }
 
     /**
-     * 发送复制请求到从节点
+     * 发送批处理数据到所有从节点（使用批处理协议）
      */
-    private void sendReplicationRequest(NexusWrapper wrapper, long sequence) {
+    private void sendBatchToSlaves(List<ReplicationBatchProcessor.BatchItem> batchItems) {
         List<String> healthySlaves = replicationState.getHealthySlaveIds().stream().toList();
         if (healthySlaves.isEmpty()) {
-            log.debug("没有健康的从节点，跳过复制 - sequence: {}", sequence);
+            log.debug("没有健康的从节点，跳过批处理发送 - batchSize: {}", batchItems.size());
             return;
         }
 
-        log.debug("发送复制请求到从节点 - id: {}, sequence: {}, slaves: {}",
-                wrapper.getId(), sequence, healthySlaves.size());
+        log.debug("发送批处理数据到从节点 - batchSize: {}, slaves: {}, sequences: {}",
+                batchItems.size(), healthySlaves.size(), 
+                batchItems.stream().mapToLong(ReplicationBatchProcessor.BatchItem::getSequence).toArray());
 
-        // 并行发送到所有从节点
-        List<CompletableFuture<Void>> sendTasks = healthySlaves.stream()
-                .map(slaveNodeIdStr -> CompletableFuture.runAsync(() -> {
-                    try {
-                        // 将String转换为int nodeId
-                        int nodeId = Integer.parseInt(slaveNodeIdStr);
-                        
-                        // 通过TcpReplicationServer发送复制请求
-                        if (tcpReplicationServer != null) {
-                            tcpReplicationServer.sendReplicationRequest(nodeId, wrapper, sequence);
-                        }
-                    } catch (Exception e) {
-                        log.error("发送复制请求失败 - slave: {}, sequence: {}", slaveNodeIdStr, sequence, e);
-                        replicationState.setSlaveConnected(Integer.parseInt(slaveNodeIdStr), false);
+        // 编码批处理消息
+        ByteBuf batchMessage = ReplicationProtocolUtils.encodeBatchBusinessMessage(batchItems);
+        
+        try {
+            // 同步发送到所有从节点
+            for (String slaveNodeIdStr : healthySlaves) {
+                try {
+                    int nodeId = Integer.parseInt(slaveNodeIdStr);
+                    
+                    // 通过TcpReplicationServer发送批处理数据
+                    if (tcpReplicationServer != null) {
+                        tcpReplicationServer.sendBatchReplicationRequest(nodeId, batchMessage);
                     }
-                }, replicationExecutor))
-                .toList();
-
-        // 等待所有发送完成
-        CompletableFuture.allOf(sendTasks.toArray(new CompletableFuture[0]))
-                .whenComplete((result, throwable) -> {
-                    if (throwable != null) {
-                        log.error("批量发送复制请求失败 - sequence: {}", sequence, throwable);
-                    } else {
-                        log.debug("复制请求发送完成 - sequence: {}", sequence);
-                    }
-                });
+                    
+                    log.debug("成功发送批处理数据到从节点 {} - batchSize: {}", slaveNodeIdStr, batchItems.size());
+                    
+                } catch (Exception e) {
+                    log.error("发送批处理数据失败 - slave: {}, batchSize: {}", slaveNodeIdStr, batchItems.size(), e);
+                    replicationState.setSlaveConnected(Integer.parseInt(slaveNodeIdStr), false);
+                }
+            }
+            
+            log.debug("批处理数据发送完成 - batchSize: {}", batchItems.size());
+            
+        } finally {
+            // 释放编码后的消息
+            batchMessage.release();
+        }
     }
 
     /**
@@ -132,7 +114,7 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
      * 获取性能统计信息
      */
     public PerformanceStats getPerformanceStats() {
-        return new PerformanceStats(totalEventsProcessed.get());
+        return new PerformanceStats(totalEventsProcessed.get(), batchProcessor.getPerformanceStats());
     }
 
     /**
@@ -140,14 +122,16 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
      */
     public static class PerformanceStats {
         public final long totalEventsProcessed;
+        public final ReplicationBatchProcessor.BatchPerformanceStats batchStats;
         
-        public PerformanceStats(long totalEventsProcessed) {
+        public PerformanceStats(long totalEventsProcessed, ReplicationBatchProcessor.BatchPerformanceStats batchStats) {
             this.totalEventsProcessed = totalEventsProcessed;
+            this.batchStats = batchStats;
         }
         
         @Override
         public String toString() {
-            return String.format("PerformanceStats{events=%d}", totalEventsProcessed);
+            return String.format("PerformanceStats{events=%d, batchStats=%s}", totalEventsProcessed, batchStats);
         }
     }
 
@@ -162,10 +146,10 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
     public void onShutdown() {
         log.info("ReplicationHandler shutting down");
         
-        // 关闭线程池
-        if (replicationExecutor != null && !replicationExecutor.isShutdown()) {
-            replicationExecutor.shutdown();
-            log.info("ReplicationExecutor shutdown completed");
+        // 关闭批处理器
+        if (batchProcessor != null) {
+            batchProcessor.shutdown();
+            log.info("ReplicationBatchProcessor shutdown completed");
         }
         
         // 记录最终统计

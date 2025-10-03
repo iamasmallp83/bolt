@@ -5,6 +5,8 @@ import com.cmex.bolt.replication.ReplicationProto;
 import io.netty.buffer.ByteBuf;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -13,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class ReplicationProtocolHandlerTest {
 
     @Test
-    void testEncodeDecodeBusinessMessage() {
+    void testEncodeDecodeBatchBusinessMessage() {
         // 创建测试数据
         NexusWrapper wrapper = new NexusWrapper(io.grpc.netty.shaded.io.netty.buffer.PooledByteBufAllocator.DEFAULT, 512);
         wrapper.setId(12345L);
@@ -26,8 +28,12 @@ public class ReplicationProtocolHandlerTest {
         
         long sequence = 100L;
         
-        // 编码消息
-        ByteBuf encodedMessage = ReplicationProtocolUtils.encodeBusinessMessage(wrapper, sequence);
+        // 创建批处理项
+        ReplicationBatchProcessor.BatchItem batchItem = new ReplicationBatchProcessor.BatchItem(wrapper, sequence);
+        List<ReplicationBatchProcessor.BatchItem> batchItems = List.of(batchItem);
+        
+        // 编码批处理消息
+        ByteBuf encodedMessage = ReplicationProtocolUtils.encodeBatchBusinessMessage(batchItems);
         assertNotNull(encodedMessage);
         assertTrue(encodedMessage.readableBytes() > 0);
         
@@ -39,10 +45,16 @@ public class ReplicationProtocolHandlerTest {
         ReplicationProto.ProtocolHeader header = decodedMessage.getHeader();
         assertEquals(ReplicationProtocolUtils.MAGIC_NUMBER, header.getMagicNumber());
         assertEquals(ReplicationProtocolUtils.VERSION, header.getVersion());
-        assertEquals(ReplicationProto.MessageType.BUSINESS, header.getMessageType());
+        assertEquals(ReplicationProto.MessageType.BATCH_BUSINESS, header.getMessageType());
         assertEquals(sequence, header.getSequence());
         
-        ReplicationProto.BusinessMessage businessMessage = decodedMessage.getBusiness();
+        ReplicationProto.BatchBusinessMessage batchMessage = decodedMessage.getBatchBusiness();
+        assertEquals(1, batchMessage.getBatchSize());
+        assertEquals(sequence, batchMessage.getStartSequence());
+        assertEquals(sequence, batchMessage.getEndSequence());
+        
+        // 验证业务消息内容
+        ReplicationProto.BusinessMessage businessMessage = batchMessage.getMessages(0);
         assertEquals(sequence, businessMessage.getSequence());
         assertEquals(1, businessMessage.getPartition());
         assertEquals(NexusWrapper.EventType.BUSINESS.getValue(), businessMessage.getEventType());
@@ -160,10 +172,14 @@ public class ReplicationProtocolHandlerTest {
     
     @Test
     void testValidateMessage() {
-        // 创建有效的消息
+        // 创建有效的批处理消息
         NexusWrapper wrapper = new NexusWrapper(io.grpc.netty.shaded.io.netty.buffer.PooledByteBufAllocator.DEFAULT, 512);
         wrapper.setEventType(NexusWrapper.EventType.BUSINESS);
-        ByteBuf encodedMessage = ReplicationProtocolUtils.encodeBusinessMessage(wrapper, 100L);
+        
+        ReplicationBatchProcessor.BatchItem batchItem = new ReplicationBatchProcessor.BatchItem(wrapper, 100L);
+        List<ReplicationBatchProcessor.BatchItem> batchItems = List.of(batchItem);
+        
+        ByteBuf encodedMessage = ReplicationProtocolUtils.encodeBatchBusinessMessage(batchItems);
         ReplicationProto.ReplicationMessage message = ReplicationProtocolUtils.decodeMessage(encodedMessage);
         
         // 验证有效消息
