@@ -93,8 +93,8 @@ public class AccountService {
         matchingRingBuffer.publishEvent((matchingWrapper, sequence) -> {
             matchingWrapper.setId(wrapper.getId());
             matchingWrapper.setEventType(NexusWrapper.EventType.INTERNAL);
-            wrapper.setPartition(placeOrder.getSymbolId() % group);
-            transfer.writePlaceOrder(placeOrder, wrapper.getBuffer());
+            matchingWrapper.setPartition(placeOrder.getSymbolId() % group);
+            transfer.writePlaceOrder(placeOrder, matchingWrapper.getBuffer());
         });
     }
 
