@@ -65,12 +65,12 @@ public class TestSHIBUSDT {
     public void testShibUsdt1() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(2);
         EnvoyUtil.placeOrder(service, 1, 2, 6, Envoy.Type.LIMIT, Envoy.Side.ASK, "0.00000860", "10000000000",
-                0, 0, FakeStreamObserver.of(response -> {
+                200, 100, FakeStreamObserver.of(response -> {
                     Assertions.assertTrue(response.getData().getId() > 0);
                     latch.countDown();
                 }));
         EnvoyUtil.placeOrder(service, 1, 2, 5, Envoy.Type.LIMIT, Envoy.Side.BID, "0.00000864", "8000000000",
-                0, 0, FakeStreamObserver.of(response -> {
+                200, 100, FakeStreamObserver.of(response -> {
                     Assertions.assertTrue(response.getData().getId() > 0);
                     latch.countDown();
                 }));

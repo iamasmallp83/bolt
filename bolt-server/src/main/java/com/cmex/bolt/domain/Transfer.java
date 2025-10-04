@@ -188,6 +188,31 @@ public class Transfer {
         serialize(messageBuilder, buffer);
     }
 
+    public void writeSnapshotEvent(long timestamp, ByteBuf buffer) {
+        MessageBuilder messageBuilder = new MessageBuilder();
+        Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
+        Nexus.Payload.Builder payloadBuilder = builder.initPayload();
+        
+        // 创建Snapshot数据
+        Nexus.Snapshot.Builder snapshotBuilder = payloadBuilder.initSnapshot();
+        snapshotBuilder.setTimestamp(timestamp);
+        
+        serialize(messageBuilder, buffer);
+    }
+
+    public void writeSnapshotEvent(Nexus.NexusEvent.Reader eventReader, ByteBuf buffer) {
+        MessageBuilder messageBuilder = new MessageBuilder();
+        Nexus.NexusEvent.Builder builder = messageBuilder.initRoot(Nexus.NexusEvent.factory);
+        Nexus.Payload.Builder payloadBuilder = builder.initPayload();
+        
+        // 复制Snapshot数据
+        Nexus.Snapshot.Reader snapshotReader = eventReader.getPayload().getSnapshot();
+        Nexus.Snapshot.Builder snapshotBuilder = payloadBuilder.initSnapshot();
+        snapshotBuilder.setTimestamp(snapshotReader.getTimestamp());
+        
+        serialize(messageBuilder, buffer);
+    }
+
     public Nexus.NexusEvent.Reader from(ByteBuf buffer) {
         ByteBufReadableChannel channel = new ByteBufReadableChannel(buffer);
         MessageReader messageReader;

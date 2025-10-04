@@ -23,6 +23,13 @@ public class Account {
         return Optional.ofNullable(balances.get(currencyId));
     }
 
+    /**
+     * 直接添加一个Balance到账户（用于数据恢复）
+     */
+    public void addBalance(Balance balance) {
+        balances.put(balance.getCurrency().getId(), balance);
+    }
+
     public Result<Balance> increase(Currency currency, BigDecimal value) {
         Balance balance = balances.computeIfAbsent(currency.getId(), currencyId -> Balance.builder()
                 .currency(currency)

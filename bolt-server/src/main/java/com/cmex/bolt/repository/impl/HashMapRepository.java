@@ -4,6 +4,7 @@ package com.cmex.bolt.repository.impl;
 import com.cmex.bolt.repository.Repository;
 
 import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -31,6 +32,11 @@ public abstract class HashMapRepository<K, V> implements Repository<K, V> {
 
     public boolean exists(K id) {
         return holder.containsKey(id);
+    }
+
+    @Override
+    public Map<K, V> getAllData() {
+        return new HashMap<>(holder);
     }
 
 }

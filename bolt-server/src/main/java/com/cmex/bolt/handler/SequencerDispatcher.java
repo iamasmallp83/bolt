@@ -1,32 +1,40 @@
 package com.cmex.bolt.handler;
 
 import com.cmex.bolt.Nexus;
+import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.domain.Transfer;
 import com.cmex.bolt.service.AccountService;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
+import com.lmax.disruptor.RingBuffer;
 import lombok.Getter;
+import lombok.Setter;
 
 @Getter
 public class SequencerDispatcher implements EventHandler<NexusWrapper>, LifecycleAware {
+    private final BoltConfig config;
     private final int group;
-
     private final int partition;
-
     private final AccountService accountService;
-
     private final Transfer transfer;
+    private final SnapshotHandler snapshotHandler;
+    
+    @Setter
+    private RingBuffer<NexusWrapper> matchingRingBuffer;
 
-    public SequencerDispatcher(int group, int partition) {
+    public SequencerDispatcher(BoltConfig config, int group, int partition) {
+        this.config = config;
         this.group = group;
         this.partition = partition;
         this.accountService = new AccountService(group);
         this.transfer = new Transfer();
+        this.snapshotHandler = new SnapshotHandler(config);
     }
 
     public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) {
-        if (partition != wrapper.getPartition()) {
+        // Snapshot事件没有分区，所有分区都需要处理
+        if (partition != wrapper.getPartition() && wrapper.getPartition() != -1) {
             return;
         }
         
@@ -43,6 +51,14 @@ public class SequencerDispatcher implements EventHandler<NexusWrapper>, Lifecycl
         Nexus.NexusEvent.Reader reader = transfer.from(wrapper.getBuffer());
         Nexus.Payload.Reader payload = reader.getPayload();
         switch (payload.which()) {
+            case SNAPSHOT:
+                // Snapshot事件只需要first partition处理（partition 0）
+                if (partition == 0) {
+                    snapshotHandler.handleSnapshot(reader);
+                }
+                // 转发Snapshot到matching ring buffer
+                publishSnapshotEvent(wrapper, reader);
+                break;
             case INCREASE:
                 Nexus.Increase.Reader increase = reader.getPayload().getIncrease();
                 accountService.on(wrapper, increase);
@@ -72,6 +88,23 @@ public class SequencerDispatcher implements EventHandler<NexusWrapper>, Lifecycl
     public void onStart() {
         final Thread currentThread = Thread.currentThread();
         currentThread.setName(SequencerDispatcher.class.getSimpleName() + "-" + partition + "-thread");
+    }
+
+    /**
+     * 将Snapshot事件转发到matching ring buffer
+     */
+    private void publishSnapshotEvent(NexusWrapper wrapper, Nexus.NexusEvent.Reader reader) {
+        if (matchingRingBuffer != null) {
+            // 转发到所有matching dispatchers
+            for (int i = 0; i < group; i++) {
+                int finalPartition = i;
+                matchingRingBuffer.publishEvent((matchingWrapper, sequence) -> {
+                    matchingWrapper.setId(wrapper.getId());
+                    matchingWrapper.setPartition(finalPartition); // 发送到所有matching partition
+                    transfer.writeSnapshotEvent(reader, matchingWrapper.getBuffer());
+                });
+            }
+        }
     }
 
     @Override

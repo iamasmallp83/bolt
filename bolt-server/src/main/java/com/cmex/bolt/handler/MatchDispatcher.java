@@ -1,6 +1,7 @@
 package com.cmex.bolt.handler;
 
 import com.cmex.bolt.Nexus;
+import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.domain.Transfer;
 import com.cmex.bolt.service.MatchService;
@@ -11,6 +12,7 @@ import lombok.Getter;
 
 public class MatchDispatcher implements EventHandler<NexusWrapper>, LifecycleAware {
 
+    private final BoltConfig config;
     private final int group;
     @Getter
     private final int partition;
@@ -18,21 +20,30 @@ public class MatchDispatcher implements EventHandler<NexusWrapper>, LifecycleAwa
     private final MatchService matchService;
 
     private final Transfer transfer;
+    private final MatchingSnapshotHandler matchingSnapshotHandler;
 
-    public MatchDispatcher(int group, int partition) {
+    public MatchDispatcher(BoltConfig config, int group, int partition) {
+        this.config = config;
         this.group = group;
         this.partition = partition;
         this.matchService = new MatchService(group);
         this.transfer = new Transfer();
+        this.matchingSnapshotHandler = new MatchingSnapshotHandler(config);
     }
 
     public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) {
-        if (partition != wrapper.getPartition()) {
+        // Snapshot事件需要在所有partition中处理
+        if (partition != wrapper.getPartition() && wrapper.getPartition() != -1) {
             return;
         }
+        
         Nexus.NexusEvent.Reader reader = transfer.from(wrapper.getBuffer());
         Nexus.Payload.Reader payload = reader.getPayload();
         switch (payload.which()) {
+            case SNAPSHOT:
+                // 所有partition都需要处理snapshot，创建快照
+                matchingSnapshotHandler.handleSnapshot(reader);
+                break;
             case CANCEL_ORDER:
                 Nexus.CancelOrder.Reader cancelOrder = reader.getPayload().getCancelOrder();
                 if (partition == OrderIdGenerator.getSymbolId(cancelOrder.getOrderId()) % group) {

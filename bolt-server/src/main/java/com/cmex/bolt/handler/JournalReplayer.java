@@ -2,6 +2,7 @@ package com.cmex.bolt.handler;
 
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
+import com.cmex.bolt.recovery.SnapshotReader;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lmax.disruptor.RingBuffer;
@@ -14,9 +15,12 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Stream;
+import java.io.IOException;
 
 /**
  * JournalReplayer 负责从 journal 文件重放事件到 RingBuffer
@@ -48,6 +52,15 @@ public class JournalReplayer {
     }
 
     public long replayFromJournal() {
+        return replayFromJournal(null);
+    }
+
+    /**
+     * 从Journal回放事件，支持从指定的snapshot时间戳之后开始回放
+     * @param snapshotTimestamp 快照时间戳，如果为null则从头开始回放
+     * @return 重放的事件数量
+     */
+    public long replayFromJournal(Long snapshotTimestamp) {
         // 如果禁用日志，跳过 journal 重放
         if (!config.enableJournal()) {
             log.info("Journal disabled, skipping journal replay");
@@ -57,22 +70,23 @@ public class JournalReplayer {
         long startTime = System.currentTimeMillis();
 
         try {
-            Path path = Path.of(config.journalFilePath());
-
-            if (!Files.exists(path)) {
-                log.warn("Journal file does not exist: {}", path);
+            // 查找合适的journal文件进行回放
+            Path journalPath = findJournalPathToReplay(snapshotTimestamp);
+            
+            if (journalPath == null) {
+                log.info("No journal files found for replay");
                 return 0;
             }
 
-            long fileSize = Files.size(path);
-            log.info("Starting journal replay: file={}, size={} bytes, format={}",
-                    path, fileSize, config.isBinary() ? "binary" : "JSON");
+            long fileSize = Files.size(journalPath);
+            log.info("Starting journal replay: file={}, size={} bytes, format={}, fromSnapshot={}",
+                    journalPath, fileSize, config.isBinary() ? "binary" : "JSON", snapshotTimestamp);
 
             long replayedEvents;
             if (config.isBinary()) {
-                replayedEvents = replayFromBinaryJournal(path);
+                replayedEvents = replayFromBinaryJournal(journalPath, snapshotTimestamp);
             } else {
-                replayedEvents = replayFromJsonJournal(path);
+                replayedEvents = replayFromJsonJournal(journalPath, snapshotTimestamp);
             }
 
             long endTime = System.currentTimeMillis();
@@ -98,12 +112,81 @@ public class JournalReplayer {
     }
 
     /**
+     * 查找合适的journal文件进行回放
+     * @param snapshotTimestamp 快照时间戳，如果为null则使用默认journal文件
+     * @return 合适的journal文件路径，如果没有找到则返回null
+     */
+    private Path findJournalPathToReplay(Long snapshotTimestamp) throws IOException {
+        if (snapshotTimestamp == null) {
+            // 如果没有快照时间戳，使用默认的journal文件
+            Path defaultPath = Path.of(config.journalFilePath());
+            if (Files.exists(defaultPath)) {
+                return defaultPath;
+            }
+            return null;
+        }
+
+        // 查找包含快照时间戳的journal文件
+        Path journalDir = Paths.get(config.journalDir());
+        if (!Files.exists(journalDir)) {
+            return null;
+        }
+
+        try (Stream<Path> paths = Files.list(journalDir)) {
+            return paths
+                .filter(path -> path.getFileName().toString().startsWith("journal_"))
+                .filter(path -> {
+                    // 检查文件名是否包含大于快照时间戳的时间
+                    long fileTimestamp = extractTimestampFromJournalPath(path);
+                    return fileTimestamp > snapshotTimestamp;
+                })
+                .min((p1, p2) -> {
+                    long t1 = extractTimestampFromJournalPath(p1);
+                    long t2 = extractTimestampFromJournalPath(p2);
+                    return Long.compare(t1, t2);
+                })
+                .orElse(null);
+        }
+    }
+
+    /**
+     * 从journal文件路径中提取时间戳
+     */
+    private long extractTimestampFromJournalPath(Path path) {
+        try {
+            String filename = path.getFileName().toString();
+            // 格式：journal_1699123456789.data
+            int startIndex = filename.indexOf('_') + 1;
+            int endIndex = filename.lastIndexOf('.');
+            
+            if (startIndex > 0 && endIndex > startIndex) {
+                String timestampStr = filename.substring(startIndex, endIndex);
+                return Long.parseLong(timestampStr);
+            }
+        } catch (Exception e) {
+            log.warn("Could not extract timestamp from journal path: {}", path, e);
+        }
+        return -1;
+    }
+
+    /**
      * 从二进制格式的 journal 文件重放事件
      *
      * @param journalFilePath journal 文件路径
      * @return 重放的事件数量
      */
     private long replayFromBinaryJournal(Path journalFilePath) {
+        return replayFromBinaryJournal(journalFilePath, null);
+    }
+
+    /**
+     * 从二进制格式的 journal 文件重放事件，支持从指定时间点开始
+     *
+     * @param journalFilePath journal 文件路径
+     * @param snapshotTimestamp 快照时间戳，如果为null则从头开始
+     * @return 重放的事件数量
+     */
+    private long replayFromBinaryJournal(Path journalFilePath, Long snapshotTimestamp) {
         try (FileChannel journalChannel = FileChannel.open(journalFilePath, StandardOpenOption.READ)) {
             long totalEvents = 0;
             ByteBuffer lengthBuffer = ByteBuffer.allocate(4);
@@ -140,6 +223,13 @@ public class JournalReplayer {
                 }
                 timestampBuffer.flip();
                 long timestamp = timestampBuffer.getLong();
+
+                // 如果指定了snapshot时间戳，跳过snapshot之前的事件
+                if (snapshotTimestamp != null && timestamp <= snapshotTimestamp) {
+                    // 跳过剩余的消息内容，移动到下一个事件
+                    journalChannel.position(journalChannel.position() + (totalLength - 8)); // 8 = 已读取的时间戳
+                    continue;
+                }
 
                 // 读取ID（8字节）
                 ByteBuffer idBuffer = ByteBuffer.allocate(8);
@@ -205,6 +295,17 @@ public class JournalReplayer {
      * @return 重放的事件数量
      */
     private long replayFromJsonJournal(Path journalFilePath) {
+        return replayFromJsonJournal(journalFilePath, null);
+    }
+
+    /**
+     * 从JSON格式的 journal 文件重放事件，支持从指定时间点开始
+     *
+     * @param journalFilePath journal 文件路径
+     * @param snapshotTimestamp 快照时间戳，如果为null则从头开始
+     * @return 重放的事件数量
+     */
+    private long replayFromJsonJournal(Path journalFilePath, Long snapshotTimestamp) {
         long totalEvents = 0;
         long batchStartTime = System.currentTimeMillis();
         int logInterval = getLogInterval();
@@ -219,6 +320,24 @@ public class JournalReplayer {
 
                 if (line.trim().isEmpty()) {
                     continue; // 跳过空行
+                }
+
+                // 如果指定了snapshot时间戳，先检查这行数据的时间戳
+                if (snapshotTimestamp != null) {
+                    try {
+                        JsonNode jsonNode = objectMapper.readTree(line.trim());
+                        long eventTimestamp = jsonNode.has("timestamp") ? jsonNode.get("timestamp").asLong() : 0;
+                        
+                        if (eventTimestamp <= snapshotTimestamp) {
+                            // 跳过snapshot之前的事件
+                            skippedLines++;
+                            continue;
+                        }
+                    } catch (Exception e) {
+                        log.warn("Could not parse timestamp from JSON line, skipping: {}", line.trim());
+                        skippedLines++;
+                        continue;
+                    }
                 }
 
                 // 解析JSON并转换为Cap'n Proto数据
