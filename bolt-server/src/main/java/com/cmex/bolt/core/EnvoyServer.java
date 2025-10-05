@@ -17,6 +17,7 @@ import com.cmex.bolt.util.OrderIdGenerator;
 import com.cmex.bolt.util.PerformanceExporter;
 import com.cmex.bolt.util.SystemBusyResponseFactory;
 import com.cmex.bolt.util.SystemBusyResponses;
+import com.cmex.bolt.recovery.DataRecovery;
 import com.lmax.disruptor.*;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
@@ -57,6 +58,9 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     private final PerformanceExporter performanceExporter;
 
     private final Transfer transfer;
+    
+    // Snapshot触发器（仅主节点使用）
+    private final SnapshotTrigger snapshotTrigger;
 
     // 复制相关组件
     @Getter
@@ -123,9 +127,24 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         // 初始化性能导出器
         performanceExporter = new PerformanceExporter(sequencerRingBuffer);
 
-        // 如果存在 journal 文件，则进行重放
+        // 首先尝试从snapshot恢复数据
+        DataRecovery dataRecovery = new DataRecovery(config);
+        long snapshotTimestamp = -1;
+        try {
+            snapshotTimestamp = dataRecovery.recoverFromSnapshot();
+        } catch (Exception e) {
+            log.error("Failed to recover from snapshot, starting with fresh data", e);
+        }
+        
+        // 然后进行journal重放，如果有snapshot则从snapshot之后开始
         JournalReplayer replayer = new JournalReplayer(sequencerRingBuffer, config);
-        replayer.replayFromJournal();
+        if (snapshotTimestamp > 0) {
+            log.info("Starting journal replay from snapshot timestamp: {}", snapshotTimestamp);
+            replayer.replayFromJournal(snapshotTimestamp);
+        } else {
+            log.info("No snapshot found, starting journal replay from beginning");
+            replayer.replayFromJournal();
+        }
 
         matchServices = new ArrayList<>(config.group());
         for (MatchDispatcher dispatcher : matchDispatchers) {
@@ -137,14 +156,23 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         for (SequencerDispatcher dispatcher : sequencerDispatchers) {
             dispatcher.getAccountService().setMatchingRingBuffer(matchingRingBuffer);
             dispatcher.getAccountService().setResponseRingBuffer(responseRingBuffer);
+            // 设置matching ring buffer给SequencerDispatcher用于转发Snapshot事件
+            dispatcher.setMatchingRingBuffer(matchingRingBuffer);
             accountServices.add(dispatcher.getAccountService());
+        }
+        
+        // 初始化Snapshot触发器（仅主节点）
+        if (config.isMaster()) {
+            this.snapshotTrigger = new SnapshotTrigger(config, sequencerRingBuffer);
+        } else {
+            this.snapshotTrigger = null;
         }
     }
 
     private List<SequencerDispatcher> createSequencerDispatchers() {
         List<SequencerDispatcher> dispatchers = new ArrayList<>();
         for (int i = 0; i < config.group(); i++) {
-            dispatchers.add(new SequencerDispatcher(config.group(), i));
+            dispatchers.add(new SequencerDispatcher(config, config.group(), i));
         }
         return dispatchers;
     }
@@ -152,7 +180,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     private List<MatchDispatcher> createMatchingDispatchers() {
         List<MatchDispatcher> dispatchers = new ArrayList<>();
         for (int i = 0; i < config.group(); i++) {
-            dispatchers.add(new MatchDispatcher(config.group(), i));
+            dispatchers.add(new MatchDispatcher(config, config.group(), i));
         }
         return dispatchers;
     }
@@ -161,6 +189,9 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
      * 关闭EnvoyServer，断开TCP客户端连接
      */
     public void shutdown() {
+        if (snapshotTrigger != null) {
+            snapshotTrigger.shutdown();
+        }
     }
 
     private AccountService getAccountService(int accountId) {

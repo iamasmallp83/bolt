@@ -1,11 +1,11 @@
 package com.cmex.bolt.handler;
 
+import com.cmex.bolt.Nexus;
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
+import com.cmex.bolt.domain.Transfer;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
-import com.lmax.disruptor.Sequence;
-import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
@@ -24,9 +24,13 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
     private final BoltConfig config;
     private final ByteBuffer lengthBuffer = ByteBuffer.allocate(4);
     private final ByteBuffer headerBuffer = ByteBuffer.allocate(20); // 8+8+4 = 20, with some padding
+    private final SnapshotHandler snapshotHandler;
+    private final Transfer transfer;
 
     public JournalHandler(BoltConfig config) {
         this.config = config;
+        this.snapshotHandler = new SnapshotHandler(config);
+        this.transfer = new Transfer();
 
         // 如果禁用日志，不创建 journal 文件
         if (!config.enableJournal()) {
@@ -60,6 +64,18 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
     @Override
     public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) throws Exception {
         try {
+            // 检查是否为snapshot事件 - snapshot事件partition为-1且payload类型为SNAPSHOT
+            if (wrapper.getPartition() == -1) {
+                // 确保buffer的readerIndex在正确位置
+                wrapper.getBuffer().readerIndex(0);
+                Nexus.NexusEvent.Reader reader = transfer.from(wrapper.getBuffer());
+                if (reader.getPayload().which() == Nexus.Payload.Which.SNAPSHOT) {
+                    // 处理snapshot事件
+                    handleSnapshotEvent(wrapper);
+                    return;
+                }
+            }
+
             // 如果禁用日志，跳过 journal 写入
             if (!config.enableJournal() || wrapper.isJournalEvent()) {
                 return;
@@ -79,6 +95,23 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
         } catch (IOException e) {
             log.error("Failed to write to journal", e);
             throw new RuntimeException("Journal write failed", e);
+        }
+    }
+
+    /**
+     * 处理snapshot事件
+     */
+    private void handleSnapshotEvent(NexusWrapper wrapper) {
+        try {
+            // 确保buffer的readerIndex在正确位置
+            wrapper.getBuffer().readerIndex(0);
+            
+            Nexus.NexusEvent.Reader reader = transfer.from(wrapper.getBuffer());
+            snapshotHandler.handleSnapshot(reader);
+            
+            log.info("Snapshot event processed successfully");
+        } catch (Exception e) {
+            log.error("Failed to handle snapshot event", e);
         }
     }
 

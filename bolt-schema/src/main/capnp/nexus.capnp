@@ -16,23 +16,23 @@ enum OrderType {
 }
 
 enum EventType {
-  placeOrder @0;
-  cancelOrder @1;
-  orderCreated @2;
-  orderCanceled @3;
-  placeOrderRejected @4;
-  cancelOrderRejected @5;
-  increase @6;
-  increased @7;
-  increaseRejected @8;
-  decrease @9;
-  decreased @10;
-  decreaseRejected @11;
-  freeze @12;
-  unfreeze @13;
-  unfrozen @14;
-  clear @15;
-  tryEvent @16;
+  snapshot @0;
+  placeOrder @1;
+  cancelOrder @2;
+  orderCreated @3;
+  orderCanceled @4;
+  placeOrderRejected @5;
+  cancelOrderRejected @6;
+  increase @7;
+  increased @8;
+  increaseRejected @9;
+  decrease @10;
+  decreased @11;
+  decreaseRejected @12;
+  freeze @13;
+  unfreeze @14;
+  unfrozen @15;
+  clear @16;
 }
 
 enum RejectionReason {
@@ -139,6 +139,10 @@ struct Clear {
     incomeAmount @5 :Text;
 }
 
+struct Snapshot {
+  timestamp @0 :Int64;
+}
+
 struct EmptyEvent {
 }
 
@@ -146,22 +150,23 @@ struct EmptyEvent {
 struct Payload {
   union {
     empty @0 :EmptyEvent;
-    placeOrder @1 :PlaceOrder;
-    cancelOrder @2 :CancelOrder;
-    orderCreated @3 :OrderCreated;
-    orderCanceled @4 :OrderCanceled;
-    placeOrderRejected @5 :PlaceOrderRejected;
-    cancelOrderRejected @6 :CancelOrderRejected;
-    increase @7 :Increase;
-    increased @8 :Increased;
-    increaseRejected @9 :IncreaseRejected;
-    decrease @10 :Decrease;
-    decreased @11 :Decreased;
-    decreaseRejected @12 :DecreaseRejected;
-    freeze @13 :Freeze;
-    unfreeze @14 :Unfreeze;
-    unfrozen @15 :Unfrozen;
-    clear @16 :Clear;
+    snapshot @1 :Snapshot;
+    placeOrder @2 :PlaceOrder;
+    cancelOrder @3 :CancelOrder;
+    orderCreated @4 :OrderCreated;
+    orderCanceled @5 :OrderCanceled;
+    placeOrderRejected @6 :PlaceOrderRejected;
+    cancelOrderRejected @7 :CancelOrderRejected;
+    increase @8 :Increase;
+    increased @9 :Increased;
+    increaseRejected @10 :IncreaseRejected;
+    decrease @11 :Decrease;
+    decreased @12 :Decreased;
+    decreaseRejected @13 :DecreaseRejected;
+    freeze @14 :Freeze;
+    unfreeze @15 :Unfreeze;
+    unfrozen @16 :Unfrozen;
+    clear @17 :Clear;
   }
 }
 
