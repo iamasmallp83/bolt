@@ -163,9 +163,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         
         // 初始化Snapshot触发器（仅主节点）
         if (config.isMaster()) {
-            // 默认每5分钟执行一次snapshot，可以通过配置调整
-            long snapshotIntervalMs = 5 * 60 * 1000; 
-            this.snapshotTrigger = new SnapshotTrigger(config, sequencerRingBuffer, snapshotIntervalMs);
+            this.snapshotTrigger = new SnapshotTrigger(config, sequencerRingBuffer);
         } else {
             this.snapshotTrigger = null;
         }
