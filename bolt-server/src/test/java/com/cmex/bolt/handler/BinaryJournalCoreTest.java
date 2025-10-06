@@ -25,7 +25,7 @@ public class BinaryJournalCoreTest {
         BoltConfig config = new BoltConfig(
                 1, tempDir.toString(), 9090, false, 4, 1024, 512, 512,
                 true, 9091, true, "localhost", 9090, 9092, 100, 5000,
-                true, "test-binary", true  // enableJournal=true, isBinary=true
+                true, "test-binary", true, 300  // enableJournal=true, isBinary=true, snapshotInterval=300
         );
 
         // 创建JournalHandler
@@ -60,7 +60,7 @@ public class BinaryJournalCoreTest {
         BoltConfig config = new BoltConfig(
                 1, tempDir.toString(), 9090, false, 4, 1024, 512, 512,
                 true, 9091, true, "localhost", 9090, 9092, 100, 5000,
-                true, "test-json", false  // enableJournal=true, isBinary=false
+                true, "test-json", false, 300  // enableJournal=true, isBinary=false, snapshotInterval=300
         );
 
         // 创建JournalHandler
@@ -95,7 +95,7 @@ public class BinaryJournalCoreTest {
         BoltConfig config = new BoltConfig(
                 1, tempDir.toString(), 9090, false, 4, 1024, 512, 512,
                 true, 9091, true, "localhost", 9090, 9092, 100, 5000,
-                false, "test-disabled", true  // enableJournal=false
+                false, "test-disabled", true, 300  // enableJournal=false, snapshotInterval=300
         );
 
         // 创建JournalHandler
@@ -126,14 +126,14 @@ public class BinaryJournalCoreTest {
         BoltConfig binaryConfig = new BoltConfig(
                 1, tempDir.toString(), 9090, false, 4, 1024, 512, 512,
                 true, 9091, true, "localhost", 9090, 9092, 100, 5000,
-                true, "test-binary", true  // enableJournal=true, isBinary=true
+                true, "test-binary", true, 300  // enableJournal=true, isBinary=true, snapshotInterval=300
         );
 
         // 创建JSON journal配置
         BoltConfig jsonConfig = new BoltConfig(
                 1, tempDir.toString(), 9090, false, 4, 1024, 512, 512,
                 true, 9091, true, "localhost", 9090, 9092, 100, 5000,
-                true, "test-json", false  // enableJournal=true, isBinary=false
+                true, "test-json", false, 300  // enableJournal=true, isBinary=false, snapshotInterval=300
         );
 
         // 创建JournalHandler
@@ -185,7 +185,7 @@ public class BinaryJournalCoreTest {
         BoltConfig config = new BoltConfig(
                 1, tempDir.toString(), 9090, false, 4, 1024, 512, 512,
                 true, 9091, true, "localhost", 9090, 9092, 100, 5000,
-                true, "test-multiple", true  // enableJournal=true, isBinary=true
+                true, "test-multiple", true, 300  // enableJournal=true, isBinary=true, snapshotInterval=300
         );
 
         // 创建JournalHandler

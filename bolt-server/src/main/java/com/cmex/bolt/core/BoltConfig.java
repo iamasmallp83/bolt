@@ -27,7 +27,9 @@ public record BoltConfig(
         int snapshotInterval
 ) {
     public static final BoltConfig DEFAULT = new BoltConfig(1, ".", 9090, false, 4, 1024,
-            512, 512, true, 9091, true, "localhost", 9090, 9092, 100, 5000, false, "journal", false, 300);
+            512, 512, true, 9091, true,
+            "localhost", 9090, 9092, 100, 5000,
+            false, "journal", false, 60);
 
     public String journalFilePath() {
         return boltHome + "/journal/" + journalFilePath + (isBinary ? ".data" : ".json");

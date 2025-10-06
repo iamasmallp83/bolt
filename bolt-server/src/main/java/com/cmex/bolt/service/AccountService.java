@@ -90,9 +90,12 @@ public class AccountService {
     }
 
     private void publishPlaceOrderEvent(NexusWrapper wrapper, Nexus.PlaceOrder.Reader placeOrder) {
+        if (wrapper.shouldSkipProcessing()) {
+            return;
+        }
         matchingRingBuffer.publishEvent((matchingWrapper, sequence) -> {
             matchingWrapper.setId(wrapper.getId());
-            matchingWrapper.setEventType(NexusWrapper.EventType.INTERNAL);
+            matchingWrapper.setEventType(wrapper.getEventType());
             matchingWrapper.setPartition(placeOrder.getSymbolId() % group);
             transfer.writePlaceOrder(placeOrder, matchingWrapper.getBuffer());
         });

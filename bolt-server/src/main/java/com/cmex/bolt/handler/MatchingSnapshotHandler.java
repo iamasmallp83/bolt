@@ -16,11 +16,13 @@ import java.util.Map;
 @Slf4j
 public class MatchingSnapshotHandler {
 
+    private final int partition;
     private final BoltConfig config;
     private final SymbolRepository symbolRepository;
     private final ObjectMapper objectMapper;
 
-    public MatchingSnapshotHandler(BoltConfig config) {
+    public MatchingSnapshotHandler(int partition, BoltConfig config) {
+        this.partition = partition;
         this.config = config;
         this.symbolRepository = SymbolRepository.getInstance();
         this.objectMapper = new ObjectMapper();
@@ -32,13 +34,12 @@ public class MatchingSnapshotHandler {
     public void handleSnapshot(Nexus.NexusEvent.Reader reader) {
         Nexus.Snapshot.Reader snapshot = reader.getPayload().getSnapshot();
         long timestamp = snapshot.getTimestamp();
-        
         log.info("Processing matching snapshot event with timestamp: {}", timestamp);
-        
+
         try {
             // 持久化OrderBook数据
             persistOrderBookData(timestamp);
-            
+
             log.info("Matching snapshot completed successfully with timestamp: {}", timestamp);
         } catch (Exception e) {
             log.error("Failed to process matching snapshot with timestamp: {}", timestamp, e);
@@ -52,20 +53,20 @@ public class MatchingSnapshotHandler {
         // 创建matching snapshot目录
         Path matchingSnapshotDir = Paths.get(config.boltHome(), "matching_snapshots");
         Files.createDirectories(matchingSnapshotDir);
-        
+
         // 生成文件名：matching.data_时间戳
-        String filename = String.format("matching.data_%d", timestamp);
+        String filename = String.format("matching.data_%d_%d", this.partition, timestamp);
         Path filePath = matchingSnapshotDir.resolve(filename);
-        
+
         // 获取所有Symbol的OrderBook数据
         Map<String, Object> matchingData = new java.util.HashMap<>();
         matchingData.put("timestamp", timestamp);
         matchingData.put("symbols", symbolRepository.getAllData());
-        
+
         try (FileWriter writer = new FileWriter(filePath.toFile())) {
             objectMapper.writeValue(writer, matchingData);
         }
-        
+
         log.debug("Matching data persisted to: {}", filePath);
     }
 }

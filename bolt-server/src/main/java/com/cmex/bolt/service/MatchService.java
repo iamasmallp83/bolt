@@ -44,7 +44,8 @@ public class MatchService {
         return symbolRepository.get(symbolId);
     }
 
-    public void on(long messageId, Nexus.PlaceOrder.Reader placeOrder) {
+    public void on(NexusWrapper wrapper, Nexus.PlaceOrder.Reader placeOrder) {
+        long messageId = wrapper.getId();
         Optional<Symbol> symbolOptional = symbolRepository.get(placeOrder.getSymbolId());
         symbolOptional.ifPresentOrElse(symbol -> {
             OrderBook orderBook = symbol.getOrderBook();
@@ -54,38 +55,47 @@ public class MatchService {
                 BigDecimal totalQuantity = BigDecimal.ZERO;
                 BigDecimal totalVolume = BigDecimal.ZERO;
                 for (Ticket ticket : result.value()) {
-                    sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
+                    sequencerRingBuffer.publishEvent((sequencerWrapper, sequence) -> {
                         MessageBuilder builder = createClearMessage(symbol, ticket.getMaker(), false,
                                 ticket.getQuantity(), ticket.getVolume());
-                        wrapper.setPartition(ticket.getMaker().getAccountId() % group);
-                        wrapper.setEventType(NexusWrapper.EventType.INTERNAL);
-                        transfer.serialize(builder, wrapper.getBuffer());
+                        sequencerWrapper.setPartition(ticket.getMaker().getAccountId() % group);
+                        setSequencerEventType(wrapper, sequencerWrapper);
+                        transfer.serialize(builder, sequencerWrapper.getBuffer());
                     });
                     totalQuantity = totalQuantity.add(ticket.getQuantity());
                     totalVolume = totalVolume.add(ticket.getVolume());
                 }
                 BigDecimal finalTotalQuantity = totalQuantity;
                 BigDecimal finalTotalVolume = totalVolume;
-                sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
+                sequencerRingBuffer.publishEvent((sequencerWrapper, sequence) -> {
                     MessageBuilder builder = createClearMessage(symbol, order, true, finalTotalQuantity,
                             finalTotalVolume);
-                    wrapper.setPartition(order.getAccountId() % group);
-                    wrapper.setEventType(NexusWrapper.EventType.INTERNAL);
-                    transfer.serialize(builder, wrapper.getBuffer());
+                    sequencerWrapper.setPartition(order.getAccountId() % group);
+                    setSequencerEventType(wrapper, sequencerWrapper);
+                    transfer.serialize(builder, sequencerWrapper.getBuffer());
                 });
             }
-            responseRingBuffer.publishEvent((wrapper, sequence) -> {
-                wrapper.setId(messageId);
-                transfer.writeOrder(order, wrapper.getBuffer());
+            responseRingBuffer.publishEvent((responseWrapper, sequence) -> {
+                if (wrapper.shouldSkipProcessing()) {
+                    return;
+                }
+                responseWrapper.setId(messageId);
+                setResponseEventType(wrapper, responseWrapper);
+                transfer.writeOrder(order, responseWrapper.getBuffer());
             });
-        }, () -> responseRingBuffer.publishEvent((wrapper, sequence) -> {
-            wrapper.setId(messageId);
+        }, () -> responseRingBuffer.publishEvent((responseWrapper, sequence) -> {
+            if (wrapper.shouldSkipProcessing()) {
+                return;
+            }
+            responseWrapper.setId(messageId);
+            setResponseEventType(wrapper, responseWrapper);
             transfer.writeFailed(Nexus.EventType.PLACE_ORDER_REJECTED, Nexus.RejectionReason.SYMBOL_NOT_EXIST,
-                    wrapper.getBuffer());
+                    responseWrapper.getBuffer());
         }));
     }
 
-    public void on(long messageId, Nexus.CancelOrder.Reader cancelOrder) {
+    public void on(NexusWrapper wrapper, Nexus.CancelOrder.Reader cancelOrder) {
+        long messageId = wrapper.getId();
         long orderId = cancelOrder.getOrderId();
         int symbolId = OrderIdGenerator.getSymbolId(orderId);
         Optional<Symbol> symbolOptional = symbolRepository.get(symbolId);
@@ -93,25 +103,38 @@ public class MatchService {
             OrderBook orderBook = symbol.getOrderBook();
             Result<Order> result = orderBook.cancel(orderId);
             if (result.isSuccess()) {
-                sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
-                    wrapper.setId(messageId);
+                sequencerRingBuffer.publishEvent((sequencerWrapper, sequence) -> {
+                    sequencerWrapper.setId(messageId);
                     Order order = result.value();
-                    wrapper.setPartition(order.getAccountId() % group);
-                    transfer.writeUnfreeze(symbol, order, wrapper.getBuffer());
+                    sequencerWrapper.setPartition(order.getAccountId() % group);
+                    setSequencerEventType(wrapper, sequencerWrapper);
+                    transfer.writeUnfreeze(symbol, order, sequencerWrapper.getBuffer());
                 });
-                responseRingBuffer.publishEvent((wrapper, sequence) -> {
-                    wrapper.setId(messageId);
-                    transfer.writeCancelOrder(cancelOrder, wrapper.getBuffer());
+                responseRingBuffer.publishEvent((responseWrapper, sequence) -> {
+                    if (wrapper.shouldSkipProcessing()) {
+                        return;
+                    }
+                    responseWrapper.setId(messageId);
+                    setResponseEventType(wrapper, responseWrapper);
+                    transfer.writeCancelOrder(cancelOrder, responseWrapper.getBuffer());
                 });
             } else {
-                responseRingBuffer.publishEvent((wrapper, sequence) -> {
-                    wrapper.setId(messageId);
+                responseRingBuffer.publishEvent((responseWrapper, sequence) -> {
+                    if (wrapper.shouldSkipProcessing()) {
+                        return;
+                    }
+                    responseWrapper.setId(messageId);
+                    setResponseEventType(wrapper, responseWrapper);
                     transfer.writeFailed(Nexus.EventType.CANCEL_ORDER_REJECTED, Nexus.RejectionReason.ORDER_NOT_EXIST,
-                            wrapper.getBuffer());
+                            responseWrapper.getBuffer());
                 });
             }
-        }, () -> responseRingBuffer.publishEvent((wrapper, sequence) -> {
-            wrapper.setId(messageId);
+        }, () -> responseRingBuffer.publishEvent((responseWrapper, sequence) -> {
+            if (wrapper.shouldSkipProcessing()) {
+                return;
+            }
+            responseWrapper.setId(messageId);
+            setResponseEventType(wrapper, responseWrapper);
             transfer.writeFailed(Nexus.EventType.CANCEL_ORDER_REJECTED, Nexus.RejectionReason.ORDER_NOT_EXIST,
                     wrapper.getBuffer());
         }));
@@ -142,7 +165,7 @@ public class MatchService {
             }
         } else {
             clear.setPayAmount(quantity.toString());
-            clear.setIncomeAmount(volume.multiply (BigDecimal.valueOf(1 - (order.getFee().get(isTaker) / Rate.BASE_RATE_DOUBLE))).toString());
+            clear.setIncomeAmount(volume.multiply(BigDecimal.valueOf(1 - (order.getFee().get(isTaker) / Rate.BASE_RATE_DOUBLE))).toString());
         }
         return messageBuilder;
     }
@@ -172,4 +195,16 @@ public class MatchService {
                 .build();
     }
 
+    private void setResponseEventType(NexusWrapper one, NexusWrapper other) {
+        other.setEventType(one.getEventType());
+    }
+
+    private void setSequencerEventType(NexusWrapper one, NexusWrapper other) {
+        if (one.isBusinessEvent()) {
+            other.setEventType(NexusWrapper.EventType.INTERNAL);
+        }
+        if (one.isJournalEvent()) {
+            other.setEventType(NexusWrapper.EventType.JOURNAL_INTERNAL);
+        }
+    }
 }

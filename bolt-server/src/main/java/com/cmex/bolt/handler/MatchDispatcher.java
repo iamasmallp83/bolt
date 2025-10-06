@@ -28,7 +28,7 @@ public class MatchDispatcher implements EventHandler<NexusWrapper>, LifecycleAwa
         this.partition = partition;
         this.matchService = new MatchService(group);
         this.transfer = new Transfer();
-        this.matchingSnapshotHandler = new MatchingSnapshotHandler(config);
+        this.matchingSnapshotHandler = new MatchingSnapshotHandler(partition, config);
     }
 
     public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) {
@@ -47,12 +47,12 @@ public class MatchDispatcher implements EventHandler<NexusWrapper>, LifecycleAwa
             case CANCEL_ORDER:
                 Nexus.CancelOrder.Reader cancelOrder = reader.getPayload().getCancelOrder();
                 if (partition == OrderIdGenerator.getSymbolId(cancelOrder.getOrderId()) % group) {
-                    matchService.on(wrapper.getId(), cancelOrder);
+                    matchService.on(wrapper, cancelOrder);
                 }
                 break;
             case PLACE_ORDER:
                 Nexus.PlaceOrder.Reader placeOrder = reader.getPayload().getPlaceOrder();
-                matchService.on(wrapper.getId(), placeOrder);
+                matchService.on(wrapper, placeOrder);
                 break;
             default:
                 break;

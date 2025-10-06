@@ -52,7 +52,7 @@ public class SnapshotTrigger {
             sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
                 wrapper.setId(0); // snapshot事件没有业务ID
                 wrapper.setPartition(-1); // snapshot事件没有分区，所有分区都需要处理
-                wrapper.setEventType(EventType.INTERNAL);
+                wrapper.setEventType(EventType.SNAPSHOT);
                 
                 // 使用Transfer来序列化Snapshot事件
                 Transfer transfer = new Transfer();
