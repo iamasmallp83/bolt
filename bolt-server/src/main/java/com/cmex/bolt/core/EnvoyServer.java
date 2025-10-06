@@ -401,7 +401,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         @SuppressWarnings("unchecked")
         @Override
         public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) {
-            if (wrapper.isBusinessEvent() || wrapper.isInternalEvent()) {
+            if (config.isMaster() && (wrapper.isBusinessEvent() || wrapper.isInternalEvent())) {
                 StreamObserver<Object> observer = (StreamObserver<Object>) observers.get(wrapper.getId());
                 Object object = transfer.to(CurrencyRepository.getInstance(), wrapper.getBuffer());
                 observer.onNext(object);
