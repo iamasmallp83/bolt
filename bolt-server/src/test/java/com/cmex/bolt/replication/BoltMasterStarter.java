@@ -26,7 +26,8 @@ public class BoltMasterStarter {
                 5000,  // batchTimeoutMs
                 true,  // enableJournal
                 "master-journal", // journalFilePath
-                false  // isBinary
+                false, // isBinary
+                300    // snapshotInterval
         );
         BoltMaster master = new BoltMaster(masterConfig);
         master.start();

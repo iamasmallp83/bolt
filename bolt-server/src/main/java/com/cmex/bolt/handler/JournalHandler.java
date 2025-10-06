@@ -66,14 +66,10 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
         try {
             // 检查是否为snapshot事件 - snapshot事件partition为-1且payload类型为SNAPSHOT
             if (wrapper.getPartition() == -1) {
-                // 确保buffer的readerIndex在正确位置
-                wrapper.getBuffer().readerIndex(0);
-                Nexus.NexusEvent.Reader reader = transfer.from(wrapper.getBuffer());
-                if (reader.getPayload().which() == Nexus.Payload.Which.SNAPSHOT) {
-                    // 处理snapshot事件
+                if (wrapper.isSnapshotEvent()) {
                     handleSnapshotEvent(wrapper);
-                    return;
                 }
+                return;
             }
 
             // 如果禁用日志，跳过 journal 写入
@@ -105,10 +101,10 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
         try {
             // 确保buffer的readerIndex在正确位置
             wrapper.getBuffer().readerIndex(0);
-            
+
             Nexus.NexusEvent.Reader reader = transfer.from(wrapper.getBuffer());
             snapshotHandler.handleSnapshot(reader);
-            
+
             log.info("Snapshot event processed successfully");
         } catch (Exception e) {
             log.error("Failed to handle snapshot event", e);
@@ -151,6 +147,7 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
         journalChannel.write(jsonBuffer);
         wrapper.getBuffer().resetReaderIndex();
     }
+
     /**
      * 优化的Cap'n Proto数据转换为JSON格式
      * 反序列化Cap'n Proto数据并转换为结构化的JSON

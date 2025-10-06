@@ -25,7 +25,8 @@ public class BoltSlaveStarter {
                 5000,  // batchTimeoutMs
                 true,  // enableJournal
                 "slave-journal", // journalFilePath
-                false  // isBinary
+                false, // isBinary
+                300    // snapshotInterval
         );
         
         BoltSlave slave = new BoltSlave(slaveConfig);

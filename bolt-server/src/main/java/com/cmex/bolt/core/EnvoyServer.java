@@ -58,7 +58,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     private final PerformanceExporter performanceExporter;
 
     private final Transfer transfer;
-    
+
     // Snapshot触发器（仅主节点使用）
     private final SnapshotTrigger snapshotTrigger;
 
@@ -135,7 +135,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         } catch (Exception e) {
             log.error("Failed to recover from snapshot, starting with fresh data", e);
         }
-        
+
         // 然后进行journal重放，如果有snapshot则从snapshot之后开始
         JournalReplayer replayer = new JournalReplayer(sequencerRingBuffer, config);
         if (snapshotTimestamp > 0) {
@@ -160,7 +160,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
             dispatcher.setMatchingRingBuffer(matchingRingBuffer);
             accountServices.add(dispatcher.getAccountService());
         }
-        
+
         // 初始化Snapshot触发器（仅主节点）
         if (config.isMaster()) {
             this.snapshotTrigger = new SnapshotTrigger(config, sequencerRingBuffer);
@@ -401,7 +401,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         @SuppressWarnings("unchecked")
         @Override
         public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) {
-            if (config.isMaster() && wrapper.isBusinessEvent()) {
+            if (config.isMaster() && (wrapper.isBusinessEvent() || wrapper.isInternalEvent())) {
                 StreamObserver<Object> observer = (StreamObserver<Object>) observers.get(wrapper.getId());
                 Object object = transfer.to(CurrencyRepository.getInstance(), wrapper.getBuffer());
                 observer.onNext(object);

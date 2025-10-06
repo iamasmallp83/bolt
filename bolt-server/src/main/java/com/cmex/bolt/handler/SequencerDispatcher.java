@@ -18,7 +18,7 @@ public class SequencerDispatcher implements EventHandler<NexusWrapper>, Lifecycl
     private final int partition;
     private final AccountService accountService;
     private final Transfer transfer;
-    
+
     @Setter
     private RingBuffer<NexusWrapper> matchingRingBuffer;
 
@@ -33,26 +33,19 @@ public class SequencerDispatcher implements EventHandler<NexusWrapper>, Lifecycl
     @Override
     public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) {
         // Snapshot事件没有分区，所有分区都需要处理
-        if (partition != wrapper.getPartition() && wrapper.getPartition() != -1) {
+        if (partition != wrapper.getPartition() && !wrapper.isSnapshotEvent()) {
             return;
         }
-        
-        // 检查buffer状态，如果被之前的处理器消费了，需要恢复
-        int readableBytes = wrapper.getBuffer().readableBytes();
-        if (readableBytes == 0) {
-            // Buffer已被消费，跳过处理
-            return;
-        }
-        
+
         // 确保buffer的readerIndex在正确位置
         wrapper.getBuffer().readerIndex(0);
-        
+
         Nexus.NexusEvent.Reader reader = transfer.from(wrapper.getBuffer());
         Nexus.Payload.Reader payload = reader.getPayload();
         switch (payload.which()) {
             case SNAPSHOT:
                 // 转发Snapshot到matching ring buffer
-                publishSnapshotEvent(wrapper, reader);
+                publishSnapshotEvent(partition, wrapper, reader);
                 break;
             case INCREASE:
                 Nexus.Increase.Reader increase = reader.getPayload().getIncrease();
@@ -88,18 +81,12 @@ public class SequencerDispatcher implements EventHandler<NexusWrapper>, Lifecycl
     /**
      * 将Snapshot事件转发到matching ring buffer
      */
-    private void publishSnapshotEvent(NexusWrapper wrapper, Nexus.NexusEvent.Reader reader) {
-        if (matchingRingBuffer != null) {
-            // 转发到所有matching dispatchers
-            for (int i = 0; i < group; i++) {
-                int finalPartition = i;
-                matchingRingBuffer.publishEvent((matchingWrapper, sequence) -> {
-                    matchingWrapper.setId(wrapper.getId());
-                    matchingWrapper.setPartition(finalPartition); // 发送到所有matching partition
-                    transfer.writeSnapshotEvent(reader, matchingWrapper.getBuffer());
-                });
-            }
-        }
+    private void publishSnapshotEvent(int partition, NexusWrapper wrapper, Nexus.NexusEvent.Reader reader) {
+        matchingRingBuffer.publishEvent((matchingWrapper, sequence) -> {
+            matchingWrapper.setId(wrapper.getId());
+            matchingWrapper.setPartition(partition); // 发送到所有matching partition
+            transfer.writeSnapshotEvent(reader, matchingWrapper.getBuffer());
+        });
     }
 
     @Override
