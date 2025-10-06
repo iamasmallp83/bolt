@@ -36,7 +36,7 @@ public abstract class HashMapRepository<K, V> implements Repository<K, V> {
 
     @Override
     public Map<K, V> getAllData() {
-        return new HashMap<>(holder);
+        return holder;
     }
 
 }

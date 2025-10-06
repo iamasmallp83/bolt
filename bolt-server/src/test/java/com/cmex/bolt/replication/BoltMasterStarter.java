@@ -9,7 +9,7 @@ public class BoltMasterStarter {
     public static void main(String[] args) throws IOException, InterruptedException {
         BoltConfig masterConfig = new BoltConfig(
                 1,     // nodeId
-                "/Users/stam/Source/Java/bolt/master", // boltHome
+                "/Users/ly/Source/Java/bolt/master", // boltHome
                 9090,  // port
                 false, // isProd
                 4,     // group
@@ -27,7 +27,7 @@ public class BoltMasterStarter {
                 true,  // enableJournal
                 "master-journal", // journalFilePath
                 false, // isBinary
-                300    // snapshotInterval
+                30    // snapshotInterval
         );
         BoltMaster master = new BoltMaster(masterConfig);
         master.start();

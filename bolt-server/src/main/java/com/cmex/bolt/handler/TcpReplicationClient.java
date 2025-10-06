@@ -408,9 +408,6 @@ public class TcpReplicationClient {
                         wrapper.getBuffer().clear();
                         wrapper.getBuffer().writeBytes(data);
                         
-                        // 确保buffer的readerIndex在正确位置
-                        wrapper.getBuffer().readerIndex(0);
-                        
                         // 发布事件
                         sequencerRingBuffer.publish(sequence);
                         

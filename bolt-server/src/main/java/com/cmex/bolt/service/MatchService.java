@@ -75,23 +75,25 @@ public class MatchService {
                     transfer.serialize(builder, sequencerWrapper.getBuffer());
                 });
             }
+            if (wrapper.isJournalEvent()) {
+                return;
+            }
             responseRingBuffer.publishEvent((responseWrapper, sequence) -> {
-                if (wrapper.shouldSkipProcessing()) {
-                    return;
-                }
                 responseWrapper.setId(messageId);
                 setResponseEventType(wrapper, responseWrapper);
                 transfer.writeOrder(order, responseWrapper.getBuffer());
             });
-        }, () -> responseRingBuffer.publishEvent((responseWrapper, sequence) -> {
-            if (wrapper.shouldSkipProcessing()) {
+        }, () -> {
+            if (wrapper.isJournalEvent()) {
                 return;
             }
-            responseWrapper.setId(messageId);
-            setResponseEventType(wrapper, responseWrapper);
-            transfer.writeFailed(Nexus.EventType.PLACE_ORDER_REJECTED, Nexus.RejectionReason.SYMBOL_NOT_EXIST,
-                    responseWrapper.getBuffer());
-        }));
+            responseRingBuffer.publishEvent((responseWrapper, sequence) -> {
+                responseWrapper.setId(messageId);
+                setResponseEventType(wrapper, responseWrapper);
+                transfer.writeFailed(Nexus.EventType.PLACE_ORDER_REJECTED, Nexus.RejectionReason.SYMBOL_NOT_EXIST,
+                        responseWrapper.getBuffer());
+            });
+        });
     }
 
     public void on(NexusWrapper wrapper, Nexus.CancelOrder.Reader cancelOrder) {
@@ -110,34 +112,36 @@ public class MatchService {
                     setSequencerEventType(wrapper, sequencerWrapper);
                     transfer.writeUnfreeze(symbol, order, sequencerWrapper.getBuffer());
                 });
+                if (wrapper.isJournalEvent()) {
+                    return;
+                }
                 responseRingBuffer.publishEvent((responseWrapper, sequence) -> {
-                    if (wrapper.shouldSkipProcessing()) {
-                        return;
-                    }
                     responseWrapper.setId(messageId);
                     setResponseEventType(wrapper, responseWrapper);
                     transfer.writeCancelOrder(cancelOrder, responseWrapper.getBuffer());
                 });
             } else {
+                if (wrapper.isJournalEvent()) {
+                    return;
+                }
                 responseRingBuffer.publishEvent((responseWrapper, sequence) -> {
-                    if (wrapper.shouldSkipProcessing()) {
-                        return;
-                    }
                     responseWrapper.setId(messageId);
                     setResponseEventType(wrapper, responseWrapper);
                     transfer.writeFailed(Nexus.EventType.CANCEL_ORDER_REJECTED, Nexus.RejectionReason.ORDER_NOT_EXIST,
                             responseWrapper.getBuffer());
                 });
             }
-        }, () -> responseRingBuffer.publishEvent((responseWrapper, sequence) -> {
-            if (wrapper.shouldSkipProcessing()) {
+        }, () -> {
+            if (wrapper.isJournalEvent()) {
                 return;
             }
-            responseWrapper.setId(messageId);
-            setResponseEventType(wrapper, responseWrapper);
-            transfer.writeFailed(Nexus.EventType.CANCEL_ORDER_REJECTED, Nexus.RejectionReason.ORDER_NOT_EXIST,
-                    wrapper.getBuffer());
-        }));
+            responseRingBuffer.publishEvent((responseWrapper, sequence) -> {
+                responseWrapper.setId(messageId);
+                setResponseEventType(wrapper, responseWrapper);
+                transfer.writeFailed(Nexus.EventType.CANCEL_ORDER_REJECTED, Nexus.RejectionReason.ORDER_NOT_EXIST,
+                        wrapper.getBuffer());
+            });
+        });
     }
 
     public DepthDto getDepth(int symbolId) {

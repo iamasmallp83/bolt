@@ -37,9 +37,6 @@ public class SequencerDispatcher implements EventHandler<NexusWrapper>, Lifecycl
             return;
         }
 
-        // 确保buffer的readerIndex在正确位置
-        wrapper.getBuffer().readerIndex(0);
-
         Nexus.NexusEvent.Reader reader = transfer.from(wrapper.getBuffer());
         Nexus.Payload.Reader payload = reader.getPayload();
         switch (payload.which()) {

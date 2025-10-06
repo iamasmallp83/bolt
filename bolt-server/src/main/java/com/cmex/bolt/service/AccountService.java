@@ -19,7 +19,9 @@ import java.util.Optional;
 public class AccountService {
 
     private final int group;
+
     private final AccountRepository accountRepository;
+
     private final CurrencyRepository currencyRepository;
 
     private final SymbolRepository symbolRepository;
@@ -66,7 +68,7 @@ public class AccountService {
     }
 
     private void handleSymbolAbsent(NexusWrapper wrapper) {
-        if (wrapper.shouldSkipProcessing()) {
+        if (wrapper.isJournalEvent()) {
             return;
         }
         publishFailureEvent(wrapper, Nexus.EventType.PLACE_ORDER_REJECTED, Nexus.RejectionReason.SYMBOL_NOT_EXIST);
@@ -83,16 +85,13 @@ public class AccountService {
     }
 
     private void handleAccountAbsent(NexusWrapper wrapper) {
-        if (wrapper.shouldSkipProcessing()) {
+        if (wrapper.isJournalEvent()) {
             return;
         }
         publishFailureEvent(wrapper, Nexus.EventType.PLACE_ORDER_REJECTED, Nexus.RejectionReason.BALANCE_NOT_ENOUGH);
     }
 
     private void publishPlaceOrderEvent(NexusWrapper wrapper, Nexus.PlaceOrder.Reader placeOrder) {
-        if (wrapper.shouldSkipProcessing()) {
-            return;
-        }
         matchingRingBuffer.publishEvent((matchingWrapper, sequence) -> {
             matchingWrapper.setId(wrapper.getId());
             matchingWrapper.setEventType(wrapper.getEventType());
@@ -123,7 +122,7 @@ public class AccountService {
     }
 
     private void publishIncreasedEvent(NexusWrapper wrapper, Balance balance) {
-        if (wrapper.shouldSkipProcessing()) {
+        if (wrapper.isJournalEvent()) {
             return;
         }
         responseRingBuffer.publishEvent((responseWrapper, sequence) -> {
@@ -134,7 +133,7 @@ public class AccountService {
     }
 
     private void publishDecreasedEvent(NexusWrapper wrapper, Balance balance) {
-        if (wrapper.shouldSkipProcessing()) {
+        if (wrapper.isJournalEvent()) {
             return;
         }
         responseRingBuffer.publishEvent((responseWrapper, sequence) -> {
@@ -150,7 +149,7 @@ public class AccountService {
     }
 
     private void publishFailureEvent(NexusWrapper wrapper, Nexus.EventType eventType, Nexus.RejectionReason rejectionReason) {
-        if (wrapper.shouldSkipProcessing()) {
+        if (wrapper.isJournalEvent()) {
             return;
         }
         responseRingBuffer.publishEvent((responseWrapper, sequence) -> {

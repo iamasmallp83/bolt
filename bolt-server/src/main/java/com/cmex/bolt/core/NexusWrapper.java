@@ -78,15 +78,6 @@ public class NexusWrapper {
     }
 
     /**
-     * 检查是否应该跳过处理（用于复制、日志记录、屏障等）
-     *
-     * @return true 如果应该跳过处理，false 如果需要处理
-     */
-    public boolean shouldSkipProcessing() {
-        return eventType == EventType.JOURNAL_INTERNAL || eventType == EventType.SNAPSHOT;
-    }
-
-    /**
      * 检查是否为业务事件（需要复制、日志记录、屏障处理）
      *
      * @return true 如果是业务事件，false 如果是回放或内部事件

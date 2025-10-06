@@ -1,6 +1,7 @@
 package com.cmex.bolt.domain;
 
 import com.cmex.bolt.dto.DepthDto;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Builder;
 import lombok.Data;
 
@@ -17,6 +18,7 @@ public class Symbol {
 
     private boolean quoteSettlement;
 
+    @JsonIgnore
     private OrderBook orderBook;
 
     public void init(){

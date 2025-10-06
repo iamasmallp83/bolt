@@ -54,8 +54,7 @@ public class SnapshotHandler {
             // 持久化数据
             persistAccountData(timestamp, snapshotDir);
             persistCurrencyData(timestamp, snapshotDir);
-            persistSymbolData(timestamp, snapshotDir);
-            
+
             // 更新journal时间戳并生成新journal文件
             updateJournalTimestamp(timestamp);
             

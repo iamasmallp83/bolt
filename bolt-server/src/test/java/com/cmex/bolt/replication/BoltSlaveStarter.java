@@ -8,7 +8,7 @@ public class BoltSlaveStarter {
         // 创建从节点配置
         BoltConfig slaveConfig = new BoltConfig(
                 2,     // nodeId
-                "/Users/stam/Source/Java/bolt/slave", // boltHome
+                "/Users/ly/Source/Java/bolt/slave", // boltHome
                 9093,  // port
                 false, // isProd
                 4,     // group
@@ -26,7 +26,7 @@ public class BoltSlaveStarter {
                 true,  // enableJournal
                 "slave-journal", // journalFilePath
                 false, // isBinary
-                300    // snapshotInterval
+                30    // snapshotInterval
         );
         
         BoltSlave slave = new BoltSlave(slaveConfig);

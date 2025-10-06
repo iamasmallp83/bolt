@@ -100,10 +100,9 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
     private void handleSnapshotEvent(NexusWrapper wrapper) {
         try {
             // 确保buffer的readerIndex在正确位置
-            wrapper.getBuffer().readerIndex(0);
-
             Nexus.NexusEvent.Reader reader = transfer.from(wrapper.getBuffer());
             snapshotHandler.handleSnapshot(reader);
+            wrapper.getBuffer().resetReaderIndex();
 
             log.info("Snapshot event processed successfully");
         } catch (Exception e) {
