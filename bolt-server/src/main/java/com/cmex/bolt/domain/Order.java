@@ -166,7 +166,7 @@ public final class Order {
         // 根据订单类型初始化可用量
         if (specification.isQuantityBased()) {
             this.availableQuantity = specification.getQuantity();
-            this.availableAmount = calculateRequiredAmountBD(specification.getQuantity());
+            this.availableAmount = calculateRequiredAmount(specification.getQuantity());
         } else {
             this.availableAmount = specification.getAmount();
             this.availableQuantity = BigDecimal.ZERO; // 将在撮合时计算
@@ -183,8 +183,8 @@ public final class Order {
         Ticket ticket = calculateMatch(symbol, maker);
 
         // 2. 应用匹配结果到双方订单
-        this.applyMatchBD(ticket, true);    // this是taker
-        maker.applyMatchBD(ticket, false);  // maker是maker
+        this.applyMatch(ticket, true);    // this是taker
+        maker.applyMatch(ticket, false);  // maker是maker
 
         return ticket;
     }
@@ -208,37 +208,9 @@ public final class Order {
     }
 
     /**
-     * 应用撮合结果（原子操作）
-     */
-    public void applyMatch(Ticket ticket, boolean isTaker) {
-        // 注意：这个方法保留为向后兼容，但实际应该使用BigDecimal版本
-        BigDecimal quantity = ticket.getQuantity();
-        BigDecimal volume = ticket.getVolume();
-
-        // 更新已成交量
-        this.executedQuantity = this.executedQuantity.add(quantity);
-        this.executedVolume = this.executedVolume.add(volume);
-
-        // 更新可用量
-        if (specification.isQuantityBased()) {
-            this.availableQuantity = this.availableQuantity.subtract(quantity);
-        } else {
-            this.availableAmount = this.availableAmount.subtract(volume);
-        }
-
-        // 计算并更新成本（包括手续费）
-        BigDecimal feeAmount = this.fee.calculateFeeBD(volume, isTaker);
-        BigDecimal orderCost = (side == Side.BID) ? volume.add(feeAmount) : quantity.add(feeAmount);
-        this.cost = this.cost.add(orderCost);
-
-        // 更新订单状态
-        updateStatusBD();
-    }
-
-    /**
      * 应用撮合结果（原子操作）(BigDecimal版本)
      */
-    public void applyMatchBD(Ticket ticket, boolean isTaker) {
+    public void applyMatch(Ticket ticket, boolean isTaker) {
 
         BigDecimal quantity = ticket.getQuantity();
         BigDecimal volume = ticket.getVolume();
@@ -405,12 +377,7 @@ public final class Order {
         }
     }
 
-    private long calculateRequiredAmount(long quantity) {
-        // 注意：这个方法保留为向后兼容，应该使用BigDecimal版本
-        return calculateRequiredAmountBD(new BigDecimal(quantity)).longValue();
-    }
-
-    private BigDecimal calculateRequiredAmountBD(BigDecimal quantity) {
+    private BigDecimal calculateRequiredAmount(BigDecimal quantity) {
         if (type == Type.LIMIT) {
             return quantity.multiply(specification.getPrice());
         }
