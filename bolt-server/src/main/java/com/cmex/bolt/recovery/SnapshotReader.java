@@ -27,14 +27,12 @@ public class SnapshotReader {
      * 查找最新的snapshot文件
      */
     public SnapshotInfo findLatestSnapshot() throws IOException {
-        Path sequencerSnapshotDir = Paths.get(config.boltHome(), "sequencer_snapshots");
-        Path matchingSnapshotDir = Paths.get(config.boltHome(), "matching_snapshots");
+        Path snapshotDir = Paths.get(config.boltHome(), "snapshots");
         
         // 确保目录存在
-        Files.createDirectories(sequencerSnapshotDir);
-        Files.createDirectories(matchingSnapshotDir);
+        Files.createDirectories(snapshotDir);
 
-        long latestTimestamp = findLatestSnapshotTimestamp(sequencerSnapshotDir);
+        long latestTimestamp = findLatestSnapshotTimestamp(snapshotDir);
         
         if (latestTimestamp == -1) {
             log.info("No snapshot files found");
@@ -42,15 +40,11 @@ public class SnapshotReader {
         }
 
         // 构建新目录结构下的文件路径
-        Path timestampDir = sequencerSnapshotDir.resolve(String.valueOf(latestTimestamp));
-        Path matchingTimestampDir = matchingSnapshotDir.resolve(String.valueOf(latestTimestamp));
+        Path timestampDir = snapshotDir.resolve(String.valueOf(latestTimestamp));
         
         return new SnapshotInfo(
             latestTimestamp,
-            timestampDir.resolve("account_0"),
-            timestampDir.resolve("currency_0"),
-            timestampDir.resolve("symbol_0"),
-            matchingTimestampDir.resolve("matching_0")
+            timestampDir
         );
     }
 
@@ -58,7 +52,7 @@ public class SnapshotReader {
      * 查找最新的matching snapshot文件
      */
     public long findLatestMatchingSnapshotTimestamp() throws IOException {
-        Path matchingSnapshotDir = Paths.get(config.boltHome(), "matching_snapshots");
+        Path matchingSnapshotDir = Paths.get(config.boltHome(), "snapshots");
         
         if (!Files.exists(matchingSnapshotDir)) {
             return -1;
@@ -189,23 +183,41 @@ public class SnapshotReader {
      */
     public static class SnapshotInfo {
         private final long timestamp;
-        private final Path accountFile;
-        private final Path currencyFile;
-        private final Path symbolFile;
-        private final Path matchingFile;
+        private final Path timestampDir;
 
-        public SnapshotInfo(long timestamp, Path accountFile, Path currencyFile, Path symbolFile, Path matchingFile) {
+        public SnapshotInfo(long timestamp, Path timestampDir) {
             this.timestamp = timestamp;
-            this.accountFile = accountFile;
-            this.currencyFile = currencyFile;
-            this.symbolFile = symbolFile;
-            this.matchingFile = matchingFile;
+            this.timestampDir = timestampDir;
         }
 
         public long getTimestamp() { return timestamp; }
-        public Path getAccountFile() { return accountFile; }
-        public Path getCurrencyFile() { return currencyFile; }
-        public Path getSymbolFile() { return symbolFile; }
-        public Path getMatchingFile() { return matchingFile; }
+        
+        /**
+         * 获取指定partition的账户文件路径
+         */
+        public Path getAccountFile(int partition) {
+            return timestampDir.resolve(String.format("account_%d", partition));
+        }
+        
+        /**
+         * 获取指定partition的货币文件路径
+         */
+        public Path getCurrencyFile(int partition) {
+            return timestampDir.resolve(String.format("currency_%d", partition));
+        }
+        
+        /**
+         * 获取指定partition的交易对文件路径
+         */
+        public Path getSymbolFile(int partition) {
+            return timestampDir.resolve(String.format("symbol_%d", partition));
+        }
+        
+        /**
+         * 获取指定partition的matching文件路径
+         */
+        public Path getMatchingFile(int partition) {
+            return timestampDir.resolve(String.format("matching_%d", partition));
+        }
     }
 }

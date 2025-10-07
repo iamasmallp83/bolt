@@ -27,7 +27,7 @@ public class BoltMasterStarter {
                 true,  // enableJournal
                 "master-journal", // journalFilePath
                 false, // isBinary
-                3000    // snapshotInterval
+                30    // snapshotInterval
         );
         BoltMaster master = new BoltMaster(masterConfig);
         master.start();

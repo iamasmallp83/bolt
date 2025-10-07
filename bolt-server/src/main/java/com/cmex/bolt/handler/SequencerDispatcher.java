@@ -4,6 +4,9 @@ import com.cmex.bolt.Nexus;
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.domain.Transfer;
+import com.cmex.bolt.repository.impl.AccountRepository;
+import com.cmex.bolt.repository.impl.CurrencyRepository;
+import com.cmex.bolt.repository.impl.SymbolRepository;
 import com.cmex.bolt.service.AccountService;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
@@ -23,11 +26,14 @@ public class SequencerDispatcher implements EventHandler<NexusWrapper>, Lifecycl
     @Setter
     private RingBuffer<NexusWrapper> matchingRingBuffer;
 
-    public SequencerDispatcher(BoltConfig config, int group, int partition) {
+    public SequencerDispatcher(BoltConfig config, int group, int partition, 
+                               AccountRepository accountRepository,
+                               CurrencyRepository currencyRepository,
+                               SymbolRepository symbolRepository) {
         this.config = config;
         this.group = group;
         this.partition = partition;
-        this.accountService = new AccountService(group);
+        this.accountService = new AccountService(group, accountRepository, currencyRepository, symbolRepository);
         this.transfer = new Transfer();
         this.sequencerSnapshot = new SequencerSnapshot(config, accountService);
     }

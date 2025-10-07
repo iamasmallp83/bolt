@@ -40,16 +40,15 @@ public class SequencerSnapshot {
         log.info("Processing sequencer snapshot event with timestamp: {}, partition: {}", timestamp, partition);
         
         try {
-            // 创建快照目录结构：sequencer_snapshots/{timestamp}/
-            Path baseSnapshotDir = Paths.get(config.boltHome(), "sequencer_snapshots");
+            // 创建快照目录结构：snapshots/{timestamp}/
+            Path baseSnapshotDir = Paths.get(config.boltHome(), "snapshots");
             Path timestampSnapshotDir = baseSnapshotDir.resolve(String.valueOf(timestamp));
             Files.createDirectories(timestampSnapshotDir);
             
             // 持久化数据
             persistAccountData(timestamp, partition, timestampSnapshotDir);
             persistCurrencyData(timestamp, partition, timestampSnapshotDir);
-            persistSymbolData(timestamp, partition, timestampSnapshotDir);
-            
+
             log.info("Sequencer snapshot completed successfully with timestamp: {}, partition: {}", timestamp, partition);
         } catch (Exception e) {
             log.error("Failed to process sequencer snapshot with timestamp: {}, partition: {}", timestamp, partition, e);
@@ -94,22 +93,4 @@ public class SequencerSnapshot {
         log.debug("Currency data persisted to: {}", filePath);
     }
 
-    /**
-     * 持久化交易对数据
-     */
-    private void persistSymbolData(long timestamp, int partition, Path snapshotDir) throws IOException {
-        Map<String, Object> symbolData = new HashMap<>();
-        symbolData.put("timestamp", timestamp);
-        symbolData.put("partition", partition);
-        symbolData.put("symbols", accountService.getSymbolRepository().getAllData());
-        
-        String filename = String.format("symbol_%d", partition);
-        Path filePath = snapshotDir.resolve(filename);
-        
-        try (FileWriter writer = new FileWriter(filePath.toFile())) {
-            objectMapper.writeValue(writer, symbolData);
-        }
-        
-        log.debug("Symbol data persisted to: {}", filePath);
-    }
 }

@@ -36,11 +36,12 @@ public class AccountService {
     private RingBuffer<NexusWrapper> matchingRingBuffer;
     private final Transfer transfer = new Transfer();
 
-    public AccountService(int group) {
+    public AccountService(int group, AccountRepository accountRepository, 
+                         CurrencyRepository currencyRepository, SymbolRepository symbolRepository) {
         this.group = group;
-        this.accountRepository = new AccountRepository();
-        this.currencyRepository = CurrencyRepository.getInstance();
-        this.symbolRepository = SymbolRepository.getInstance();
+        this.accountRepository = accountRepository;
+        this.currencyRepository = currencyRepository;
+        this.symbolRepository = symbolRepository;
     }
 
     public Optional<Currency> getCurrency(int currencyId) {

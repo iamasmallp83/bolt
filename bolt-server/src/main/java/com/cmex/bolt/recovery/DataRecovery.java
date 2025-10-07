@@ -14,6 +14,9 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -23,217 +26,443 @@ public class DataRecovery {
     private final SnapshotReader snapshotReader;
     private final ObjectMapper objectMapper;
 
-    // Repository实例
-    private final AccountRepository accountRepository;
-    private final CurrencyRepository currencyRepository;
-    private final SymbolRepository symbolRepository;
-
     public DataRecovery(BoltConfig config) {
         this.config = config;
         this.snapshotReader = new SnapshotReader(config);
         this.objectMapper = new ObjectMapper();
-        this.accountRepository = new AccountRepository();
-        this.currencyRepository = CurrencyRepository.getInstance();
-        this.symbolRepository = SymbolRepository.getInstance();
     }
 
     /**
      * 执行完整的数据恢复
      */
-    public long recoverFromSnapshot() throws IOException {
+    public SnapshotData recoverFromSnapshot() throws IOException {
         log.info("Starting data recovery from snapshot...");
-        
+
         // 查找最新的snapshot
         SnapshotReader.SnapshotInfo snapshotInfo = snapshotReader.findLatestSnapshot();
-        
+
         if (snapshotInfo == null) {
             log.info("No snapshot found, starting with fresh data");
-            return -1; // 没有snapshot，返回-1表示从头开始
+            return createEmptySnapshotData();
         }
 
         log.info("Found snapshot with timestamp: {}, recovering data...", snapshotInfo.getTimestamp());
 
-        // 按顺序恢复数据
-        recoverCurrencies(snapshotInfo.getCurrencyFile());
-        recoverSymbols(snapshotInfo.getSymbolFile());
-        recoverAccounts(snapshotInfo.getAccountFile());
-        
+        // 为每个 partition 创建 repository
+        List<AccountRepository> accountRepositories = new ArrayList<>();
+        List<CurrencyRepository> currencyRepositories = new ArrayList<>();
+        List<SymbolRepository> symbolRepositories = new ArrayList<>();
+
+        for (int i = 0; i < config.group(); i++) {
+            // 每个 partition 都有自己的 repository 实例
+            CurrencyRepository currencyRepository = recoverCurrenciesForPartition(snapshotInfo.getCurrencyFile(i), i);
+            SymbolRepository symbolRepository = recoverSymbolsForPartition(snapshotInfo.getSymbolFile(i), currencyRepository, i);
+            AccountRepository accountRepository = recoverAccountsForPartition(snapshotInfo.getAccountFile(i), currencyRepository, i);
+
+            accountRepositories.add(accountRepository);
+            currencyRepositories.add(currencyRepository);
+            symbolRepositories.add(symbolRepository);
+        }
+
         log.info("Data recovery completed successfully from snapshot: {}", snapshotInfo.getTimestamp());
-        return snapshotInfo.getTimestamp();
+        return new SnapshotData(snapshotInfo.getTimestamp(), accountRepositories, currencyRepositories, symbolRepositories);
     }
 
     /**
-     * 恢复货币数据
+     * 创建空的SnapshotData
      */
-    private void recoverCurrencies(Path currencyFile) throws IOException {
-        Map<String, Object> currencyData = snapshotReader.readCurrencyData(currencyFile);
-        
-        if (currencyData == null || currencyData.isEmpty()) {
-            log.info("No currency data in snapshot, using defaults");
-            return;
+    private SnapshotData createEmptySnapshotData() {
+        List<AccountRepository> accountRepositories = new ArrayList<>();
+        List<CurrencyRepository> currencyRepositories = new ArrayList<>();
+        List<SymbolRepository> symbolRepositories = new ArrayList<>();
+
+        for (int i = 0; i < config.group(); i++) {
+            accountRepositories.add(new AccountRepository());
+            CurrencyRepository currencyRepository = new CurrencyRepository();
+            currencyRepositories.add(currencyRepository);
+            symbolRepositories.add(new SymbolRepository(currencyRepository));
         }
 
-        log.debug("Restoring {} currencies from snapshot", currencyData.size());
-        
-        // 注意：CurrencyRepository是单例，我们需要重新初始化
-        // 这里我们清空现有数据并重新加载
-        currencyRepository.getAllData().clear();
-        
+        return new SnapshotData(-1, accountRepositories, currencyRepositories, symbolRepositories);
+    }
+
+    /**
+     * 恢复指定 partition 的货币数据
+     */
+    private CurrencyRepository recoverCurrenciesForPartition(Path currencyFile, int partition) throws IOException {
+        Map<String, Object> currencyData = snapshotReader.readCurrencyData(currencyFile);
+
+        CurrencyRepository currencyRepository = new CurrencyRepository();
+
+        if (currencyData == null || currencyData.isEmpty()) {
+            log.info("No currency data in snapshot for partition {}, using defaults", partition);
+            return currencyRepository;
+        }
+
+        log.debug("Restoring currencies for partition {} from snapshot", partition);
+
         for (Map.Entry<String, Object> entry : currencyData.entrySet()) {
             try {
                 JsonNode currencyNode = objectMapper.valueToTree(entry.getValue());
-                
-                Currency currency = Currency.builder()
-                    .id(currencyNode.get("id").asInt())
-                    .name(currencyNode.get("name").asText())
-                    .precision(currencyNode.get("precision").asInt())
-                    .build();
-                
-                currencyRepository.getOrCreate(currency.getId(), currency);
-                
-            } catch (Exception e) {
-                log.error("Failed to restore currency: {}", entry.getKey(), e);
-            }
-        }
-        
-        log.info("Successfully restored {} currencies", currencyData.size());
-    }
+                int currencyId = currencyNode.get("id").asInt();
 
-    /**
-     * 恢复交易对数据
-     */
-    private void recoverSymbols(Path symbolFile) throws IOException {
-        Map<String, Object> symbolData = snapshotReader.readSymbolData(symbolFile);
-        
-        if (symbolData == null || symbolData.isEmpty()) {
-            log.info("No symbol data in snapshot, using defaults");
-            return;
-        }
-
-        log.debug("Restoring {} symbols from snapshot", symbolData.size());
-        
-        // 清空现有symbol数据
-        symbolRepository.getAllData().clear();
-        
-        for (Map.Entry<String, Object> entry : symbolData.entrySet()) {
-            try {
-                JsonNode symbolNode = objectMapper.valueToTree(entry.getValue());
-                
-                // 获取base和quote currency
-                JsonNode baseNode = symbolNode.get("base");
-                JsonNode quoteNode = symbolNode.get("quote");
-                
-                Currency base = currencyRepository.get(baseNode.get("id").asInt()).orElse(null);
-                Currency quote = currencyRepository.get(quoteNode.get("id").asInt()).orElse(null);
-                
-                if (base == null || quote == null) {
-                    log.error("Missing base or quote currency for symbol: {}", entry.getKey());
+                // 只恢复属于当前 partition 的货币
+                if (currencyId % config.group() != partition) {
                     continue;
                 }
-                
-                // 创建Symbol
-                com.cmex.bolt.domain.Symbol symbol = com.cmex.bolt.domain.Symbol.builder()
-                    .id(symbolNode.get("id").asInt())
-                    .name(symbolNode.get("name").asText())
-                    .base(base)
-                    .quote(quote)
-                    .quoteSettlement(symbolNode.get("quoteSettlement").asBoolean())
-                    .build();
-                
-                symbol.init(); // 初始化OrderBook
-                
-                // 恢复OrderBook状态
-                JsonNode orderBookNode = symbolNode.get("orderBook");
-                if (orderBookNode != null) {
-                    restoreOrderBook(symbol, orderBookNode);
-                }
-                
-                symbolRepository.getOrCreate(symbol.getId(), symbol);
-                
+
+                Currency currency = Currency.builder()
+                        .id(currencyId)
+                        .name(currencyNode.get("name").asText())
+                        .precision(currencyNode.get("precision").asInt())
+                        .build();
+
+                currencyRepository.getOrCreate(currency.getId(), currency);
+
             } catch (Exception e) {
-                log.error("Failed to restore symbol: {}", entry.getKey(), e);
+                log.error("Failed to restore currency: {} for partition {}", entry.getKey(), partition, e);
             }
         }
-        
-        log.info("Successfully restored {} symbols", symbolData.size());
+
+        log.info("Successfully restored currencies for partition {}", partition);
+        return currencyRepository;
     }
 
     /**
-     * 恢复账户数据
+     * 恢复指定 partition 的账户数据
      */
-    private void recoverAccounts(Path accountFile) throws IOException {
+    private AccountRepository recoverAccountsForPartition(Path accountFile, CurrencyRepository currencyRepository, int partition) throws IOException {
         Map<String, Object> accountData = snapshotReader.readAccountData(accountFile);
-        
+
+        AccountRepository accountRepository = new AccountRepository();
+
         if (accountData == null || accountData.isEmpty()) {
-            log.info("No account data in snapshot, using defaults");
-            return;
+            log.info("No account data in snapshot for partition {}", partition);
+            return accountRepository;
         }
 
-        log.debug("Restoring {} accounts from snapshot", accountData.size());
-        
+        log.debug("Restoring accounts for partition {} from snapshot", partition);
+
         for (Map.Entry<String, Object> entry : accountData.entrySet()) {
             try {
                 JsonNode accountNode = objectMapper.valueToTree(entry.getValue());
                 int accountId = accountNode.get("id").asInt();
-                
+
+                // 只恢复属于当前 partition 的账户
+                if (accountId % config.group() != partition) {
+                    continue;
+                }
+
                 Account account = new Account(accountId);
-                
+
                 // 恢复余额数据
                 JsonNode balancesNode = accountNode.get("balances");
                 if (balancesNode != null) {
                     for (JsonNode balanceNode : balancesNode) {
                         JsonNode currencyNode = balanceNode.get("currency");
                         Currency currency = currencyRepository.get(currencyNode.get("id").asInt()).orElse(null);
-                        
+
                         if (currency != null) {
                             BigDecimal value = new BigDecimal(balanceNode.get("value").asText());
                             BigDecimal frozen = new BigDecimal(balanceNode.get("frozen").asText());
-                            
+
                             Balance balance = new Balance(currency, value, frozen);
                             account.addBalance(balance);
                         }
                     }
                 }
-                
+
                 accountRepository.getOrCreate(accountId, account);
-                
+
             } catch (Exception e) {
-                log.error("Failed to restore account: {}", entry.getKey(), e);
+                log.error("Failed to restore account: {} for partition {}", entry.getKey(), partition, e);
             }
         }
-        
-        log.info("Successfully restored {} accounts", accountData.size());
+
+        log.info("Successfully restored accounts for partition {}", partition);
+        return accountRepository;
+    }
+
+    /**
+     * 恢复指定 partition 的交易对数据
+     */
+    private SymbolRepository recoverSymbolsForPartition(Path symbolFile, CurrencyRepository currencyRepository, int partition) throws IOException {
+        Map<String, Object> symbolData = snapshotReader.readSymbolData(symbolFile);
+
+        SymbolRepository symbolRepository = new SymbolRepository(currencyRepository);
+
+        if (symbolData == null || symbolData.isEmpty()) {
+            log.info("No symbol data in snapshot for partition {}", partition);
+            return symbolRepository;
+        }
+
+        log.debug("Restoring symbols for partition {} from snapshot", partition);
+
+        for (Map.Entry<String, Object> entry : symbolData.entrySet()) {
+            try {
+                JsonNode symbolNode = objectMapper.valueToTree(entry.getValue());
+                int symbolId = symbolNode.get("id").asInt();
+
+                // 只恢复属于当前 partition 的交易对
+                if (symbolId % config.group() != partition) {
+                    continue;
+                }
+
+                // 获取base和quote currency
+                JsonNode baseNode = symbolNode.get("base");
+                JsonNode quoteNode = symbolNode.get("quote");
+
+                Currency base = currencyRepository.get(baseNode.get("id").asInt()).orElse(null);
+                Currency quote = currencyRepository.get(quoteNode.get("id").asInt()).orElse(null);
+
+                if (base == null || quote == null) {
+                    log.error("Missing base or quote currency for symbol: {} in partition {}", entry.getKey(), partition);
+                    continue;
+                }
+
+                // 创建Symbol
+                com.cmex.bolt.domain.Symbol symbol = com.cmex.bolt.domain.Symbol.builder()
+                        .id(symbolId)
+                        .name(symbolNode.get("name").asText())
+                        .base(base)
+                        .quote(quote)
+                        .quoteSettlement(symbolNode.get("quoteSettlement").asBoolean())
+                        .build();
+
+                symbol.init(); // 初始化OrderBook
+
+                // 恢复OrderBook状态
+                JsonNode orderBookNode = symbolNode.get("orderBook");
+                if (orderBookNode != null) {
+                    restoreOrderBook(symbol, orderBookNode);
+                }
+
+                symbolRepository.getOrCreate(symbol.getId(), symbol);
+
+            } catch (Exception e) {
+                log.error("Failed to restore symbol: {} for partition {}", entry.getKey(), partition, e);
+            }
+        }
+
+        log.info("Successfully restored symbols for partition {}", partition);
+        return symbolRepository;
     }
 
     /**
      * 恢复OrderBook状态
+     * 注意：由于Order类是不可变的，我们只能恢复基本的订单信息
+     * 动态状态（如已成交量、可用量等）将在系统重新启动后通过重新处理日志来恢复
      */
     private void restoreOrderBook(com.cmex.bolt.domain.Symbol symbol, JsonNode orderBookNode) {
         try {
-            // 这里可以根据需要恢复具体的订单簿状态
-            // 例如：恢复挂单、价格区间等
             log.debug("Restoring OrderBook for symbol: {}", symbol.getName());
             
-            // TODO: 实现具体的OrderBook状态恢复逻辑
-            // 这可能需要恢复bid/ask队列、价格区间等信息
+            com.cmex.bolt.domain.OrderBook orderBook = symbol.getOrderBook();
             
+            // 恢复bids（买单）
+            JsonNode bidsNode = orderBookNode.get("bids");
+            if (bidsNode != null) {
+                restorePriceLevels(orderBook, bidsNode, com.cmex.bolt.domain.Order.Side.BID);
+            }
+            
+            // 恢复asks（卖单）
+            JsonNode asksNode = orderBookNode.get("asks");
+            if (asksNode != null) {
+                restorePriceLevels(orderBook, asksNode, com.cmex.bolt.domain.Order.Side.ASK);
+            }
+            
+            // 恢复订单映射
+            JsonNode ordersNode = orderBookNode.get("orders");
+            if (ordersNode != null) {
+                restoreOrdersMapping(orderBook, ordersNode);
+            }
+            
+            // 更新缓存的最优价格
+            updateBestPrices(orderBook);
+            
+            log.debug("Successfully restored OrderBook for symbol: {} with {} bids and {} asks", 
+                     symbol.getName(), 
+                     orderBook.getBids().size(), 
+                     orderBook.getAsks().size());
+
         } catch (Exception e) {
             log.error("Failed to restore OrderBook for symbol: {}", symbol.getName(), e);
         }
     }
-
+    
     /**
-     * 获取恢复后的repository实例
+     * 恢复价格层级（bids或asks）
      */
-    public AccountRepository getAccountRepository() {
-        return accountRepository;
+    private void restorePriceLevels(com.cmex.bolt.domain.OrderBook orderBook, JsonNode priceLevelsNode, com.cmex.bolt.domain.Order.Side side) {
+        Iterator<Map.Entry<String, JsonNode>> fields = priceLevelsNode.fields();
+        
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> entry = fields.next();
+            try {
+                BigDecimal price = new BigDecimal(entry.getKey());
+                JsonNode priceNodeData = entry.getValue();
+                
+                // 创建PriceNode
+                com.cmex.bolt.domain.PriceNode priceNode = null;
+                
+                // 恢复该价格层级的所有订单
+                JsonNode ordersNode = priceNodeData.get("orders");
+                if (ordersNode != null && ordersNode.isArray()) {
+                    for (JsonNode orderNode : ordersNode) {
+                        com.cmex.bolt.domain.Order order = restoreOrderFromJson(orderNode);
+                        if (order != null) {
+                            if (priceNode == null) {
+                                priceNode = new com.cmex.bolt.domain.PriceNode(price, order);
+                            } else {
+                                priceNode.add(order);
+                            }
+                            
+                            // 将订单添加到订单簿的订单映射中
+                            orderBook.getOrders().put(order.getId(), order);
+                        }
+                    }
+                }
+                
+                if (priceNode != null) {
+                    // 将PriceNode添加到对应的TreeMap中
+                    if (side == com.cmex.bolt.domain.Order.Side.BID) {
+                        orderBook.getBids().put(price, priceNode);
+                    } else {
+                        orderBook.getAsks().put(price, priceNode);
+                    }
+                }
+                
+            } catch (Exception e) {
+                log.error("Failed to restore price level: {} for side: {}", entry.getKey(), side, e);
+            }
+        }
+    }
+    
+    /**
+     * 恢复订单映射（用于快速查找订单）
+     */
+    private void restoreOrdersMapping(com.cmex.bolt.domain.OrderBook orderBook, JsonNode ordersNode) {
+        Iterator<Map.Entry<String, JsonNode>> fields = ordersNode.fields();
+        
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> entry = fields.next();
+            try {
+                long orderId = Long.parseLong(entry.getKey());
+                JsonNode orderNode = entry.getValue();
+                
+                com.cmex.bolt.domain.Order order = restoreOrderFromJson(orderNode);
+                if (order != null) {
+                    orderBook.getOrders().put(orderId, order);
+                }
+                
+            } catch (Exception e) {
+                log.error("Failed to restore order mapping for orderId: {}", entry.getKey(), e);
+            }
+        }
+    }
+    
+    /**
+     * 从JSON恢复Order对象
+     * 注意：由于Order类是不可变的，我们只能恢复基本订单信息
+     * 动态状态将在系统重新启动后通过重新处理日志来恢复
+     */
+    private com.cmex.bolt.domain.Order restoreOrderFromJson(JsonNode orderNode) {
+        try {
+            long id = orderNode.get("id").asLong();
+            int symbolId = orderNode.get("symbolId").asInt();
+            int accountId = orderNode.get("accountId").asInt();
+            
+            // 恢复订单类型
+            String typeStr = orderNode.get("type").asText();
+            com.cmex.bolt.domain.Order.Type type = com.cmex.bolt.domain.Order.Type.valueOf(typeStr);
+            
+            // 恢复订单方向
+            String sideStr = orderNode.get("side").asText();
+            com.cmex.bolt.domain.Order.Side side = com.cmex.bolt.domain.Order.Side.valueOf(sideStr);
+            
+            // 恢复订单规格
+            JsonNode specNode = orderNode.get("specification");
+            com.cmex.bolt.domain.Order.Specification specification = restoreSpecificationFromJson(specNode);
+            
+            // 恢复费率
+            JsonNode feeNode = orderNode.get("fee");
+            com.cmex.bolt.domain.Order.Fee fee = restoreFeeFromJson(feeNode);
+            
+            // 恢复冻结金额
+            BigDecimal frozen = new BigDecimal(orderNode.get("frozen").asText());
+            
+            // 创建订单（只恢复基本信息，动态状态将在日志重放时恢复）
+            com.cmex.bolt.domain.Order order = com.cmex.bolt.domain.Order.builder()
+                    .id(id)
+                    .symbolId(symbolId)
+                    .accountId(accountId)
+                    .type(type)
+                    .side(side)
+                    .specification(specification)
+                    .fee(fee)
+                    .frozen(frozen)
+                    .build();
+            
+            return order;
+            
+        } catch (Exception e) {
+            log.error("Failed to restore order from JSON", e);
+            return null;
+        }
+    }
+    
+    /**
+     * 从JSON恢复订单规格
+     */
+    private com.cmex.bolt.domain.Order.Specification restoreSpecificationFromJson(JsonNode specNode) {
+        BigDecimal price = new BigDecimal(specNode.get("price").asText());
+        BigDecimal quantity = new BigDecimal(specNode.get("quantity").asText());
+        BigDecimal amount = new BigDecimal(specNode.get("amount").asText());
+        
+        String quantityTypeStr = specNode.get("quantityType").asText();
+        com.cmex.bolt.domain.Order.Specification.QuantityType quantityType = 
+                com.cmex.bolt.domain.Order.Specification.QuantityType.valueOf(quantityTypeStr);
+        
+        // 使用静态工厂方法创建Specification
+        if (quantityType == com.cmex.bolt.domain.Order.Specification.QuantityType.BY_QUANTITY) {
+            if (price.compareTo(BigDecimal.ZERO) > 0) {
+                // LIMIT订单
+                return com.cmex.bolt.domain.Order.Specification.limitByQuantity(price, quantity);
+            } else {
+                // MARKET订单按数量
+                return com.cmex.bolt.domain.Order.Specification.marketByQuantity(quantity);
+            }
+        } else {
+            // MARKET订单按金额
+            return com.cmex.bolt.domain.Order.Specification.marketByAmount(amount);
+        }
+    }
+    
+    /**
+     * 从JSON恢复费率
+     */
+    private com.cmex.bolt.domain.Order.Fee restoreFeeFromJson(JsonNode feeNode) {
+        int takerRate = feeNode.get("taker").asInt();
+        int makerRate = feeNode.get("maker").asInt();
+        
+        return com.cmex.bolt.domain.Order.Fee.builder()
+                .taker(takerRate)
+                .maker(makerRate)
+                .build();
+    }
+    
+    /**
+     * 更新OrderBook的最优价格缓存
+     * 由于updateBestPrices是私有方法，我们通过反射调用
+     */
+    private void updateBestPrices(com.cmex.bolt.domain.OrderBook orderBook) {
+        try {
+            java.lang.reflect.Method method = com.cmex.bolt.domain.OrderBook.class.getDeclaredMethod("updateBestPrices");
+            method.setAccessible(true);
+            method.invoke(orderBook);
+        } catch (Exception e) {
+            log.warn("Failed to update best prices for OrderBook", e);
+        }
     }
 
-    public CurrencyRepository getCurrencyRepository() {
-        return currencyRepository;
-    }
-
-    public SymbolRepository getSymbolRepository() {
-        return symbolRepository;
-    }
 }

@@ -4,6 +4,7 @@ import com.cmex.bolt.Nexus;
 import com.cmex.bolt.dto.DepthDto;
 import com.cmex.bolt.util.GenericObjectPool;
 import com.cmex.bolt.util.Result;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Getter;
 
 import java.util.*;
@@ -13,6 +14,7 @@ import java.math.BigDecimal;
 @Getter
 public class OrderBook {
 
+    @JsonIgnore
     private final Symbol symbol;
 
     private final TreeMap<BigDecimal, PriceNode> bids;
@@ -32,6 +34,7 @@ public class OrderBook {
     private static final int MAX_POOLED_LIST_SIZE = 100;             // 池中列表的最大容量限制
     
     // 使用通用对象池替代原有实现
+    @JsonIgnore
     private final GenericObjectPool<List<Ticket>> ticketListPool;
 
     public OrderBook(Symbol symbol) {

@@ -33,9 +33,9 @@ public class MatchService {
 
     private final int group;
 
-    public MatchService(int group) {
+    public MatchService(int group, SymbolRepository symbolRepository) {
         generator = new OrderIdGenerator();
-        symbolRepository = SymbolRepository.getInstance();
+        this.symbolRepository = symbolRepository;
         transfer = new Transfer();
         this.group = group;
     }
