@@ -9,6 +9,7 @@ import com.cmex.bolt.repository.impl.SymbolRepository;
 import com.cmex.bolt.util.BigDecimalUtil;
 import com.cmex.bolt.util.Result;
 import com.lmax.disruptor.RingBuffer;
+import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
@@ -20,10 +21,13 @@ public class AccountService {
 
     private final int group;
 
+    @Getter
     private final AccountRepository accountRepository;
 
+    @Getter
     private final CurrencyRepository currencyRepository;
 
+    @Getter
     private final SymbolRepository symbolRepository;
 
     @Setter
@@ -32,11 +36,12 @@ public class AccountService {
     private RingBuffer<NexusWrapper> matchingRingBuffer;
     private final Transfer transfer = new Transfer();
 
-    public AccountService(int group) {
+    public AccountService(int group, AccountRepository accountRepository, 
+                         CurrencyRepository currencyRepository, SymbolRepository symbolRepository) {
         this.group = group;
-        this.accountRepository = new AccountRepository();
-        this.currencyRepository = CurrencyRepository.getInstance();
-        this.symbolRepository = SymbolRepository.getInstance();
+        this.accountRepository = accountRepository;
+        this.currencyRepository = currencyRepository;
+        this.symbolRepository = symbolRepository;
     }
 
     public Optional<Currency> getCurrency(int currencyId) {

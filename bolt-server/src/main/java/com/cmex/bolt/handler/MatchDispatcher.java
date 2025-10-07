@@ -4,6 +4,7 @@ import com.cmex.bolt.Nexus;
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.domain.Transfer;
+import com.cmex.bolt.repository.impl.SymbolRepository;
 import com.cmex.bolt.service.MatchService;
 import com.cmex.bolt.util.OrderIdGenerator;
 import com.lmax.disruptor.EventHandler;
@@ -22,13 +23,13 @@ public class MatchDispatcher implements EventHandler<NexusWrapper>, LifecycleAwa
     private final Transfer transfer;
     private final MatchingSnapshotHandler matchingSnapshotHandler;
 
-    public MatchDispatcher(BoltConfig config, int group, int partition) {
+    public MatchDispatcher(BoltConfig config, int group, int partition, SymbolRepository symbolRepository) {
         this.config = config;
         this.group = group;
         this.partition = partition;
-        this.matchService = new MatchService(group);
+        this.matchService = new MatchService(group, symbolRepository);
         this.transfer = new Transfer();
-        this.matchingSnapshotHandler = new MatchingSnapshotHandler(partition, config);
+        this.matchingSnapshotHandler = new MatchingSnapshotHandler(partition, config, symbolRepository);
     }
 
     public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) {

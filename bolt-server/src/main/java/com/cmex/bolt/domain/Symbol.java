@@ -18,7 +18,6 @@ public class Symbol {
 
     private boolean quoteSettlement;
 
-    @JsonIgnore
     private OrderBook orderBook;
 
     public void init(){

@@ -4,13 +4,7 @@ import com.cmex.bolt.domain.Currency;
 
 public class CurrencyRepository extends HashMapRepository<Integer, Currency> {
 
-    private static CurrencyRepository INSTANCE = new CurrencyRepository();
-
-    public static CurrencyRepository getInstance() {
-        return INSTANCE;
-    }
-
-    private CurrencyRepository() {
+    public CurrencyRepository() {
         Currency usdt = Currency.builder()
                 .id(1)
                 .name("USDT")

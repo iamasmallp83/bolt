@@ -1,6 +1,5 @@
 package com.cmex.bolt.handler;
 
-import com.cmex.bolt.Nexus;
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.domain.Transfer;
@@ -11,25 +10,23 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 
 @Slf4j
 public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAware {
 
-    private final FileChannel journalChannel;
+    private FileChannel journalChannel;
     private final BoltConfig config;
     private final ByteBuffer lengthBuffer = ByteBuffer.allocate(4);
     private final ByteBuffer headerBuffer = ByteBuffer.allocate(20); // 8+8+4 = 20, with some padding
-    private final SnapshotHandler snapshotHandler;
     private final Transfer transfer;
 
     public JournalHandler(BoltConfig config) {
         this.config = config;
-        this.snapshotHandler = new SnapshotHandler(config);
         this.transfer = new Transfer();
 
         // 如果禁用日志，不创建 journal 文件
@@ -64,16 +61,20 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
     @Override
     public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) throws Exception {
         try {
-            // 检查是否为snapshot事件 - snapshot事件partition为-1且payload类型为SNAPSHOT
-            if (wrapper.getPartition() == -1) {
-                if (wrapper.isSnapshotEvent()) {
-                    handleSnapshotEvent(wrapper);
-                }
+            // 如果禁用日志，跳过 journal 写入
+            if (!config.enableJournal()) {
                 return;
             }
-
-            // 如果禁用日志，跳过 journal 写入
-            if (!config.enableJournal() || wrapper.isJournalEvent()) {
+            
+            // 处理 snapshot 事件 - 创建新的 journal 文件
+            if (wrapper.isSnapshotEvent()) {
+                handleSnapshotEvent(wrapper);
+                wrapper.getBuffer().resetReaderIndex();
+                return;
+            }
+            
+            // 跳过 journal 事件本身
+            if (wrapper.isJournalEvent()) {
                 return;
             }
 
@@ -87,6 +88,7 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
             if (endOfBatch) {
                 journalChannel.force(false);
             }
+            wrapper.getBuffer().resetReaderIndex();
 
         } catch (IOException e) {
             log.error("Failed to write to journal", e);
@@ -95,19 +97,83 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
     }
 
     /**
-     * 处理snapshot事件
+     * 处理 snapshot 事件 - 重命名当前 journal 文件并创建新的 journal 文件
      */
-    private void handleSnapshotEvent(NexusWrapper wrapper) {
+    private void handleSnapshotEvent(NexusWrapper wrapper) throws IOException {
         try {
-            // 确保buffer的readerIndex在正确位置
-            Nexus.NexusEvent.Reader reader = transfer.from(wrapper.getBuffer());
-            snapshotHandler.handleSnapshot(reader);
-            wrapper.getBuffer().resetReaderIndex();
-
-            log.info("Snapshot event processed successfully");
+            // 反序列化获取 snapshot 时间戳
+            com.cmex.bolt.domain.Transfer transfer = new com.cmex.bolt.domain.Transfer();
+            com.cmex.bolt.Nexus.NexusEvent.Reader nexusEvent = transfer.from(wrapper.getBuffer());
+            
+            if (nexusEvent.getPayload().which() == com.cmex.bolt.Nexus.Payload.Which.SNAPSHOT) {
+                com.cmex.bolt.Nexus.Snapshot.Reader snapshot = nexusEvent.getPayload().getSnapshot();
+                long timestamp = snapshot.getTimestamp();
+                
+                // 关闭当前 journal 文件
+                if (journalChannel != null) {
+                    journalChannel.force(true);
+                    journalChannel.close();
+                    
+                    // 重命名当前 journal 文件为带时间戳的格式
+                    renameCurrentJournalFile(timestamp);
+                }
+                
+                // 创建新的 journal 文件
+                createNewJournalFile();
+                
+                log.info("Renamed current journal file and created new journal file for snapshot timestamp: {} (format: {})", 
+                        timestamp, config.isBinary() ? "binary" : "JSON");
+            }
         } catch (Exception e) {
             log.error("Failed to handle snapshot event", e);
+            throw new IOException("Failed to handle snapshot event", e);
         }
+    }
+    
+    /**
+     * 重命名当前 journal 文件为带时间戳的格式
+     */
+    private void renameCurrentJournalFile(long timestamp) throws IOException {
+        Path currentJournalPath = Path.of(config.journalFilePath());
+        
+        if (Files.exists(currentJournalPath)) {
+            // 根据配置的格式生成带时间戳的文件名
+            String extension = config.isBinary() ? ".data" : ".json";
+            String timestampedFilename = String.format("journal_%d%s", timestamp, extension);
+            Path journalDir = Path.of(config.journalDir());
+            Path timestampedJournalFile = journalDir.resolve(timestampedFilename);
+            
+            // 确保目录存在
+            Files.createDirectories(journalDir);
+            
+            // 重命名文件
+            Files.move(currentJournalPath, timestampedJournalFile);
+            log.debug("Renamed journal file from {} to {}", currentJournalPath, timestampedJournalFile);
+        }
+    }
+    
+    /**
+     * 创建新的 journal 文件（使用默认名称）
+     */
+    private void createNewJournalFile() throws IOException {
+        Path journalPath = Path.of(config.journalFilePath());
+        
+        // 确保父目录存在
+        Path parentDir = journalPath.getParent();
+        if (parentDir != null && !Files.exists(parentDir)) {
+            Files.createDirectories(parentDir);
+        }
+        
+        // 创建新的 journal 文件（如果不存在）
+        if (!Files.exists(journalPath)) {
+            Files.createFile(journalPath);
+        }
+        
+        // 重新打开 journal channel
+        this.journalChannel = FileChannel.open(journalPath,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.WRITE,
+                StandardOpenOption.APPEND);
     }
 
     /**
@@ -144,7 +210,6 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
         String jsonData = convertToJson(wrapper);
         ByteBuffer jsonBuffer = ByteBuffer.wrap(jsonData.getBytes(StandardCharsets.UTF_8));
         journalChannel.write(jsonBuffer);
-        wrapper.getBuffer().resetReaderIndex();
     }
 
     /**

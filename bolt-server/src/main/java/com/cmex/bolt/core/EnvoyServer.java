@@ -9,8 +9,11 @@ import com.cmex.bolt.domain.Symbol;
 import com.cmex.bolt.domain.Transfer;
 import com.cmex.bolt.dto.DepthDto;
 import com.cmex.bolt.handler.*;
+import com.cmex.bolt.recovery.SnapshotData;
 import com.cmex.bolt.replication.ReplicationState;
+import com.cmex.bolt.repository.impl.AccountRepository;
 import com.cmex.bolt.repository.impl.CurrencyRepository;
+import com.cmex.bolt.repository.impl.SymbolRepository;
 import com.cmex.bolt.service.AccountService;
 import com.cmex.bolt.service.MatchService;
 import com.cmex.bolt.util.OrderIdGenerator;
@@ -26,6 +29,7 @@ import io.grpc.stub.StreamObserver;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -91,8 +95,20 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
                 new Disruptor<>(new NexusWrapper.Factory(256), config.responseSize(), DaemonThreadFactory.INSTANCE,
                         ProducerType.MULTI, waitStrategy);// Response通常是单生产者
 
-        List<SequencerDispatcher> sequencerDispatchers = createSequencerDispatchers();
-        List<MatchDispatcher> matchDispatchers = createMatchingDispatchers();
+
+        // 首先尝试从snapshot恢复数据
+        DataRecovery dataRecovery = new DataRecovery(config);
+        SnapshotData snapshotData;
+        try {
+            snapshotData = dataRecovery.recoverFromSnapshot();
+        } catch (IOException e) {
+            log.error("Failed to recover from snapshot, starting with fresh data", e);
+            throw new RuntimeException(e);
+        }
+
+        // 为每个 partition 创建对应的 repository 并重新创建 dispatcher
+        List<SequencerDispatcher> sequencerDispatchers = createSequencerDispatchersWithRecovery(snapshotData);
+        List<MatchDispatcher> matchDispatchers = createMatchingDispatchersWithRecovery(snapshotData);
 
         // 根据节点类型选择JournalHandler
         EventHandler<NexusWrapper> journalHandler = new JournalHandler(config);
@@ -124,27 +140,18 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         matchingRingBuffer = matchingDisruptor.start();
         RingBuffer<NexusWrapper> responseRingBuffer = responseDisruptor.start();
 
-        // 初始化性能导出器
-        performanceExporter = new PerformanceExporter(sequencerRingBuffer);
-
-        // 首先尝试从snapshot恢复数据
-        DataRecovery dataRecovery = new DataRecovery(config);
-        long snapshotTimestamp = -1;
-        try {
-            snapshotTimestamp = dataRecovery.recoverFromSnapshot();
-        } catch (Exception e) {
-            log.error("Failed to recover from snapshot, starting with fresh data", e);
-        }
-
         // 然后进行journal重放，如果有snapshot则从snapshot之后开始
         JournalReplayer replayer = new JournalReplayer(sequencerRingBuffer, config);
-        if (snapshotTimestamp > 0) {
-            log.info("Starting journal replay from snapshot timestamp: {}", snapshotTimestamp);
-            replayer.replayFromJournal(snapshotTimestamp);
+        if (snapshotData.timestamp() > 0) {
+            log.info("Starting journal replay from snapshot timestamp: {}", snapshotData.timestamp());
+            replayer.replayFromJournal(snapshotData.timestamp());
         } else {
             log.info("No snapshot found, starting journal replay from beginning");
             replayer.replayFromJournal();
         }
+
+        // 初始化性能导出器
+        performanceExporter = new PerformanceExporter(sequencerRingBuffer);
 
         matchServices = new ArrayList<>(config.group());
         for (MatchDispatcher dispatcher : matchDispatchers) {
@@ -169,18 +176,37 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         }
     }
 
-    private List<SequencerDispatcher> createSequencerDispatchers() {
+    private List<SequencerDispatcher> createSequencerDispatchersWithRecovery(SnapshotData snapshotData) {
         List<SequencerDispatcher> dispatchers = new ArrayList<>();
         for (int i = 0; i < config.group(); i++) {
-            dispatchers.add(new SequencerDispatcher(config, config.group(), i));
+            try {
+                // 为每个 partition 创建对应的 repository
+                AccountRepository accountRepository = snapshotData.accountRepositories().get(i);
+                CurrencyRepository currencyRepository = snapshotData.currencyRepositories().get(i);
+                SymbolRepository symbolRepository = snapshotData.symbolRepositories().get(i);
+
+                dispatchers.add(new SequencerDispatcher(config, config.group(), i,
+                        accountRepository, currencyRepository, symbolRepository));
+            } catch (Exception e) {
+                log.error("Failed to create SequencerDispatcher for partition {}", i, e);
+                throw new RuntimeException(e);
+            }
         }
         return dispatchers;
     }
 
-    private List<MatchDispatcher> createMatchingDispatchers() {
+    private List<MatchDispatcher> createMatchingDispatchersWithRecovery(SnapshotData snapshotData) {
         List<MatchDispatcher> dispatchers = new ArrayList<>();
         for (int i = 0; i < config.group(); i++) {
-            dispatchers.add(new MatchDispatcher(config, config.group(), i));
+            try {
+                // 为每个 partition 创建对应的 SymbolRepository
+                SymbolRepository symbolRepository = snapshotData.symbolRepositories().get(i);
+
+                dispatchers.add(new MatchDispatcher(config, config.group(), i, symbolRepository));
+            } catch (Exception e) {
+                log.error("Failed to create MatchDispatcher for partition {}", i, e);
+                throw new RuntimeException(e);
+            }
         }
         return dispatchers;
     }
@@ -403,7 +429,8 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) {
             if (config.isMaster() && (wrapper.isBusinessEvent() || wrapper.isInternalEvent())) {
                 StreamObserver<Object> observer = (StreamObserver<Object>) observers.get(wrapper.getId());
-                Object object = transfer.to(CurrencyRepository.getInstance(), wrapper.getBuffer());
+                //fixme 如何处理 new CurrencyRepository()
+                Object object = transfer.to(new CurrencyRepository(), wrapper.getBuffer());
                 observer.onNext(object);
                 observer.onCompleted();
             }

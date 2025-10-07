@@ -9,7 +9,7 @@ public class BoltMasterStarter {
     public static void main(String[] args) throws IOException, InterruptedException {
         BoltConfig masterConfig = new BoltConfig(
                 1,     // nodeId
-                "/Users/ly/Source/Java/bolt/master", // boltHome
+                "/Users/stam/Source/Java/bolt/master", // boltHome
                 9090,  // port
                 false, // isProd
                 4,     // group
