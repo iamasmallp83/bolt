@@ -27,26 +27,30 @@ public class SnapshotReader {
      * 查找最新的snapshot文件
      */
     public SnapshotInfo findLatestSnapshot() throws IOException {
-        Path snapshotDir = Paths.get(config.boltHome(), "snapshots");
+        Path sequencerSnapshotDir = Paths.get(config.boltHome(), "sequencer_snapshots");
         Path matchingSnapshotDir = Paths.get(config.boltHome(), "matching_snapshots");
         
         // 确保目录存在
-        Files.createDirectories(snapshotDir);
+        Files.createDirectories(sequencerSnapshotDir);
         Files.createDirectories(matchingSnapshotDir);
 
-        long latestTimestamp = findLatestSnapshotTimestamp(snapshotDir);
+        long latestTimestamp = findLatestSnapshotTimestamp(sequencerSnapshotDir);
         
         if (latestTimestamp == -1) {
             log.info("No snapshot files found");
             return null;
         }
 
+        // 构建新目录结构下的文件路径
+        Path timestampDir = sequencerSnapshotDir.resolve(String.valueOf(latestTimestamp));
+        Path matchingTimestampDir = matchingSnapshotDir.resolve(String.valueOf(latestTimestamp));
+        
         return new SnapshotInfo(
             latestTimestamp,
-            snapshotDir.resolve(String.format("accounts_%d.json", latestTimestamp)),
-            snapshotDir.resolve(String.format("currencies_%d.json", latestTimestamp)),
-            snapshotDir.resolve(String.format("symbols_%d.json", latestTimestamp)),
-            matchingSnapshotDir.resolve(String.format("matching.data_%d", latestTimestamp))
+            timestampDir.resolve("account_0"),
+            timestampDir.resolve("currency_0"),
+            timestampDir.resolve("symbol_0"),
+            matchingTimestampDir.resolve("matching_0")
         );
     }
 
@@ -62,8 +66,14 @@ public class SnapshotReader {
 
         try (Stream<Path> paths = Files.list(matchingSnapshotDir)) {
             return paths
-                .filter(path -> path.getFileName().toString().startsWith("matching.data_"))
-                .map(this::extractTimestampFromPath)
+                .filter(Files::isDirectory)
+                .map(path -> {
+                    try {
+                        return Long.parseLong(path.getFileName().toString());
+                    } catch (NumberFormatException e) {
+                        return -1L;
+                    }
+                })
                 .filter(timestamp -> timestamp > 0)
                 .max(Long::compareTo)
                 .orElse(-1L);
@@ -83,7 +93,7 @@ public class SnapshotReader {
         JsonNode accountsNode = rootNode.get("accounts");
         
         if (accountsNode != null) {
-            return objectMapper.convertValue(accountsNode, Map.class);
+            return objectMapper.convertValue(accountsNode, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
         }
         return null;
     }
@@ -101,7 +111,7 @@ public class SnapshotReader {
         JsonNode currenciesNode = rootNode.get("currencies");
         
         if (currenciesNode != null) {
-            return objectMapper.convertValue(currenciesNode, Map.class);
+            return objectMapper.convertValue(currenciesNode, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
         }
         return null;
     }
@@ -119,7 +129,7 @@ public class SnapshotReader {
         JsonNode symbolsNode = rootNode.get("symbols");
         
         if (symbolsNode != null) {
-            return objectMapper.convertValue(symbolsNode, Map.class);
+            return objectMapper.convertValue(symbolsNode, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
         }
         return null;
     }
@@ -137,20 +147,26 @@ public class SnapshotReader {
         JsonNode symbolsNode = rootNode.get("symbols");
         
         if (symbolsNode != null) {
-            return objectMapper.convertValue(symbolsNode, Map.class);
+            return objectMapper.convertValue(symbolsNode, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
         }
         return null;
     }
 
-    private long findLatestSnapshotTimestamp(Path snapshotDir) throws IOException {
-        if (!Files.exists(snapshotDir)) {
+    private long findLatestSnapshotTimestamp(Path sequencerSnapshotDir) throws IOException {
+        if (!Files.exists(sequencerSnapshotDir)) {
             return -1;
         }
 
-        try (Stream<Path> paths = Files.list(snapshotDir)) {
+        try (Stream<Path> paths = Files.list(sequencerSnapshotDir)) {
             return paths
-                .filter(path -> path.getFileName().toString().startsWith("accounts_"))
-                .map(this::extractTimestampFromPath)
+                .filter(Files::isDirectory)
+                .map(path -> {
+                    try {
+                        return Long.parseLong(path.getFileName().toString());
+                    } catch (NumberFormatException e) {
+                        return -1L;
+                    }
+                })
                 .filter(timestamp -> timestamp > 0)
                 .max(Long::compareTo)
                 .orElse(-1L);
@@ -160,18 +176,12 @@ public class SnapshotReader {
     private long extractTimestampFromPath(Path path) {
         try {
             String filename = path.getFileName().toString();
-            // 提取文件名中的时间戳，例如 accounts_1699123456789.json -> 1699123456789
-            int startIndex = filename.indexOf('_') + 1;
-            int endIndex = filename.lastIndexOf('.');
-            
-            if (startIndex > 0 && endIndex > startIndex) {
-                String timestampStr = filename.substring(startIndex, endIndex);
-                return Long.parseLong(timestampStr);
-            }
-        } catch (Exception e) {
+            // 对于新目录结构，直接解析目录名作为时间戳
+            return Long.parseLong(filename);
+        } catch (NumberFormatException e) {
             log.warn("Could not extract timestamp from path: {}", path, e);
+            return -1;
         }
-        return -1;
     }
 
     /**

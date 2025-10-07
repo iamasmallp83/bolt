@@ -18,6 +18,7 @@ public class SequencerDispatcher implements EventHandler<NexusWrapper>, Lifecycl
     private final int partition;
     private final AccountService accountService;
     private final Transfer transfer;
+    private final SequencerSnapshot sequencerSnapshot;
 
     @Setter
     private RingBuffer<NexusWrapper> matchingRingBuffer;
@@ -28,6 +29,7 @@ public class SequencerDispatcher implements EventHandler<NexusWrapper>, Lifecycl
         this.partition = partition;
         this.accountService = new AccountService(group);
         this.transfer = new Transfer();
+        this.sequencerSnapshot = new SequencerSnapshot(config, accountService);
     }
 
     @Override
@@ -36,11 +38,12 @@ public class SequencerDispatcher implements EventHandler<NexusWrapper>, Lifecycl
         if (partition != wrapper.getPartition() && !wrapper.isSnapshotEvent()) {
             return;
         }
-
-        Nexus.NexusEvent.Reader reader = transfer.from(wrapper.getBuffer());
+        Nexus.NexusEvent.Reader reader = transfer.from(wrapper.getBuffer().copy());
         Nexus.Payload.Reader payload = reader.getPayload();
         switch (payload.which()) {
             case SNAPSHOT:
+                // 处理Sequencer快照
+                sequencerSnapshot.handleSnapshot(reader, partition);
                 // 转发Snapshot到matching ring buffer
                 publishSnapshotEvent(partition, wrapper, reader);
                 break;

@@ -9,6 +9,7 @@ import com.cmex.bolt.repository.impl.SymbolRepository;
 import com.cmex.bolt.util.BigDecimalUtil;
 import com.cmex.bolt.util.Result;
 import com.lmax.disruptor.RingBuffer;
+import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
@@ -20,10 +21,13 @@ public class AccountService {
 
     private final int group;
 
+    @Getter
     private final AccountRepository accountRepository;
 
+    @Getter
     private final CurrencyRepository currencyRepository;
 
+    @Getter
     private final SymbolRepository symbolRepository;
 
     @Setter

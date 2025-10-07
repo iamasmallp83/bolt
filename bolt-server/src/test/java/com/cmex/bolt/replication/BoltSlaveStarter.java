@@ -8,7 +8,7 @@ public class BoltSlaveStarter {
         // 创建从节点配置
         BoltConfig slaveConfig = new BoltConfig(
                 2,     // nodeId
-                "/Users/ly/Source/Java/bolt/slave", // boltHome
+                "/Users/stam/Source/Java/bolt/slave", // boltHome
                 9093,  // port
                 false, // isProd
                 4,     // group

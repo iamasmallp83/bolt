@@ -48,7 +48,7 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
     @Override
     public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) throws Exception {
         // 早期返回检查 - 只处理业务事件
-        if (wrapper.isJournalEvent()) {
+        if (wrapper.isJournalEvent() || wrapper.isSnapshotEvent()) {
             return;
         }
 
