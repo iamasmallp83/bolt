@@ -236,7 +236,8 @@ public class DataRecovery {
                 if (orderBookNode != null) {
                     restoreOrderBook(symbol, orderBookNode);
                 }
-
+                //TODO 临时办法
+                symbolRepository.remove(symbol.getId());
                 symbolRepository.getOrCreate(symbol.getId(), symbol);
 
             } catch (Exception e) {
@@ -277,10 +278,7 @@ public class DataRecovery {
                 restoreOrdersMapping(orderBook, ordersNode);
             }
             
-            // 更新缓存的最优价格
-            updateBestPrices(orderBook);
-            
-            log.debug("Successfully restored OrderBook for symbol: {} with {} bids and {} asks", 
+            log.debug("Successfully restored OrderBook for symbol: {} with {} bids and {} asks",
                      symbol.getName(), 
                      orderBook.getBids().size(), 
                      orderBook.getAsks().size());

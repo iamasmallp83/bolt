@@ -56,7 +56,7 @@ public class MatchingSnapshotHandler {
         Files.createDirectories(timestampSnapshotDir);
 
         // 生成文件名：symbols_0
-        String filename = String.format("symbols_%d", this.partition);
+        String filename = String.format("symbol_%d", this.partition);
         Path filePath = timestampSnapshotDir.resolve(filename);
 
         // 获取所有Symbol的OrderBook数据

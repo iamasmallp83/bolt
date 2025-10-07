@@ -19,10 +19,13 @@ public class OrderBook {
 
     private final TreeMap<BigDecimal, PriceNode> bids;
     private final TreeMap<BigDecimal, PriceNode> asks;
+    @JsonIgnore
     private final Map<Long, Order> orders;
 
     // 缓存最优价格，避免重复TreeMap查找
+    @JsonIgnore
     private BigDecimal cachedBestBid = null;
+    @JsonIgnore
     private BigDecimal cachedBestAsk = null;
 
     // ==================== 预分配内存优化 ====================
@@ -74,6 +77,7 @@ public class OrderBook {
     /**
      * 获取对象池统计信息 - 用于性能监控
      */
+    @JsonIgnore
     public GenericObjectPool.PoolStatistics getPoolStats() {
         return ticketListPool.getStatistics();
     }

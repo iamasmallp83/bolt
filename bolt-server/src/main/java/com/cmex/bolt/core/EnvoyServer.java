@@ -145,10 +145,9 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         if (snapshotData.timestamp() > 0) {
             log.info("Starting journal replay from snapshot timestamp: {}", snapshotData.timestamp());
             replayer.replayFromJournal(snapshotData.timestamp());
-        } else {
-            log.info("No snapshot found, starting journal replay from beginning");
-            replayer.replayFromJournal();
         }
+        log.info("starting journal replay from beginning");
+        replayer.replayFromJournal();
 
         // 初始化性能导出器
         performanceExporter = new PerformanceExporter(sequencerRingBuffer);
