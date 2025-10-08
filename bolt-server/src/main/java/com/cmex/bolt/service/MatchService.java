@@ -207,8 +207,8 @@ public class MatchService {
         if (one.isBusinessEvent()) {
             other.setEventType(NexusWrapper.EventType.INTERNAL);
         }
-        if (one.isJournalEvent()) {
-            other.setEventType(NexusWrapper.EventType.JOURNAL_INTERNAL);
-        }
+//        if (one.isJournalEvent()) {
+//            other.setEventType(NexusWrapper.EventType.JOURNAL_INTERNAL);
+//        }
     }
 }

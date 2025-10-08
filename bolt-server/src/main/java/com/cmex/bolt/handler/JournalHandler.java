@@ -65,16 +65,16 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
             if (!config.enableJournal()) {
                 return;
             }
-            
+
             // 处理 snapshot 事件 - 创建新的 journal 文件
             if (wrapper.isSnapshotEvent()) {
                 handleSnapshotEvent(wrapper);
                 wrapper.getBuffer().resetReaderIndex();
                 return;
             }
-            
-            // 跳过 journal 事件本身
-            if (wrapper.isJournalEvent()) {
+
+            // 跳过 journal与内部 事件本身
+            if (wrapper.isJournalEvent() || wrapper.isInternalEvent()) {
                 return;
             }
 
@@ -104,24 +104,24 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
             // 反序列化获取 snapshot 时间戳
             com.cmex.bolt.domain.Transfer transfer = new com.cmex.bolt.domain.Transfer();
             com.cmex.bolt.Nexus.NexusEvent.Reader nexusEvent = transfer.from(wrapper.getBuffer());
-            
+
             if (nexusEvent.getPayload().which() == com.cmex.bolt.Nexus.Payload.Which.SNAPSHOT) {
                 com.cmex.bolt.Nexus.Snapshot.Reader snapshot = nexusEvent.getPayload().getSnapshot();
                 long timestamp = snapshot.getTimestamp();
-                
+
                 // 关闭当前 journal 文件
                 if (journalChannel != null) {
                     journalChannel.force(true);
                     journalChannel.close();
-                    
+
                     // 重命名当前 journal 文件为带时间戳的格式
                     renameCurrentJournalFile(timestamp);
                 }
-                
+
                 // 创建新的 journal 文件
                 createNewJournalFile();
-                
-                log.info("Renamed current journal file and created new journal file for snapshot timestamp: {} (format: {})", 
+
+                log.info("Renamed current journal file and created new journal file for snapshot timestamp: {} (format: {})",
                         timestamp, config.isBinary() ? "binary" : "JSON");
             }
         } catch (Exception e) {
@@ -129,46 +129,46 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
             throw new IOException("Failed to handle snapshot event", e);
         }
     }
-    
+
     /**
      * 重命名当前 journal 文件为带时间戳的格式
      */
     private void renameCurrentJournalFile(long timestamp) throws IOException {
         Path currentJournalPath = Path.of(config.journalFilePath());
-        
+
         if (Files.exists(currentJournalPath)) {
             // 根据配置的格式生成带时间戳的文件名
             String extension = config.isBinary() ? ".data" : ".json";
             String timestampedFilename = String.format("journal_%d%s", timestamp, extension);
             Path journalDir = Path.of(config.journalDir());
             Path timestampedJournalFile = journalDir.resolve(timestampedFilename);
-            
+
             // 确保目录存在
             Files.createDirectories(journalDir);
-            
+
             // 重命名文件
             Files.move(currentJournalPath, timestampedJournalFile);
             log.debug("Renamed journal file from {} to {}", currentJournalPath, timestampedJournalFile);
         }
     }
-    
+
     /**
      * 创建新的 journal 文件（使用默认名称）
      */
     private void createNewJournalFile() throws IOException {
         Path journalPath = Path.of(config.journalFilePath());
-        
+
         // 确保父目录存在
         Path parentDir = journalPath.getParent();
         if (parentDir != null && !Files.exists(parentDir)) {
             Files.createDirectories(parentDir);
         }
-        
+
         // 创建新的 journal 文件（如果不存在）
         if (!Files.exists(journalPath)) {
             Files.createFile(journalPath);
         }
-        
+
         // 重新打开 journal channel
         this.journalChannel = FileChannel.open(journalPath,
                 StandardOpenOption.CREATE,

@@ -2,9 +2,6 @@ package com.cmex.bolt.handler;
 
 import com.cmex.bolt.Nexus;
 import com.cmex.bolt.core.BoltConfig;
-import com.cmex.bolt.repository.impl.AccountRepository;
-import com.cmex.bolt.repository.impl.CurrencyRepository;
-import com.cmex.bolt.repository.impl.SymbolRepository;
 import com.cmex.bolt.service.AccountService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -18,13 +15,13 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Slf4j
-public class SequencerSnapshot {
+public class SequencerSnapshotHandler {
 
     private final BoltConfig config;
     private final AccountService accountService;
     private final ObjectMapper objectMapper;
 
-    public SequencerSnapshot(BoltConfig config, AccountService accountService) {
+    public SequencerSnapshotHandler(BoltConfig config, AccountService accountService) {
         this.config = config;
         this.accountService = accountService;
         this.objectMapper = new ObjectMapper();

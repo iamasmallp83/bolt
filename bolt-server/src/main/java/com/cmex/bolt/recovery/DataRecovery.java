@@ -1,9 +1,7 @@
 package com.cmex.bolt.recovery;
 
 import com.cmex.bolt.core.BoltConfig;
-import com.cmex.bolt.domain.Account;
-import com.cmex.bolt.domain.Balance;
-import com.cmex.bolt.domain.Currency;
+import com.cmex.bolt.domain.*;
 import com.cmex.bolt.repository.impl.AccountRepository;
 import com.cmex.bolt.repository.impl.CurrencyRepository;
 import com.cmex.bolt.repository.impl.SymbolRepository;
@@ -221,7 +219,7 @@ public class DataRecovery {
                 }
 
                 // 创建Symbol
-                com.cmex.bolt.domain.Symbol symbol = com.cmex.bolt.domain.Symbol.builder()
+                Symbol symbol = Symbol.builder()
                         .id(symbolId)
                         .name(symbolNode.get("name").asText())
                         .base(base)
@@ -254,22 +252,22 @@ public class DataRecovery {
      * 注意：由于Order类是不可变的，我们只能恢复基本的订单信息
      * 动态状态（如已成交量、可用量等）将在系统重新启动后通过重新处理日志来恢复
      */
-    private void restoreOrderBook(com.cmex.bolt.domain.Symbol symbol, JsonNode orderBookNode) {
+    private void restoreOrderBook(Symbol symbol, JsonNode orderBookNode) {
         try {
             log.debug("Restoring OrderBook for symbol: {}", symbol.getName());
             
-            com.cmex.bolt.domain.OrderBook orderBook = symbol.getOrderBook();
+            OrderBook orderBook = symbol.getOrderBook();
             
             // 恢复bids（买单）
             JsonNode bidsNode = orderBookNode.get("bids");
             if (bidsNode != null) {
-                restorePriceLevels(orderBook, bidsNode, com.cmex.bolt.domain.Order.Side.BID);
+                restorePriceLevels(orderBook, bidsNode, Order.Side.BID);
             }
             
             // 恢复asks（卖单）
             JsonNode asksNode = orderBookNode.get("asks");
             if (asksNode != null) {
-                restorePriceLevels(orderBook, asksNode, com.cmex.bolt.domain.Order.Side.ASK);
+                restorePriceLevels(orderBook, asksNode, Order.Side.ASK);
             }
             
             // 恢复订单映射
@@ -291,7 +289,7 @@ public class DataRecovery {
     /**
      * 恢复价格层级（bids或asks）
      */
-    private void restorePriceLevels(com.cmex.bolt.domain.OrderBook orderBook, JsonNode priceLevelsNode, com.cmex.bolt.domain.Order.Side side) {
+    private void restorePriceLevels(OrderBook orderBook, JsonNode priceLevelsNode, Order.Side side) {
         Iterator<Map.Entry<String, JsonNode>> fields = priceLevelsNode.fields();
         
         while (fields.hasNext()) {
@@ -301,16 +299,16 @@ public class DataRecovery {
                 JsonNode priceNodeData = entry.getValue();
                 
                 // 创建PriceNode
-                com.cmex.bolt.domain.PriceNode priceNode = null;
+                PriceNode priceNode = null;
                 
                 // 恢复该价格层级的所有订单
                 JsonNode ordersNode = priceNodeData.get("orders");
                 if (ordersNode != null && ordersNode.isArray()) {
                     for (JsonNode orderNode : ordersNode) {
-                        com.cmex.bolt.domain.Order order = restoreOrderFromJson(orderNode);
+                        Order order = restoreOrderFromJson(orderNode);
                         if (order != null) {
                             if (priceNode == null) {
-                                priceNode = new com.cmex.bolt.domain.PriceNode(price, order);
+                                priceNode = new PriceNode(price, order);
                             } else {
                                 priceNode.add(order);
                             }
@@ -323,7 +321,7 @@ public class DataRecovery {
                 
                 if (priceNode != null) {
                     // 将PriceNode添加到对应的TreeMap中
-                    if (side == com.cmex.bolt.domain.Order.Side.BID) {
+                    if (side == Order.Side.BID) {
                         orderBook.getBids().put(price, priceNode);
                     } else {
                         orderBook.getAsks().put(price, priceNode);
@@ -339,7 +337,7 @@ public class DataRecovery {
     /**
      * 恢复订单映射（用于快速查找订单）
      */
-    private void restoreOrdersMapping(com.cmex.bolt.domain.OrderBook orderBook, JsonNode ordersNode) {
+    private void restoreOrdersMapping(OrderBook orderBook, JsonNode ordersNode) {
         Iterator<Map.Entry<String, JsonNode>> fields = ordersNode.fields();
         
         while (fields.hasNext()) {
@@ -348,7 +346,7 @@ public class DataRecovery {
                 long orderId = Long.parseLong(entry.getKey());
                 JsonNode orderNode = entry.getValue();
                 
-                com.cmex.bolt.domain.Order order = restoreOrderFromJson(orderNode);
+                Order order = restoreOrderFromJson(orderNode);
                 if (order != null) {
                     orderBook.getOrders().put(orderId, order);
                 }
@@ -361,10 +359,9 @@ public class DataRecovery {
     
     /**
      * 从JSON恢复Order对象
-     * 注意：由于Order类是不可变的，我们只能恢复基本订单信息
-     * 动态状态将在系统重新启动后通过重新处理日志来恢复
+     * 恢复订单的基本信息和动态状态属性
      */
-    private com.cmex.bolt.domain.Order restoreOrderFromJson(JsonNode orderNode) {
+    private Order restoreOrderFromJson(JsonNode orderNode) {
         try {
             long id = orderNode.get("id").asLong();
             int symbolId = orderNode.get("symbolId").asInt();
@@ -372,25 +369,25 @@ public class DataRecovery {
             
             // 恢复订单类型
             String typeStr = orderNode.get("type").asText();
-            com.cmex.bolt.domain.Order.Type type = com.cmex.bolt.domain.Order.Type.valueOf(typeStr);
+            Order.Type type = Order.Type.valueOf(typeStr);
             
             // 恢复订单方向
             String sideStr = orderNode.get("side").asText();
-            com.cmex.bolt.domain.Order.Side side = com.cmex.bolt.domain.Order.Side.valueOf(sideStr);
+            Order.Side side = Order.Side.valueOf(sideStr);
             
             // 恢复订单规格
             JsonNode specNode = orderNode.get("specification");
-            com.cmex.bolt.domain.Order.Specification specification = restoreSpecificationFromJson(specNode);
+            Order.Specification specification = restoreSpecificationFromJson(specNode);
             
             // 恢复费率
             JsonNode feeNode = orderNode.get("fee");
-            com.cmex.bolt.domain.Order.Fee fee = restoreFeeFromJson(feeNode);
+            Order.Fee fee = restoreFeeFromJson(feeNode);
             
             // 恢复冻结金额
             BigDecimal frozen = new BigDecimal(orderNode.get("frozen").asText());
             
-            // 创建订单（只恢复基本信息，动态状态将在日志重放时恢复）
-            com.cmex.bolt.domain.Order order = com.cmex.bolt.domain.Order.builder()
+            // 创建订单（恢复基本信息）
+            Order order = Order.builder()
                     .id(id)
                     .symbolId(symbolId)
                     .accountId(accountId)
@@ -400,6 +397,38 @@ public class DataRecovery {
                     .fee(fee)
                     .frozen(frozen)
                     .build();
+            
+            // 恢复动态状态属性
+            if (orderNode.has("status")) {
+                String statusStr = orderNode.get("status").asText();
+                Order.OrderStatus status = Order.OrderStatus.valueOf(statusStr);
+                order.setStatus(status);
+            }
+            
+            if (orderNode.has("availableQuantity")) {
+                BigDecimal availableQuantity = new BigDecimal(orderNode.get("availableQuantity").asText());
+                order.setAvailableQuantity(availableQuantity);
+            }
+            
+            if (orderNode.has("availableAmount")) {
+                BigDecimal availableAmount = new BigDecimal(orderNode.get("availableAmount").asText());
+                order.setAvailableAmount(availableAmount);
+            }
+            
+            if (orderNode.has("cost")) {
+                BigDecimal cost = new BigDecimal(orderNode.get("cost").asText());
+                order.setCost(cost);
+            }
+            
+            if (orderNode.has("executedQuantity")) {
+                BigDecimal executedQuantity = new BigDecimal(orderNode.get("executedQuantity").asText());
+                order.setExecutedQuantity(executedQuantity);
+            }
+            
+            if (orderNode.has("executedVolume")) {
+                BigDecimal executedVolume = new BigDecimal(orderNode.get("executedVolume").asText());
+                order.setExecutedVolume(executedVolume);
+            }
             
             return order;
             
@@ -412,55 +441,41 @@ public class DataRecovery {
     /**
      * 从JSON恢复订单规格
      */
-    private com.cmex.bolt.domain.Order.Specification restoreSpecificationFromJson(JsonNode specNode) {
+    private Order.Specification restoreSpecificationFromJson(JsonNode specNode) {
         BigDecimal price = new BigDecimal(specNode.get("price").asText());
         BigDecimal quantity = new BigDecimal(specNode.get("quantity").asText());
         BigDecimal amount = new BigDecimal(specNode.get("amount").asText());
         
         String quantityTypeStr = specNode.get("quantityType").asText();
-        com.cmex.bolt.domain.Order.Specification.QuantityType quantityType = 
-                com.cmex.bolt.domain.Order.Specification.QuantityType.valueOf(quantityTypeStr);
+        Order.Specification.QuantityType quantityType = 
+                Order.Specification.QuantityType.valueOf(quantityTypeStr);
         
         // 使用静态工厂方法创建Specification
-        if (quantityType == com.cmex.bolt.domain.Order.Specification.QuantityType.BY_QUANTITY) {
+        if (quantityType == Order.Specification.QuantityType.BY_QUANTITY) {
             if (price.compareTo(BigDecimal.ZERO) > 0) {
                 // LIMIT订单
-                return com.cmex.bolt.domain.Order.Specification.limitByQuantity(price, quantity);
+                return Order.Specification.limitByQuantity(price, quantity);
             } else {
                 // MARKET订单按数量
-                return com.cmex.bolt.domain.Order.Specification.marketByQuantity(quantity);
+                return Order.Specification.marketByQuantity(quantity);
             }
         } else {
             // MARKET订单按金额
-            return com.cmex.bolt.domain.Order.Specification.marketByAmount(amount);
+            return Order.Specification.marketByAmount(amount);
         }
     }
     
     /**
      * 从JSON恢复费率
      */
-    private com.cmex.bolt.domain.Order.Fee restoreFeeFromJson(JsonNode feeNode) {
+    private Order.Fee restoreFeeFromJson(JsonNode feeNode) {
         int takerRate = feeNode.get("taker").asInt();
         int makerRate = feeNode.get("maker").asInt();
         
-        return com.cmex.bolt.domain.Order.Fee.builder()
+        return Order.Fee.builder()
                 .taker(takerRate)
                 .maker(makerRate)
                 .build();
     }
     
-    /**
-     * 更新OrderBook的最优价格缓存
-     * 由于updateBestPrices是私有方法，我们通过反射调用
-     */
-    private void updateBestPrices(com.cmex.bolt.domain.OrderBook orderBook) {
-        try {
-            java.lang.reflect.Method method = com.cmex.bolt.domain.OrderBook.class.getDeclaredMethod("updateBestPrices");
-            method.setAccessible(true);
-            method.invoke(orderBook);
-        } catch (Exception e) {
-            log.warn("Failed to update best prices for OrderBook", e);
-        }
-    }
-
 }

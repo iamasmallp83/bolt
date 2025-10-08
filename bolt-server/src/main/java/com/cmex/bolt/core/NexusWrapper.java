@@ -49,8 +49,7 @@ public class NexusWrapper {
         BUSINESS(0),        // 业务产生的事件
         JOURNAL(1),         // 日志回放的事件
         SNAPSHOT(2),       // 快照事件
-        INTERNAL(3),       // 内部产生的事件（如撮合产生的Clear事件）
-        JOURNAL_INTERNAL(4);       // 日志回放事件产生的中间事件
+        INTERNAL(3);       // 内部产生的事件（如撮合产生的Clear事件）
 
         private final int value;
 
