@@ -2,6 +2,7 @@ package com.cmex.bolt.domain;
 
 import lombok.Builder;
 import lombok.Getter;
+import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -31,12 +32,19 @@ public final class Order {
     private final Fee fee;                         // 费率规格
 
     // ==================== 动态状态（撮合过程中会变化） ====================
+    @Setter
     private OrderStatus status;                // 订单状态
+    @Setter
     private BigDecimal availableQuantity;      // 可用数量（原子更新）
+    @Setter
     private BigDecimal availableAmount;        // 可用金额（原子更新）
+    @Setter
     private final BigDecimal frozen;           // 冻结余额
+    @Setter
     private BigDecimal cost;                   // 累计成本
+    @Setter
     private BigDecimal executedQuantity;       // 已成交数量
+    @Setter
     private BigDecimal executedVolume;         // 已成交金额
 
     // ==================== 订单枚举定义 ====================

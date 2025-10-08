@@ -36,8 +36,8 @@ public class AccountService {
     private RingBuffer<NexusWrapper> matchingRingBuffer;
     private final Transfer transfer = new Transfer();
 
-    public AccountService(int group, AccountRepository accountRepository, 
-                         CurrencyRepository currencyRepository, SymbolRepository symbolRepository) {
+    public AccountService(int group, AccountRepository accountRepository,
+                          CurrencyRepository currencyRepository, SymbolRepository symbolRepository) {
         this.group = group;
         this.accountRepository = accountRepository;
         this.currencyRepository = currencyRepository;
@@ -165,14 +165,21 @@ public class AccountService {
     }
 
 
-    public void on(Nexus.Unfreeze.Reader unfreeze) {
+    public void on(NexusWrapper wrapper, Nexus.Unfreeze.Reader unfreeze) {
+        if (wrapper.isJournalEvent()) {
+            return;
+        }
         int accountId = unfreeze.getAccountId();
         Optional<Account> optional = accountRepository.get(accountId);
         Account account = optional.get();
         account.unfreeze(unfreeze.getCurrencyId(), new BigDecimal(unfreeze.getAmount().toString()));
     }
 
-    public void on(Nexus.Clear.Reader clear) {
+    public void on(NexusWrapper wrapper, Nexus.Clear.Reader clear) {
+        if (wrapper.isJournalEvent()) {
+            //Match也会产生清算事件
+            return;
+        }
         int accountId = clear.getAccountId();
         Optional<Account> optional = accountRepository.get(accountId);
         Account account = optional.get();

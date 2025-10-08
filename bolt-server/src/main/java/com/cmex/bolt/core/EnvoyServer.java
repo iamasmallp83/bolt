@@ -107,7 +107,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         }
 
         // 为每个 partition 创建对应的 repository 并重新创建 dispatcher
-        List<SequencerDispatcher> sequencerDispatchers = createSequencerDispatchersWithRecovery(snapshotData);
+        List<AccountDispatcher> accountDispatchers = createSequencerDispatchersWithRecovery(snapshotData);
         List<MatchDispatcher> matchDispatchers = createMatchingDispatchersWithRecovery(snapshotData);
 
         // 根据节点类型选择JournalHandler
@@ -124,14 +124,14 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
             // 配置主节点的处理链
             sequencerDisruptor.handleEventsWith(journalHandler)
                     .then(replicationHandler)
-                    .then(sequencerDispatchers.toArray(new SequencerDispatcher[0]));
+                    .then(accountDispatchers.toArray(new AccountDispatcher[0]));
         } else {
             // 从节点：JournalHandler -> SequencerDispatcher
             this.replicationHandler = null; // 从节点不需要ReplicationHandler
 
             // 配置从节点的处理链
             sequencerDisruptor.handleEventsWith(journalHandler)
-                    .then(sequencerDispatchers.toArray(new SequencerDispatcher[0]));
+                    .then(accountDispatchers.toArray(new AccountDispatcher[0]));
         }
         matchingDisruptor.handleEventsWith(matchDispatchers.toArray(new MatchDispatcher[0]));
         responseDisruptor.handleEventsWith(new ResponseEventHandler());
@@ -139,6 +139,21 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         sequencerRingBuffer = sequencerDisruptor.start();
         matchingRingBuffer = matchingDisruptor.start();
         RingBuffer<NexusWrapper> responseRingBuffer = responseDisruptor.start();
+
+        matchServices = new ArrayList<>(config.group());
+        for (MatchDispatcher dispatcher : matchDispatchers) {
+            dispatcher.getMatchService().setSequencerRingBuffer(sequencerRingBuffer);
+            dispatcher.getMatchService().setResponseRingBuffer(responseRingBuffer);
+            matchServices.add(dispatcher.getMatchService());
+        }
+        accountServices = new ArrayList<>(config.group());
+        for (AccountDispatcher dispatcher : accountDispatchers) {
+            dispatcher.getAccountService().setMatchingRingBuffer(matchingRingBuffer);
+            dispatcher.getAccountService().setResponseRingBuffer(responseRingBuffer);
+            // 设置matching ring buffer给SequencerDispatcher用于转发Snapshot事件
+            dispatcher.setMatchingRingBuffer(matchingRingBuffer);
+            accountServices.add(dispatcher.getAccountService());
+        }
 
         // 然后进行journal重放，如果有snapshot则从snapshot之后开始
         JournalReplayer replayer = new JournalReplayer(sequencerRingBuffer, config);
@@ -152,21 +167,6 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         // 初始化性能导出器
         performanceExporter = new PerformanceExporter(sequencerRingBuffer);
 
-        matchServices = new ArrayList<>(config.group());
-        for (MatchDispatcher dispatcher : matchDispatchers) {
-            dispatcher.getMatchService().setSequencerRingBuffer(sequencerRingBuffer);
-            dispatcher.getMatchService().setResponseRingBuffer(responseRingBuffer);
-            matchServices.add(dispatcher.getMatchService());
-        }
-        accountServices = new ArrayList<>(config.group());
-        for (SequencerDispatcher dispatcher : sequencerDispatchers) {
-            dispatcher.getAccountService().setMatchingRingBuffer(matchingRingBuffer);
-            dispatcher.getAccountService().setResponseRingBuffer(responseRingBuffer);
-            // 设置matching ring buffer给SequencerDispatcher用于转发Snapshot事件
-            dispatcher.setMatchingRingBuffer(matchingRingBuffer);
-            accountServices.add(dispatcher.getAccountService());
-        }
-
         // 初始化Snapshot触发器（仅主节点）
         if (config.isMaster()) {
             this.snapshotTrigger = new SnapshotTrigger(config, sequencerRingBuffer);
@@ -175,8 +175,8 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         }
     }
 
-    private List<SequencerDispatcher> createSequencerDispatchersWithRecovery(SnapshotData snapshotData) {
-        List<SequencerDispatcher> dispatchers = new ArrayList<>();
+    private List<AccountDispatcher> createSequencerDispatchersWithRecovery(SnapshotData snapshotData) {
+        List<AccountDispatcher> dispatchers = new ArrayList<>();
         for (int i = 0; i < config.group(); i++) {
             try {
                 // 为每个 partition 创建对应的 repository
@@ -184,7 +184,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
                 CurrencyRepository currencyRepository = snapshotData.currencyRepositories().get(i);
                 SymbolRepository symbolRepository = snapshotData.symbolRepositories().get(i);
 
-                dispatchers.add(new SequencerDispatcher(config, config.group(), i,
+                dispatchers.add(new AccountDispatcher(config, config.group(), i,
                         accountRepository, currencyRepository, symbolRepository));
             } catch (Exception e) {
                 log.error("Failed to create SequencerDispatcher for partition {}", i, e);
@@ -390,7 +390,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         try (PerformanceExporter.GrpcTimer timer = performanceExporter.createGrpcTimer("cancelOrder")) {
             long id = requestId.incrementAndGet();
             observers.put(id, responseObserver);
-            matchingRingBuffer.publishEvent((wrapper, sequence) -> {
+            sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
                 wrapper.setId(id);
                 wrapper.setPartition(OrderIdGenerator.getSymbolId(request.getOrderId()) % config.group());
                 transfer.writeCancelOrderRequest(request, wrapper.getBuffer());
@@ -428,7 +428,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) {
             if (config.isMaster() && (wrapper.isBusinessEvent() || wrapper.isInternalEvent())) {
                 StreamObserver<Object> observer = (StreamObserver<Object>) observers.get(wrapper.getId());
-                //fixme 如何处理 new CurrencyRepository()
+                //todo 如何处理 new CurrencyRepository()
                 Object object = transfer.to(new CurrencyRepository(), wrapper.getBuffer());
                 observer.onNext(object);
                 observer.onCompleted();
