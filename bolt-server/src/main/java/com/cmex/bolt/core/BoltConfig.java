@@ -79,6 +79,10 @@ public record BoltConfig(
         }
     }
 
+    public boolean isSlave(){
+        return !isMaster();
+    }
+
     /**
      * 打印使用说明
      */

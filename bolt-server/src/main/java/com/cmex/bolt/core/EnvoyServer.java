@@ -130,8 +130,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
             this.replicationHandler = null; // 从节点不需要ReplicationHandler
 
             // 配置从节点的处理链
-            sequencerDisruptor.handleEventsWith(journalHandler)
-                    .then(accountDispatchers.toArray(new AccountDispatcher[0]));
+            sequencerDisruptor.handleEventsWith(accountDispatchers.toArray(new AccountDispatcher[0]));
         }
         matchingDisruptor.handleEventsWith(matchDispatchers.toArray(new MatchDispatcher[0]));
         responseDisruptor.handleEventsWith(new ResponseEventHandler());
@@ -292,7 +291,14 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
                 timer.recordError();
                 return;
             }
-
+            if (config.isSlave()) {
+                IncreaseResponse response = IncreaseResponse.newBuilder()
+                        .setCode(Nexus.RejectionReason.NOT_SUPPORTED.ordinal())
+                        .setMessage(Nexus.RejectionReason.NOT_SUPPORTED.name())
+                        .build();
+                sendResponse(responseObserver, response);
+                timer.recordError();
+            }
             getAccountService(request.getAccountId()).getCurrency(request.getCurrencyId()).ifPresentOrElse(currency -> {
                 long id = requestId.incrementAndGet();
                 int partition = getPartition(request.getAccountId());
@@ -324,6 +330,14 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
                     performanceExporter)) {
                 timer.recordError();
                 return;
+            }
+            if (config.isSlave()) {
+                DecreaseResponse response = DecreaseResponse.newBuilder()
+                        .setCode(Nexus.RejectionReason.NOT_SUPPORTED.ordinal())
+                        .setMessage(Nexus.RejectionReason.NOT_SUPPORTED.name())
+                        .build();
+                sendResponse(responseObserver, response);
+                timer.recordError();
             }
 
             getAccountService(request.getAccountId()).getCurrency(request.getCurrencyId())
@@ -359,6 +373,15 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
                 return;
             }
 
+            if (config.isSlave()) {
+                PlaceOrderResponse response = PlaceOrderResponse.newBuilder()
+                        .setCode(Nexus.RejectionReason.NOT_SUPPORTED.ordinal())
+                        .setMessage(Nexus.RejectionReason.NOT_SUPPORTED.name())
+                        .build();
+                sendResponse(responseObserver, response);
+                timer.recordError();
+            }
+
             //TODO
             //市价单 支持买金额卖数量
             getSymbol(request.getSymbolId()).ifPresentOrElse(symbol -> {
@@ -388,6 +411,19 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     @Override
     public void cancelOrder(CancelOrderRequest request, StreamObserver<CancelOrderResponse> responseObserver) {
         try (PerformanceExporter.GrpcTimer timer = performanceExporter.createGrpcTimer("cancelOrder")) {
+            if (handleBackpressure(responseObserver, SystemBusyResponses::createCancelOrderBusyResponse,
+                    performanceExporter)) {
+                timer.recordError();
+                return;
+            }
+            if (config.isSlave()) {
+                CancelOrderResponse response = CancelOrderResponse.newBuilder()
+                        .setCode(Nexus.RejectionReason.NOT_SUPPORTED.ordinal())
+                        .setMessage(Nexus.RejectionReason.NOT_SUPPORTED.name())
+                        .build();
+                sendResponse(responseObserver, response);
+                timer.recordError();
+            }
             long id = requestId.incrementAndGet();
             observers.put(id, responseObserver);
             sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
