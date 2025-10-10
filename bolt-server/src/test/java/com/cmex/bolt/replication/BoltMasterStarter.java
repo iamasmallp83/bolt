@@ -17,17 +17,17 @@ public class BoltMasterStarter {
                 512,   // matchingSize
                 512,   // responseSize
                 false, // enablePrometheus
-                9091,  // prometheusPort
+                9092,  // prometheusPort
                 true,  // isMaster
                 "localhost", // masterHost
-                9090,  // masterPort
-                9092,  // replicationPort
+                9091,  // masterReplicationPort
+                9092,  // slaveReplicationPort
                 100,   // batchSize
                 5000,  // batchTimeoutMs
                 true,  // enableJournal
                 "master-journal", // journalFilePath
                 false, // isBinary
-                30    // snapshotInterval
+                3000    // snapshotInterval
         );
         BoltMaster master = new BoltMaster(masterConfig);
         master.start();

@@ -30,7 +30,7 @@ public class TestAccountPerformance {
     void setUp() {
         service = new EnvoyServer(new BoltConfig(1, "./bolt-home", 9090, true, 10,
                 1024 * 1024 * 2, 1024 * 1024, 1024 * 1024, true, 9091,
-                false, "localhost", 9090, 9092, 100, 5000, true, "journal", true, 300));
+                false, "localhost", 9090,  9092, 100, 5000, true, "journal", true, 300));
     }
 
     @Test

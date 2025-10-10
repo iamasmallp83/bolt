@@ -111,6 +111,26 @@ public class NexusWrapper {
     public boolean isInternalEvent() {
         return eventType == EventType.INTERNAL;
     }
+    
+    /**
+     * 检查是否为replication事件（从主节点复制的业务事件）
+     *
+     * @return true 如果是replication事件，false 如果不是
+     */
+    public boolean isReplicationEvent() {
+        return eventType == EventType.BUSINESS; // replication事件也是业务事件
+    }
+    
+    /**
+     * 获取buffer的副本
+     *
+     * @return buffer的副本
+     */
+    public byte[] getBufferCopy() {
+        byte[] copy = new byte[buffer.readableBytes()];
+        buffer.getBytes(buffer.readerIndex(), copy);
+        return copy;
+    }
 
     /**
      * ByteBuf消息事件工厂

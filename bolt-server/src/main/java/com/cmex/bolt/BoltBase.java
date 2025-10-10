@@ -82,11 +82,19 @@ public abstract class BoltBase {
                 .permitKeepAliveWithoutCalls(true)
                 .permitKeepAliveTime(30, TimeUnit.SECONDS);
         
+        // 添加复制服务（如果存在）
+        addReplicationServices(builder);
+        
         // 使用worker执行操作
         builder.executor(MoreExecutors.directExecutor());
         
         return builder.build();
     }
+    
+    /**
+     * 添加复制服务到gRPC服务器 - 子类实现
+     */
+    protected abstract void addReplicationServices(NettyServerBuilder builder);
     
     /**
      * 启动特定于节点类型的服务 - 子类实现

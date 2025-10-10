@@ -9,7 +9,7 @@ public class BoltSlaveStarter {
         BoltConfig slaveConfig = new BoltConfig(
                 2,     // nodeId
                 "/Users/stam/Source/Java/bolt/slave", // boltHome
-                9093,  // port
+                19090,  // port
                 false, // isProd
                 4,     // group
                 1024,  // sequencerSize
@@ -19,20 +19,17 @@ public class BoltSlaveStarter {
                 9094,  // prometheusPort
                 false, // isMaster
                 "127.0.0.1", // masterHost
-                9092,  // masterPort - 指向master的TCP复制服务端口
-                9095,  // replicationPort
+                9091,  // masterReplicationPort
+                19091,  // slaveReplicationPort
                 100,   // batchSize
                 5000,  // batchTimeoutMs
                 true,  // enableJournal
                 "slave-journal", // journalFilePath
                 false, // isBinary
-                30    // snapshotInterval
+                3000    // snapshotInterval
         );
         
         BoltSlave slave = new BoltSlave(slaveConfig);
-        
-        System.out.println("Starting slave node with TCP replication to master at " + 
-                slaveConfig.masterHost() + ":" + slaveConfig.masterPort());
         
         slave.start();
     }

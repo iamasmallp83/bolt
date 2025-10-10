@@ -6,15 +6,23 @@ option java_outer_classname = "ReplicationProto";
 enum MessageType {
   REGISTER = 0;      // 注册消息
   HEARTBEAT = 1;     // 心跳消息
-  BUSINESS = 2;      // 业务消息
-  CONFIRMATION = 3;  // 确认消息
-  BATCH_BUSINESS = 4; // 批处理业务消息
+  BATCH_BUSINESS = 2; // 批处理业务消息
+  BUSINESS_PUBLISH_CONFIRM = 3; // 业务消息发布确认
+  SNAPSHOT_DATA = 4; // 快照数据消息
+  JOURNAL_REPLAY = 5; // Journal重放消息
+  STATE_SYNC = 6;    // 状态同步消息
+  BUFFER_FIRST_ID_REPORT = 7; // 缓冲第一条数据ID报告
 }
 
-// 节点类型枚举
-enum NodeType {
-  MASTER = 0;        // 主节点
-  SLAVE = 1;         // 从节点
+// 复制状态枚举
+enum ReplicationState {
+  INITIAL = 0;       // 初始状态
+  REGISTERED = 1;    // 已注册
+  SNAPSHOT_SYNC = 2; // 快照同步中
+  BUSINESS_BUFFERING = 3; // 业务消息缓冲中（等待journal同步完成）
+  JOURNAL_SYNC = 4;  // Journal同步中
+  READY = 5;         // 就绪状态，可以正常处理业务
+  ERROR = 6;         // 错误状态
 }
 
 // 协议头部
@@ -30,11 +38,10 @@ message ProtocolHeader {
 // 注册消息
 message RegisterMessage {
   int32 node_id = 1;         // 节点ID
-  NodeType node_type = 2;    // 节点类型
-  string host = 3;           // 主机地址
-  int32 port = 4;            // 端口
-  int32 replication_port = 5; // 复制端口
-  map<string, string> metadata = 6; // 元数据
+  string host = 2;           // 主机地址
+  int32 port = 3;            // 端口
+  int32 replication_port = 4; // 复制端口
+  map<string, string> metadata = 5; // 元数据
 }
 
 // 注册响应
@@ -60,15 +67,6 @@ message HeartbeatResponse {
   int32 next_heartbeat_interval = 3; // 下次心跳间隔(秒)
 }
 
-// 业务消息
-message BusinessMessage {
-  int64 sequence = 1;       // 序列号
-  int32 partition = 2;      // 分区
-  int32 event_type = 3;     // 事件类型
-  bytes data = 4;           // 业务数据
-  int64 timestamp = 5;      // 时间戳
-}
-
 // 批处理业务消息
 message BatchBusinessMessage {
   int64 batch_id = 1;       // 批次ID
@@ -76,7 +74,7 @@ message BatchBusinessMessage {
   int64 start_sequence = 3; // 起始序列号
   int64 end_sequence = 4;   // 结束序列号
   int64 timestamp = 5;      // 批次时间戳
-  repeated BusinessMessage messages = 6; // 业务消息列表
+  repeated bytes messages = 6; // 业务消息数据列表
 }
 
 // 确认消息
@@ -88,18 +86,78 @@ message ConfirmationMessage {
   string error_message = 5; // 错误消息(如果有)
 }
 
-// 主协议消息 - 包含所有类型的消息
-message ReplicationMessage {
-  ProtocolHeader header = 1;           // 协议头部
+// 快照数据消息
+message SnapshotDataMessage {
+  int64 snapshot_timestamp = 1; // 快照时间戳
+  int32 partition = 2;          // 分区ID
+  string data_type = 3;         // 数据类型 (account/currency/symbol)
+  bytes snapshot_data = 4;      // 快照数据
+  int32 total_partitions = 5;   // 总分区数
+  bool is_last_partition = 6;   // 是否为最后一个分区
+}
+
+// Journal重放消息
+message JournalReplayMessage {
+  int64 start_timestamp = 1;    // 开始时间戳
+  int64 end_timestamp = 2;      // 结束时间戳
+  bytes journal_data = 3;       // Journal数据
+  int64 sequence = 4;           // 序列号
+  bool is_last_chunk = 5;       // 是否为最后一块
+}
+
+// 状态同步消息
+message StateSyncMessage {
+  int32 node_id = 1;           // 节点ID
+  ReplicationState current_state = 2; // 当前状态
+  int64 last_sequence = 3;     // 最后处理的序列号
+  int64 timestamp = 4;         // 时间戳
+  string error_message = 5;    // 错误消息(如果有)
+  map<string, string> metadata = 6; // 额外元数据
+}
+
+// 业务消息发布确认
+message BusinessPublishConfirmMessage {
+  int32 node_id = 1;           // 节点ID
+  int64 published_sequence = 2; // 已发布的序列号
+  int64 timestamp = 3;         // 确认时间戳
+  bool success = 4;            // 是否成功发布
+  string error_message = 5;    // 错误消息(如果有)
+}
+
+// 缓冲第一条数据ID报告
+message BufferFirstIdReportMessage {
+  int32 node_id = 1;           // 节点ID
+  int64 first_buffered_id = 2;  // 缓冲的第一条数据ID
+  int64 timestamp = 3;          // 报告时间戳
+  int32 buffer_size = 4;        // 当前缓冲大小
+}
+
+// 主节点服务定义（从节点调用主节点）
+service MasterReplicationService {
+  // 从节点注册到主节点（从 -> 主）
+  rpc RegisterSlave(RegisterMessage) returns (RegisterResponse);
   
-  // 消息内容 - 根据 header.message_type 确定使用哪个字段
-  oneof message {
-    RegisterMessage register = 2;      // 注册消息
-    RegisterResponse register_response = 3; // 注册响应
-    HeartbeatMessage heartbeat = 4;    // 心跳消息
-    HeartbeatResponse heartbeat_response = 5; // 心跳响应
-    BusinessMessage business = 6;      // 业务消息
-    ConfirmationMessage confirmation = 7; // 确认消息
-    BatchBusinessMessage batch_business = 8; // 批处理业务消息
-  }
+  // 心跳服务（从 -> 主，双向流）
+  rpc Heartbeat(stream HeartbeatMessage) returns (stream HeartbeatResponse);
+  
+  // 状态同步（从 -> 主，双向流）
+  rpc SyncState(stream StateSyncMessage) returns (stream StateSyncMessage);
+  
+  // 缓冲第一条数据ID报告（从 -> 主）
+  rpc ReportBufferFirstId(BufferFirstIdReportMessage) returns (ConfirmationMessage);
+  
+  // 业务消息发布确认（从 -> 主）
+  rpc ConfirmBusinessPublish(BusinessPublishConfirmMessage) returns (ConfirmationMessage);
+}
+
+// 从节点服务定义（主节点调用从节点）
+service SlaveReplicationService {
+  // 发送业务消息（主 -> 从，单向流）
+  rpc SendBusiness(stream BatchBusinessMessage) returns (ConfirmationMessage);
+  
+  // 发送快照数据（主 -> 从，单向流）
+  rpc SendSnapshot(stream SnapshotDataMessage) returns (ConfirmationMessage);
+  
+  // 发送Journal重放（主 -> 从，单向流）
+  rpc SendJournal(stream JournalReplayMessage) returns (ConfirmationMessage);
 }

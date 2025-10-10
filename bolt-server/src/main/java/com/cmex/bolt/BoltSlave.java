@@ -1,123 +1,92 @@
 package com.cmex.bolt;
 
 import com.cmex.bolt.core.BoltConfig;
-import com.cmex.bolt.core.EnvoyServer;
-import com.cmex.bolt.handler.TcpReplicationClient;
-import lombok.extern.slf4j.Slf4j;
+import com.cmex.bolt.replication.SlaveReplicationManager;
+import com.cmex.bolt.replication.SlaveReplicationServiceImpl;
+import io.grpc.Server;
+import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
+import io.grpc.netty.shaded.io.netty.channel.EventLoopGroup;
+import io.grpc.netty.shaded.io.netty.channel.nio.NioEventLoopGroup;
+import io.grpc.netty.shaded.io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.grpc.netty.shaded.io.netty.util.concurrent.DefaultThreadFactory;
+import com.google.common.util.concurrent.MoreExecutors;
 
-import java.lang.InterruptedException;
+import java.io.IOException;
 
 /**
  * Bolt从节点 - 负责连接到主节点并接收复制请求
- * 新架构：JournalHandler -> AckHandler -> SequencerDispatcher
- * SequencerDisruptor事件来源：TcpReplicationClient
+ * 新架构：JournalHandler -> SequencerDispatcher
+ * SequencerDisruptor事件来源：GrpcReplicationClient
  */
-@Slf4j
 public class BoltSlave extends BoltBase {
 
-    private final TcpReplicationClient replicationClient;
+    private final SlaveReplicationManager slaveReplicationManager;
+    private Server replicationServer;
 
     public BoltSlave(BoltConfig config) {
         super(config);
-
-        // 验证从节点配置
-        if (config.isMaster()) {
-            throw new IllegalArgumentException("BoltSlave requires slave configuration");
-        }
-        
-        // 创建TcpReplicationClient
-        this.replicationClient = new TcpReplicationClient(
-            config.masterHost(),
-            config.masterPort(),
-            config,
-            envoyServer.getSequencerRingBuffer()
-        );
-        
-        // 设置TcpReplicationClient引用到EnvoyServer
-        envoyServer.setTcpReplicationClient(replicationClient);
-        
-        log.info("BoltSlave initialized with EnvoyServer and TcpReplicationClient");
+        this.slaveReplicationManager = new SlaveReplicationManager(config);
     }
 
     @Override
-    protected void startNodeSpecificServices() {
-        try {
-            // 连接到主节点
-            replicationClient.connect();
-            log.info("Slave replication client connected successfully to master at {}:{}", 
-                    config.masterHost(), config.masterPort());
-        } catch (Exception e) {
-            log.error("Failed to connect to master at {}:{}", 
-                    config.masterHost(), config.masterPort(), e);
-            throw new RuntimeException("Failed to connect to master", e);
-        }
+    protected void addReplicationServices(NettyServerBuilder builder) {
+        // 主业务服务器不添加复制服务，复制服务在单独的端口提供
+        System.out.println("Business server does not provide replication services");
+    }
+
+    @Override
+    protected void startNodeSpecificServices() throws IOException, InterruptedException {
+        // 启动从节点复制管理器
+        slaveReplicationManager.start();
+        System.out.println("Slave replication manager started");
+        
+        // 启动复制服务服务器
+        startReplicationServer();
+        System.out.println("Slave replication server started on port " + config.slaveReplicationPort());
     }
 
     @Override
     protected void stopNodeSpecificServices() {
-        log.info("Stopping slave replication client");
-        try {
-            replicationClient.disconnect();
-            log.info("Slave replication client disconnected successfully");
-        } catch (Exception e) {
-            log.error("Failed to disconnect slave replication client", e);
+        // 停止复制服务服务器
+        if (replicationServer != null && !replicationServer.isShutdown()) {
+            replicationServer.shutdown();
+            try {
+                replicationServer.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            System.out.println("Slave replication server stopped");
+        }
+        
+        // 停止从节点复制管理器
+        if (slaveReplicationManager != null) {
+            slaveReplicationManager.stop();
+            System.out.println("Slave replication manager stopped");
         }
     }
 
-    protected void logNodeSpecificInfo() {
-        log.info("=== BoltSlave Node Information ===");
-        log.info("Master Host: {}", config.masterHost());
-        log.info("Master Port: {}", config.masterPort());
-        log.info("Replication Port: {}", config.replicationPort());
-        log.info("Replication Client Status: {}", 
-                replicationClient != null && replicationClient.isConnected() ? "Connected" : "Disconnected");
-        log.info("=====================================");
+    /**
+     * 启动复制服务服务器
+     */
+    private void startReplicationServer() throws IOException {
+        final EventLoopGroup boss = new NioEventLoopGroup(1, new DefaultThreadFactory("replication-boss", true));
+        final EventLoopGroup worker = new NioEventLoopGroup(0, new DefaultThreadFactory("replication-worker", true));
+        
+        NettyServerBuilder builder = NettyServerBuilder
+                .forPort(config.slaveReplicationPort())
+                .bossEventLoopGroup(boss)
+                .workerEventLoopGroup(worker)
+                .channelType(NioServerSocketChannel.class)
+                .addService(new SlaveReplicationServiceImpl(slaveReplicationManager))
+                .maxInboundMessageSize(16 * 1024 * 1024) // 16MB
+                .permitKeepAliveWithoutCalls(true)
+                .permitKeepAliveTime(30, java.util.concurrent.TimeUnit.SECONDS)
+                .executor(MoreExecutors.directExecutor());
+        
+        replicationServer = builder.build();
+        replicationServer.start();
+        
+        System.out.println("SlaveReplicationService started on port " + config.slaveReplicationPort());
     }
 
-    /**
-     * 获取复制客户端
-     */
-    public TcpReplicationClient getReplicationClient() {
-        return replicationClient;
-    }
-    
-    /**
-     * 检查是否已连接到主节点
-     */
-    public boolean isConnectedToMaster() {
-        return replicationClient != null && replicationClient.isConnected();
-    }
-
-    /**
-     * 从节点入口点
-     */
-    public static void main(String[] args) {
-        try {
-            BoltConfig config = BoltConfig.DEFAULT; // 使用默认配置
-            BoltSlave slave = new BoltSlave(config);
-            slave.start();
-            
-            // 添加关闭钩子
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                log.info("Shutting down BoltSlave...");
-                // BoltBase已经处理了关闭逻辑
-            }));
-            
-            // 保持运行
-            slave.awaitTermination();
-            
-        } catch (Exception e) {
-            log.error("Failed to start BoltSlave", e);
-            System.exit(1);
-        }
-    }
-    
-    /**
-     * 等待终止
-     */
-    private void awaitTermination() throws InterruptedException {
-        if (nettyServer != null) {
-            nettyServer.awaitTermination();
-        }
-    }
 }

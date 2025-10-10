@@ -37,12 +37,13 @@ enum EventType {
 
 enum RejectionReason {
   systemBusy @0;
-  currencyNotExist @1;
-  accountNotFound @2;
-  balanceNotEnough @3;
-  symbolNotExist @4;
-  orderNotExist @5;
-  orderNotMatch @6;
+  notSupported @1;
+  currencyNotExist @2;
+  accountNotFound @3;
+  balanceNotEnough @4;
+  symbolNotExist @5;
+  orderNotExist @6;
+  orderNotMatch @7;
 }
 
 # 订单相关结构
