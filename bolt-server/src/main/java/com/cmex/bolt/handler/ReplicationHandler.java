@@ -2,8 +2,10 @@ package com.cmex.bolt.handler;
 
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
+import com.cmex.bolt.replication.MasterServer;
 import com.cmex.bolt.replication.ReplicationManager;
 import com.cmex.bolt.replication.ReplicationProto.BatchBusinessMessage;
+import com.google.protobuf.ByteString;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
 import lombok.extern.slf4j.Slf4j;
@@ -18,9 +20,9 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
     private final BoltConfig config;
     private final ReplicationManager replicationManager;
 
-    public ReplicationHandler(BoltConfig config, ReplicationManager replicationManager) {
+    public ReplicationHandler(BoltConfig config) {
         this.config = config;
-        this.replicationManager = replicationManager;
+        this.replicationManager = new ReplicationManager(config);
     }
     
     @Override
@@ -48,6 +50,7 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
         } catch (Exception e) {
             log.error("Failed to replicate business message sequence {}: {}", sequence, e.getMessage());
         }
+        wrapper.getBuffer().resetReaderIndex();
     }
 
     /**
@@ -60,7 +63,7 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
                 .setStartSequence(sequence)
                 .setEndSequence(sequence)
                 .setTimestamp(System.currentTimeMillis())
-                .addMessages(com.google.protobuf.ByteString.copyFrom(wrapper.getBufferCopy()))
+                .addMessages(ByteString.copyFrom(wrapper.getBufferCopy()))
                 .build();
     }
 

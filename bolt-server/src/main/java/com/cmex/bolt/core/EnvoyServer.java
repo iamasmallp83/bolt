@@ -110,7 +110,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         // 根据节点类型初始化不同的处理器
         if (config.isMaster()) {
             // 主节点：JournalHandler -> ReplicationHandler -> SequencerDispatcher
-            this.replicationHandler = new ReplicationHandler(config, new ReplicationManager());
+            this.replicationHandler = new ReplicationHandler(config);
 
             // 配置主节点的处理链
             sequencerDisruptor.handleEventsWith(journalHandler)

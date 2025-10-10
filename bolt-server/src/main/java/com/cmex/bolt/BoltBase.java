@@ -143,24 +143,5 @@ public abstract class BoltBase {
         }
     }
     
-    /**
-     * 检查服务是否运行
-     */
-    public boolean isRunning() {
-        return nettyServer != null && !nettyServer.isShutdown();
-    }
-    
-    /**
-     * 创建目录结构
-     */
-    protected static void createDirectories(BoltConfig config) {
-        try {
-            String logsDir = System.getProperty("LOGS_DIR", config.boltHome() + "/logs");
-            java.nio.file.Files.createDirectories(java.nio.file.Paths.get(logsDir));
-            java.nio.file.Files.createDirectories(java.nio.file.Paths.get(config.journalDir()));
-        } catch (java.io.IOException e) {
-            throw new RuntimeException("Failed to create directories: " + e.getMessage(), e);
-        }
-    }
 }
 

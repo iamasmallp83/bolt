@@ -39,7 +39,7 @@ public final class Order {
     @Setter
     private BigDecimal availableAmount;        // 可用金额（原子更新）
     @Setter
-    private final BigDecimal frozen;           // 冻结余额
+    private BigDecimal frozen;           // 冻结余额
     @Setter
     private BigDecimal cost;                   // 累计成本
     @Setter

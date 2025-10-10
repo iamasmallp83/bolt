@@ -1,11 +1,13 @@
 package com.cmex.bolt.replication;
 
+import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.replication.ReplicationProto.*;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.stub.StreamObserver;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -19,7 +21,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 @Slf4j
 public class ReplicationManager {
-    
+
+    private final BoltConfig config;
+
     // 存储所有slave节点的信息
     private final ConcurrentMap<Integer, ReplicationInfo> slaveNodes = new ConcurrentHashMap<>();
     
@@ -35,9 +39,15 @@ public class ReplicationManager {
     // 业务消息流观察者缓存
     private final ConcurrentMap<Integer, StreamObserver<BatchBusinessMessage>> businessStreamObservers = new ConcurrentHashMap<>();
     
-    public ReplicationManager(MasterServer masterServer) {
+    public ReplicationManager(BoltConfig config) {
+        this.config = config;
+        this.masterServer = new MasterServer(config, this);
         initializeServices();
-        this.masterServer = masterServer;
+        try {
+            this.masterServer.start();
+        } catch (IOException e) {
+            throw new RuntimeException("Cannot start the master server", e);
+        }
     }
     
     /**
@@ -480,7 +490,9 @@ public class ReplicationManager {
      */
     public void sendBusinessMessage(BatchBusinessMessage businessMessage) {
         slaveNodes.values().stream()
-                .filter(ReplicationInfo::isReady)
+                //TODO fixme
+//                .filter(ReplicationInfo::isReady)
+                .filter(ReplicationInfo::isConnected)
                 .forEach(node -> sendBusinessMessageToNode(node, businessMessage));
     }
     
@@ -570,7 +582,8 @@ public class ReplicationManager {
      * 获取就绪的节点数量
      */
     public int getReadyNodeCount() {
-        return (int) slaveNodes.values().stream().filter(ReplicationInfo::isReady).count();
+        return slaveNodes.size();
+//        return (int) slaveNodes.values().stream().filter(ReplicationInfo::isReady).count();
     }
     
     /**

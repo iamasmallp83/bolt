@@ -7,8 +7,8 @@ public class BoltSlaveStarter {
     public static void main(String[] args) throws Exception {
         // 创建从节点配置
         BoltConfig slaveConfig = new BoltConfig(
-                2,     // nodeId
-                "/Users/stam/Source/Java/bolt/slave", // boltHome
+                100,     // nodeId
+                "/Users/ly/Source/Java/bolt/slave", // boltHome
                 19090,  // port
                 false, // isProd
                 4,     // group
@@ -16,7 +16,7 @@ public class BoltSlaveStarter {
                 512,   // matchingSize
                 512,   // responseSize
                 false, // enablePrometheus
-                9094,  // prometheusPort
+                9093,  // prometheusPort
                 false, // isMaster
                 "127.0.0.1", // masterHost
                 9091,  // masterReplicationPort

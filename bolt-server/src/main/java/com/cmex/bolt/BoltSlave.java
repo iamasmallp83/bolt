@@ -25,7 +25,7 @@ public class BoltSlave extends BoltBase {
 
     public BoltSlave(BoltConfig config) {
         super(config);
-        this.slaveReplicationManager = new SlaveReplicationManager(config);
+        this.slaveReplicationManager = new SlaveReplicationManager(config, envoyServer.getSequencerRingBuffer());
     }
 
     @Override

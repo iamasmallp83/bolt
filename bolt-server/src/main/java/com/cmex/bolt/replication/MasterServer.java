@@ -1,9 +1,11 @@
 package com.cmex.bolt.replication;
 
+import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.replication.ReplicationProto.*;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -13,9 +15,10 @@ import java.util.concurrent.TimeUnit;
 /**
  * 主节点服务器
  */
+@Slf4j
 public class MasterServer {
     
-    private final int port;
+    private final BoltConfig config;
     private final ReplicationManager replicationManager;
     private final MasterReplicationServiceImpl masterService;
     private Server server;
@@ -24,8 +27,8 @@ public class MasterServer {
     private final ConcurrentMap<Integer, SlaveReplicationServiceGrpc.SlaveReplicationServiceBlockingStub> slaveStubs = new ConcurrentHashMap<>();
     private final ConcurrentMap<Integer, SlaveReplicationServiceGrpc.SlaveReplicationServiceStub> slaveAsyncStubs = new ConcurrentHashMap<>();
     
-    public MasterServer(int port, ReplicationManager replicationManager) {
-        this.port = port;
+    public MasterServer(BoltConfig boltConfig, ReplicationManager replicationManager) {
+        this.config = boltConfig;
         this.replicationManager = replicationManager;
         this.masterService = new MasterReplicationServiceImpl(replicationManager);
     }
@@ -34,20 +37,20 @@ public class MasterServer {
      * 启动主节点服务器
      */
     public void start() throws IOException {
-        server = ServerBuilder.forPort(port)
+        server = ServerBuilder.forPort(config.masterReplicationPort())
                 .addService(masterService)
                 .build()
                 .start();
-        
-        System.out.println("Master server started, listening on port " + port);
+
+        log.info("Replication Master server started, listening on port {}", config.masterReplicationPort());
         
         // 添加关闭钩子
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.out.println("Shutting down master server");
+            log.info("Shutting down master server");
             try {
                 MasterServer.this.stop();
             } catch (InterruptedException e) {
-                System.err.println("Error shutting down master server: " + e.getMessage());
+                log.info("Error shutting down master server: {}", e.getMessage());
                 Thread.currentThread().interrupt();
             }
         }));
@@ -95,116 +98,11 @@ public class MasterServer {
             // 存储stub
             slaveStubs.put(nodeId, slaveStub);
             slaveAsyncStubs.put(nodeId, slaveAsyncStub);
-            
-            System.out.println("Created slave stub for node " + nodeId + " at " + slaveHost + ":" + slavePort);
-            
-        } catch (Exception e) {
-            System.err.println("Failed to create slave stub for node " + nodeId + " at " + slaveHost + ":" + slavePort + ": " + e.getMessage());
-        }
-    }
-    
-    /**
-     * 发送业务消息到从节点
-     */
-    public void sendBusinessToSlave(int nodeId, BatchBusinessMessage businessMessage) {
-        try {
-            SlaveReplicationServiceGrpc.SlaveReplicationServiceStub slaveStub = slaveAsyncStubs.get(nodeId);
-            if (slaveStub != null) {
-                StreamObserver<BatchBusinessMessage> requestObserver = slaveStub.sendBusiness(new StreamObserver<ConfirmationMessage>() {
-                    @Override
-                    public void onNext(ConfirmationMessage confirmation) {
-                        System.out.println("Slave " + nodeId + " confirmed business message sequence " + confirmation.getSequence());
-                    }
-                    
-                    @Override
-                    public void onError(Throwable t) {
-                        System.err.println("Error sending business message to slave " + nodeId + ": " + t.getMessage());
-                    }
-                    
-                    @Override
-                    public void onCompleted() {
-                        System.out.println("Business message stream to slave " + nodeId + " completed.");
-                    }
-                });
-                
-                requestObserver.onNext(businessMessage);
-                requestObserver.onCompleted();
-            } else {
-                System.err.println("No stub found for slave " + nodeId + ". Cannot send business message.");
-            }
+
+            log.info("Created slave stub for node {} at {}:{}", nodeId, slaveHost, slavePort);
             
         } catch (Exception e) {
-            System.err.println("Failed to send business message to slave node " + nodeId + ": " + e.getMessage());
-        }
-    }
-    
-    /**
-     * 发送快照数据到从节点
-     */
-    public void sendSnapshotToSlave(int nodeId, SnapshotDataMessage snapshotMessage) {
-        try {
-            SlaveReplicationServiceGrpc.SlaveReplicationServiceStub slaveStub = slaveAsyncStubs.get(nodeId);
-            if (slaveStub != null) {
-                StreamObserver<SnapshotDataMessage> requestObserver = slaveStub.sendSnapshot(new StreamObserver<ConfirmationMessage>() {
-                    @Override
-                    public void onNext(ConfirmationMessage confirmation) {
-                        System.out.println("Slave " + nodeId + " confirmed snapshot timestamp " + confirmation.getSequence());
-                    }
-                    
-                    @Override
-                    public void onError(Throwable t) {
-                        System.err.println("Error sending snapshot to slave " + nodeId + ": " + t.getMessage());
-                    }
-                    
-                    @Override
-                    public void onCompleted() {
-                        System.out.println("Snapshot stream to slave " + nodeId + " completed.");
-                    }
-                });
-                
-                requestObserver.onNext(snapshotMessage);
-                requestObserver.onCompleted();
-            } else {
-                System.err.println("No stub found for slave " + nodeId + ". Cannot send snapshot.");
-            }
-            
-        } catch (Exception e) {
-            System.err.println("Failed to send snapshot to slave node " + nodeId + ": " + e.getMessage());
-        }
-    }
-    
-    /**
-     * 发送Journal重放到从节点
-     */
-    public void sendJournalToSlave(int nodeId, JournalReplayMessage journalMessage) {
-        try {
-            SlaveReplicationServiceGrpc.SlaveReplicationServiceStub slaveStub = slaveAsyncStubs.get(nodeId);
-            if (slaveStub != null) {
-                StreamObserver<JournalReplayMessage> requestObserver = slaveStub.sendJournal(new StreamObserver<ConfirmationMessage>() {
-                    @Override
-                    public void onNext(ConfirmationMessage confirmation) {
-                        System.out.println("Slave " + nodeId + " confirmed journal sequence " + confirmation.getSequence());
-                    }
-                    
-                    @Override
-                    public void onError(Throwable t) {
-                        System.err.println("Error sending journal to slave " + nodeId + ": " + t.getMessage());
-                    }
-                    
-                    @Override
-                    public void onCompleted() {
-                        System.out.println("Journal stream to slave " + nodeId + " completed.");
-                    }
-                });
-                
-                requestObserver.onNext(journalMessage);
-                requestObserver.onCompleted();
-            } else {
-                System.err.println("No stub found for slave " + nodeId + ". Cannot send journal.");
-            }
-            
-        } catch (Exception e) {
-            System.err.println("Failed to send journal to slave node " + nodeId + ": " + e.getMessage());
+            log.error("Failed to create slave stub for node {} at {}:{}: {}", nodeId, slaveHost, slavePort, e.getMessage());
         }
     }
     
