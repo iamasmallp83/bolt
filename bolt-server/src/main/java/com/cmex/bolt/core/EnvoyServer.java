@@ -10,7 +10,7 @@ import com.cmex.bolt.domain.Transfer;
 import com.cmex.bolt.dto.DepthDto;
 import com.cmex.bolt.handler.*;
 import com.cmex.bolt.recovery.SnapshotData;
-import com.cmex.bolt.replication.ReplicationState;
+import com.cmex.bolt.replication.ReplicationManager;
 import com.cmex.bolt.repository.impl.AccountRepository;
 import com.cmex.bolt.repository.impl.CurrencyRepository;
 import com.cmex.bolt.repository.impl.SymbolRepository;
@@ -45,10 +45,6 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
     @Getter
     private final RingBuffer<NexusWrapper> sequencerRingBuffer;
-    /**
-     * -- GETTER --
-     * 获取MatchingRingBuffer
-     */
     @Getter
     private final RingBuffer<NexusWrapper> matchingRingBuffer;
     private final AtomicLong requestId = new AtomicLong();
@@ -69,8 +65,6 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     // 复制相关组件
     @Getter
     private final ReplicationHandler replicationHandler;
-    @Getter
-    private final ReplicationState replicationState;
 
     // 公共构造函数
     public EnvoyServer(BoltConfig config) {
@@ -113,13 +107,10 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         // 根据节点类型选择JournalHandler
         EventHandler<NexusWrapper> journalHandler = new JournalHandler(config);
 
-        // 初始化复制相关组件
-        this.replicationState = new ReplicationState();
-
         // 根据节点类型初始化不同的处理器
         if (config.isMaster()) {
             // 主节点：JournalHandler -> ReplicationHandler -> SequencerDispatcher
-            this.replicationHandler = new ReplicationHandler(config, this.replicationState);
+            this.replicationHandler = new ReplicationHandler(config, new ReplicationManager());
 
             // 配置主节点的处理链
             sequencerDisruptor.handleEventsWith(journalHandler)
@@ -485,14 +476,6 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
     private Optional<Symbol> getSymbol(int symbolId) {
         return matchServices.get(symbolId % config.group()).getSymbol(symbolId);
-    }
-
-    /**
-     * 设置TcpReplicationClient引用（由BoltSlave调用）
-     */
-    public void setTcpReplicationClient(TcpReplicationClient tcpReplicationClient) {
-        // 从节点架构调整后不再需要AckHandler
-        log.info("TcpReplicationClient reference set in EnvoyServer");
     }
 
 }

@@ -32,8 +32,8 @@ public class IntegrationTest {
                 9091,                       // prometheusPort
                 true,                       // isMaster
                 "localhost",                // masterHost
-                9090,                       // masterPort
-                9092,                       // replicationPort
+                9090,                       // masterReplicationPort
+                9092,                       // slaveReplicationPort
                 100,                        // batchSize
                 5000,                       // batchTimeoutMs
                 true,                       // enableJournal

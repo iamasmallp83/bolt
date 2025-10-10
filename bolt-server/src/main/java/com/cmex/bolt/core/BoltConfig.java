@@ -15,8 +15,8 @@ public record BoltConfig(
         // 主从点相关配置
         boolean isMaster,
         String masterHost,
-        int masterPort,
-        int replicationPort,
+        int masterReplicationPort,
+        int slaveReplicationPort,
         int batchSize,
         int batchTimeout,
         // 日志配置
@@ -27,14 +27,14 @@ public record BoltConfig(
         int snapshotInterval
 ) {
     public static final BoltConfig DEFAULT = new BoltConfig(1, ".", 9090, false, 4, 1024,
-            512, 512, true, 9091, true,
-            "localhost", 9090, 9092, 100, 5000,
+            512, 512, true, 9093, true,
+            "localhost", 9091, 9092, 100, 5000,
             false, "journal", false, 60);
 
     public String journalFilePath() {
         return boltHome + "/journal/" + journalFilePath + (isBinary ? ".data" : ".json");
     }
-    
+
 
     public String journalDir() {
         return boltHome + "/journal";
@@ -57,8 +57,8 @@ public record BoltConfig(
                 int prometheusPort = Integer.parseInt(args[9]);
                 boolean isMaster = Boolean.parseBoolean(args[10]);
                 String masterHost = args[11];
-                int masterPort = Integer.parseInt(args[12]);
-                int replicationPort = Integer.parseInt(args[13]);
+                int masterReplicationPort = Integer.parseInt(args[12]);
+                int slaveReplicationPort = Integer.parseInt(args[13]);
                 int batchSize = Integer.parseInt(args[14]);
                 int batchTimeout = Integer.parseInt(args[15]);
                 boolean enableJournal = Boolean.parseBoolean(args[16]);
@@ -67,7 +67,7 @@ public record BoltConfig(
                 int snapshotInterval = Integer.parseInt(args[19]);
 
                 return new BoltConfig(nodeId, boltHome, port, isProd, group, sequencerSize, matchingSize, responseSize,
-                        enablePrometheus, prometheusPort, isMaster, masterHost, masterPort, replicationPort,
+                        enablePrometheus, prometheusPort, isMaster, masterHost, masterReplicationPort, slaveReplicationPort,
                         batchSize, batchTimeout, enableJournal, journalFilePath, isBinary, snapshotInterval);
             } catch (NumberFormatException e) {
                 printUsage();
@@ -79,7 +79,7 @@ public record BoltConfig(
         }
     }
 
-    public boolean isSlave(){
+    public boolean isSlave() {
         return !isMaster();
     }
 
@@ -89,7 +89,7 @@ public record BoltConfig(
     public static void printUsage() {
         System.out.println("Usage:");
         System.out.println("  java -jar bolt.jar  # 使用默认配置");
-        System.out.println("  java -jar bolt.jar {nodeId} {boltHome} {port} {isProduction} {group} {sequencerSize} {matchingSize} {responseSize} {enablePrometheus} {prometheusPort} {isMaster} {masterHost} {masterPort} {replicationPort} {batchSize} {batchTimeoutMs} {enableJournal} {journalFilePath} {isBinary} {snapshotIntervalSeconds}");
+        System.out.println("  java -jar bolt.jar {nodeId} {boltHome} {port} {isProduction} {group} {sequencerSize} {matchingSize} {responseSize} {enablePrometheus} {prometheusPort} {isMaster} {masterHost} {masterReplicationPort} {slaveReplicationPort} {batchSize} {batchTimeoutMs} {enableJournal} {journalFilePath} {isBinary} {snapshotIntervalSeconds}");
         System.out.println("Logback Configuration:");
         System.out.println("  - Master mode: uses master-logback.xml (creates bolt-master.log)");
         System.out.println("  - Slave mode: uses slave-logback.xml (creates bolt-slave.log)");
