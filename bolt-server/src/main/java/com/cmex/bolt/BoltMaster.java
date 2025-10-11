@@ -5,7 +5,6 @@ import com.cmex.bolt.recovery.SnapshotReader;
 import com.cmex.bolt.handler.JournalReplayer;
 import com.cmex.bolt.replication.MasterReplicationServiceImpl;
 import com.cmex.bolt.replication.MasterServer;
-import com.cmex.bolt.replication.ReplicationManager;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import lombok.extern.slf4j.Slf4j;
 
@@ -30,7 +29,7 @@ public class BoltMaster extends BoltBase {
         // 创建gRPC复制服务
         SnapshotReader snapshotReader = new SnapshotReader(config);
         JournalReplayer journalReplayer = new JournalReplayer(envoyServer.getSequencerRingBuffer(), config);
-        log.info("BoltMaster initialized with EnvoyServer and ReplicationManager");
+        log.info("BoltMaster initialized with EnvoyServer and MasterServer");
     }
 
     @Override

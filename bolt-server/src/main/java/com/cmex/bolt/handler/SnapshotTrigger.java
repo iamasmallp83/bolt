@@ -3,11 +3,9 @@ package com.cmex.bolt.handler;
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.core.NexusWrapper.EventType;
-import com.cmex.bolt.Nexus;
 import com.cmex.bolt.domain.Transfer;
 import com.lmax.disruptor.RingBuffer;
 import lombok.extern.slf4j.Slf4j;
-import org.capnproto.MessageBuilder;
 
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;

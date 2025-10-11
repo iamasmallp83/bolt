@@ -1,26 +1,19 @@
 package com.cmex.bolt.replication;
 
-import com.cmex.bolt.Nexus;
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
-import com.cmex.bolt.domain.Transfer;
+import com.cmex.bolt.recovery.SnapshotReader;
 import com.cmex.bolt.replication.ReplicationProto.*;
 import com.lmax.disruptor.RingBuffer;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
-import io.grpc.netty.shaded.io.netty.buffer.ByteBuf;
-import io.grpc.netty.shaded.io.netty.buffer.ByteBufAllocator;
 import io.grpc.stub.StreamObserver;
 import lombok.extern.slf4j.Slf4j;
 
 import java.net.InetAddress;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 从节点复制管理器
@@ -39,9 +32,9 @@ public class SlaveReplicationManager {
     private MasterReplicationServiceGrpc.MasterReplicationServiceStub masterAsyncStub;
     private ManagedChannel masterChannel;
 
-    // 业务消息缓冲
-    private final BlockingQueue<BatchBusinessMessage> businessMessageBuffer = new LinkedBlockingQueue<>();
-    private final AtomicLong firstBufferedBusinessId = new AtomicLong(-1);
+    // 中继消息缓冲
+    private final BlockingQueue<BatchRelayMessage> relayMessageBuffer = new LinkedBlockingQueue<>();
+    private final AtomicLong firstReplicationID = new AtomicLong(-1);
 
     // 心跳和重连
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
@@ -160,6 +153,29 @@ public class SlaveReplicationManager {
                 this.assignedNodeId = response.getAssignedNodeId();
                 currentState = ReplicationState.REGISTERED;
                 log.info("Successfully registered to master with assigned node ID: {}", assignedNodeId);
+                
+                // 处理快照数据（如果有）
+                if (!response.getSnapshot().isEmpty()) {
+                    try {
+                        log.info("Received snapshot data from master: {} bytes", response.getSnapshot().size());
+                        
+                        SnapshotReader snapshotReader = new SnapshotReader(config);
+                        java.nio.file.Path extractedPath = snapshotReader.extractSnapshot(response.getSnapshot().toByteArray());
+                        
+                        if (extractedPath != null) {
+                            log.info("Successfully extracted snapshot to: {}", extractedPath);
+                            // 可以在这里触发快照恢复逻辑
+                            // TODO: 触发快照恢复
+                        } else {
+                            log.warn("Failed to extract snapshot data");
+                        }
+                    } catch (Exception e) {
+                        log.error("Failed to process snapshot data from master", e);
+                        // 快照处理失败不应该影响注册成功
+                    }
+                } else {
+                    log.info("No snapshot data received from master");
+                }
             } else {
                 throw new RuntimeException("Registration failed: " + response.getMessage());
             }
@@ -271,166 +287,144 @@ public class SlaveReplicationManager {
     }
 
     /**
-     * 处理业务消息
+     * 处理中继消息
      */
-    public boolean processBusinessMessage(BatchBusinessMessage businessMessage) {
+    public boolean processRelayMessage(BatchRelayMessage relayMessage) {
         try {
-            if (currentState == ReplicationState.BUSINESS_BUFFERING) {
-                // 缓冲业务消息
-                businessMessageBuffer.offer(businessMessage);
+            if (currentState == ReplicationState.REGISTERED) {
+                // 缓冲中继消息
+                relayMessageBuffer.offer(relayMessage);
 
-                // 记录第一个缓冲的业务消息ID
-                if (firstBufferedBusinessId.get() == -1) {
-                    firstBufferedBusinessId.set(businessMessage.getStartSequence());
+                // 记录第一个缓冲的中继消息ID
+                if (firstReplicationID.get() == -1) {
+                    firstReplicationID.set(relayMessage.getSequence());
 
                     // 报告缓冲ID给主节点
-                    reportBufferFirstId();
+                    reportLatestReplication();
                 }
 
-                log.debug("Buffered business message batch {}", businessMessage.getBatchId());
+                log.debug("Buffered relay message batch {}", relayMessage.getSequence());
                 return true;
 
             } else if (currentState == ReplicationState.READY) {
-                // 直接处理业务消息
-                return processBusinessMessageDirectly(businessMessage);
+                // 直接处理中继消息
+                return processRelayMessageDirectly(relayMessage);
 
             } else {
-                log.warn("Received business message in state {}, ignoring", currentState);
+                log.warn("Received relay message in state {}, ignoring", currentState);
                 return false;
             }
 
         } catch (Exception e) {
-            log.error("Failed to process business message", e);
+            log.error("Failed to process relay message", e);
             return false;
         }
     }
 
     /**
-     * 直接处理业务消息
+     * 直接处理中继消息
      */
-    private boolean processBusinessMessageDirectly(BatchBusinessMessage businessMessage) {
+    private boolean processRelayMessageDirectly(BatchRelayMessage relayMessage) {
         try {
-            // TODO: 实现实际的业务消息处理逻辑
-            log.debug("Processing business message directly: {}", businessMessage.getBatchId());
-            Transfer transfer = new Transfer();
-            sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
-                wrapper.getBuffer().writeBytes(businessMessage.getMessages(0).toByteArray());
-            });
+            log.debug("Processing relay message directly: {}", relayMessage.getSequence());
+            
+            // 处理每个消息数据
+            for (RelayMessageData messageData : relayMessage.getMessagesList()) {
+                // 创建NexusWrapper并设置元数据
+                sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
+                    // 设置元数据
+                    wrapper.setId(messageData.getId());
+                    wrapper.setPartition(messageData.getPartition());
+                    wrapper.setEventType(NexusWrapper.EventType.fromValue(messageData.getEventType()));
+                    
+                    // 写入数据
+                    wrapper.getBuffer().writeBytes(messageData.getData().toByteArray());
+                    
+                    log.debug("Processed relay message: id={}, partition={}, eventType={}, dataSize={}", 
+                            messageData.getId(), messageData.getPartition(), 
+                            messageData.getEventType(), messageData.getData().size());
+                });
+            }
+            
             return true;
         } catch (Exception e) {
-            log.error("Failed to process business message directly", e);
+            log.error("Failed to process relay message directly", e);
             return false;
         }
     }
 
     /**
-     * 处理快照数据
+     * 发布缓冲的中继消息
      */
-    public void processSnapshotData(SnapshotDataMessage snapshotMessage) {
-        try {
-//            log.info("Processing snapshot data: {}", snapshotMessage.getSnapshotTimestamp());
-//            // TODO: 实现实际的快照处理逻辑
-//
-//            if (snapshotMessage.getIsLastPartition()) {
-//                currentState = ReplicationState.BUSINESS_BUFFERING;
-//                log.info("Snapshot sync completed, transitioning to BUSINESS_BUFFERING");
-//            }
+    public void publishBufferedRelayMessages() {
+        log.info("Publishing {} buffered relay messages", relayMessageBuffer.size());
 
-        } catch (Exception e) {
-            log.error("Failed to process snapshot data", e);
-            currentState = ReplicationState.ERROR;
-        }
-    }
-
-    /**
-     * 处理Journal数据
-     */
-    public void processJournalData(JournalReplayMessage journalMessage) {
-        try {
-//            log.info("Processing journal data: {}", journalMessage.getSequence());
-//            // TODO: 实现实际的Journal处理逻辑
-//
-//            if (journalMessage.getIsLastChunk()) {
-//                log.info("Journal sync completed, publishing buffered business messages");
-//                publishBufferedBusinessMessages();
-                currentState = ReplicationState.READY;
-//                log.info("Slave is now READY");
-//            }
-
-        } catch (Exception e) {
-            log.error("Failed to process journal data", e);
-            currentState = ReplicationState.ERROR;
-        }
-    }
-
-    /**
-     * 发布缓冲的业务消息
-     */
-    public void publishBufferedBusinessMessages() {
-        log.info("Publishing {} buffered business messages", businessMessageBuffer.size());
-
-        while (!businessMessageBuffer.isEmpty()) {
-            BatchBusinessMessage message = businessMessageBuffer.poll();
+        while (!relayMessageBuffer.isEmpty()) {
+            BatchRelayMessage message = relayMessageBuffer.poll();
             if (message != null) {
-                processBusinessMessageDirectly(message);
+                processRelayMessageDirectly(message);
             }
         }
 
-        // 确认业务消息发布
-        confirmBusinessPublish();
+        // 确认中继消息发布
+        confirmRelayPublish();
 
         // 更新状态为就绪
         currentState = ReplicationState.READY;
     }
 
     /**
-     * 报告缓冲第一条数据ID
+     * 报告最新复制ID
      */
-    private void reportBufferFirstId() {
+    private void reportLatestReplication() {
         try {
-            BufferFirstIdReportMessage reportMessage = BufferFirstIdReportMessage.newBuilder()
+            LatestReplicationMessage reportMessage = LatestReplicationMessage.newBuilder()
                     .setNodeId(assignedNodeId)
-                    .setFirstBufferedId(firstBufferedBusinessId.get())
-                    .setTimestamp(System.currentTimeMillis())
-                    .setBufferSize(businessMessageBuffer.size())
+                    .setReplicationId(firstReplicationID.get())
                     .build();
 
-            ConfirmationMessage response = masterStub.reportBufferFirstId(reportMessage);
+            ConfirmationMessage response = masterStub.reportLatestReplication(reportMessage);
 
             if (response.getSuccess()) {
-                log.info("Successfully reported buffer first ID: {}", firstBufferedBusinessId.get());
+                log.info("Successfully reported latest replication ID: {}", firstReplicationID.get());
             } else {
-                log.error("Failed to report buffer first ID: {}", response.getErrorMessage());
+                log.error("Failed to report latest replication ID: {}", response.getErrorMessage());
             }
 
         } catch (Exception e) {
-            log.error("Failed to report buffer first ID", e);
+            log.error("Failed to report latest replication ID", e);
         }
     }
 
     /**
-     * 确认业务消息发布
+     * 确认中继消息发布
+     * 注意：由于移除了ConfirmRelayPublish服务，此方法暂时禁用
      */
-    private void confirmBusinessPublish() {
+    private void confirmRelayPublish() {
+        // 由于移除了ConfirmRelayPublish服务，暂时注释掉确认逻辑
+        log.info("Relay publish confirmation disabled - service removed");
+        
+        /*
         try {
-            BusinessPublishConfirmMessage confirmMessage = BusinessPublishConfirmMessage.newBuilder()
+            RelayPublishConfirmMessage confirmMessage = RelayPublishConfirmMessage.newBuilder()
                     .setNodeId(assignedNodeId)
-                    .setPublishedSequence(firstBufferedBusinessId.get())
+                    .setPublishedSequence(firstReplicationID.get())
                     .setTimestamp(System.currentTimeMillis())
                     .setSuccess(true)
                     .build();
 
-            ConfirmationMessage response = masterStub.confirmBusinessPublish(confirmMessage);
+            ConfirmationMessage response = masterStub.confirmRelayPublish(confirmMessage);
 
             if (response.getSuccess()) {
-                log.info("Successfully confirmed business publish");
+                log.info("Successfully confirmed relay publish");
             } else {
-                log.error("Failed to confirm business publish: {}", response.getErrorMessage());
+                log.error("Failed to confirm relay publish: {}", response.getErrorMessage());
             }
 
         } catch (Exception e) {
-            log.error("Failed to confirm business publish", e);
+            log.error("Failed to confirm relay publish", e);
         }
+        */
     }
 
     /**

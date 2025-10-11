@@ -77,7 +77,7 @@ public class BoltSlave extends BoltBase {
                 .bossEventLoopGroup(boss)
                 .workerEventLoopGroup(worker)
                 .channelType(NioServerSocketChannel.class)
-                .addService(new SlaveReplicationServiceImpl(slaveReplicationManager))
+                .addService(new SlaveReplicationServiceImpl(slaveReplicationManager, config, envoyServer.getSequencerRingBuffer()))
                 .maxInboundMessageSize(16 * 1024 * 1024) // 16MB
                 .permitKeepAliveWithoutCalls(true)
                 .permitKeepAliveTime(30, java.util.concurrent.TimeUnit.SECONDS)

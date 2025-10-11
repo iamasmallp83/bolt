@@ -6,23 +6,18 @@ option java_outer_classname = "ReplicationProto";
 enum MessageType {
   REGISTER = 0;      // 注册消息
   HEARTBEAT = 1;     // 心跳消息
-  BATCH_BUSINESS = 2; // 批处理业务消息
-  BUSINESS_PUBLISH_CONFIRM = 3; // 业务消息发布确认
-  SNAPSHOT_DATA = 4; // 快照数据消息
-  JOURNAL_REPLAY = 5; // Journal重放消息
-  STATE_SYNC = 6;    // 状态同步消息
-  BUFFER_FIRST_ID_REPORT = 7; // 缓冲第一条数据ID报告
+  STATE_SYNC = 2;    // 状态同步消息
+  BATCH_RELAY = 3; // 批处理中继消息
+  JOURNAL_REPLAY = 4; // Journal重放消息
+  REPLICATION_FIRST_ID = 5; // 缓冲第一条数据ID报告
 }
 
 // 复制状态枚举
 enum ReplicationState {
   INITIAL = 0;       // 初始状态
   REGISTERED = 1;    // 已注册
-  SNAPSHOT_SYNC = 2; // 快照同步中
-  BUSINESS_BUFFERING = 3; // 业务消息缓冲中（等待journal同步完成）
-  JOURNAL_SYNC = 4;  // Journal同步中
-  READY = 5;         // 就绪状态，可以正常处理业务
-  ERROR = 6;         // 错误状态
+  READY = 2;         // 就绪状态，可以正常处理业务
+  ERROR = 3;         // 错误状态
 }
 
 // 协议头部
@@ -50,7 +45,9 @@ message RegisterResponse {
   string message = 2;        // 响应消息
   int32 assigned_node_id = 3; // 分配的节点ID
   int64 server_time = 4;     // 服务器时间
+  bytes snapshot = 5; // 快照信息
 }
+
 
 // 心跳消息
 message HeartbeatMessage {
@@ -67,14 +64,20 @@ message HeartbeatResponse {
   int32 next_heartbeat_interval = 3; // 下次心跳间隔(秒)
 }
 
-// 批处理业务消息
-message BatchBusinessMessage {
-  int64 batch_id = 1;       // 批次ID
-  int32 batch_size = 2;     // 批次大小
-  int64 start_sequence = 3; // 起始序列号
-  int64 end_sequence = 4;   // 结束序列号
-  int64 timestamp = 5;      // 批次时间戳
-  repeated bytes messages = 6; // 业务消息数据列表
+// 批处理中继消息
+message BatchRelayMessage {
+    int64 sequence = 1;
+    int32 size = 2;
+    int64 timestamp = 3;
+    repeated RelayMessageData messages = 4;
+}
+
+// 中继消息数据
+message RelayMessageData {
+    int64 id = 1;                    // 消息ID
+    int32 partition = 2;              // 分区ID
+    int32 event_type = 3;             // 事件类型 (0=BUSINESS, 1=JOURNAL, 2=SNAPSHOT, 3=INTERNAL)
+    bytes data = 4;                   // 消息数据
 }
 
 // 确认消息
@@ -86,23 +89,11 @@ message ConfirmationMessage {
   string error_message = 5; // 错误消息(如果有)
 }
 
-// 快照数据消息
-message SnapshotDataMessage {
-  int64 snapshot_timestamp = 1; // 快照时间戳
-  int32 partition = 2;          // 分区ID
-  string data_type = 3;         // 数据类型 (account/currency/symbol)
-  bytes snapshot_data = 4;      // 快照数据
-  int32 total_partitions = 5;   // 总分区数
-  bool is_last_partition = 6;   // 是否为最后一个分区
-}
 
 // Journal重放消息
 message JournalReplayMessage {
-  int64 start_timestamp = 1;    // 开始时间戳
-  int64 end_timestamp = 2;      // 结束时间戳
-  bytes journal_data = 3;       // Journal数据
-  int64 sequence = 4;           // 序列号
-  bool is_last_chunk = 5;       // 是否为最后一块
+  bytes journal_data = 1;       // Journal数据
+  bool is_last_chunk = 2;       // 是否为最后一块
 }
 
 // 状态同步消息
@@ -115,8 +106,8 @@ message StateSyncMessage {
   map<string, string> metadata = 6; // 额外元数据
 }
 
-// 业务消息发布确认
-message BusinessPublishConfirmMessage {
+// 中继消息发布确认
+message RelayPublishConfirmMessage {
   int32 node_id = 1;           // 节点ID
   int64 published_sequence = 2; // 已发布的序列号
   int64 timestamp = 3;         // 确认时间戳
@@ -125,11 +116,9 @@ message BusinessPublishConfirmMessage {
 }
 
 // 缓冲第一条数据ID报告
-message BufferFirstIdReportMessage {
+message LatestReplicationMessage {
   int32 node_id = 1;           // 节点ID
-  int64 first_buffered_id = 2;  // 缓冲的第一条数据ID
-  int64 timestamp = 3;          // 报告时间戳
-  int32 buffer_size = 4;        // 当前缓冲大小
+  int64 replication_id = 2;    // 缓冲的第一条数据ID
 }
 
 // 主节点服务定义（从节点调用主节点）
@@ -140,23 +129,15 @@ service MasterReplicationService {
   // 心跳服务（从 -> 主，双向流）
   rpc Heartbeat(stream HeartbeatMessage) returns (stream HeartbeatResponse);
   
-  // 状态同步（从 -> 主，双向流）
-  rpc SyncState(stream StateSyncMessage) returns (stream StateSyncMessage);
-  
   // 缓冲第一条数据ID报告（从 -> 主）
-  rpc ReportBufferFirstId(BufferFirstIdReportMessage) returns (ConfirmationMessage);
+  rpc reportLatestReplication(LatestReplicationMessage) returns (ConfirmationMessage);
   
-  // 业务消息发布确认（从 -> 主）
-  rpc ConfirmBusinessPublish(BusinessPublishConfirmMessage) returns (ConfirmationMessage);
 }
 
 // 从节点服务定义（主节点调用从节点）
 service SlaveReplicationService {
-  // 发送业务消息（主 -> 从，单向流）
-  rpc SendBusiness(stream BatchBusinessMessage) returns (ConfirmationMessage);
-  
-  // 发送快照数据（主 -> 从，单向流）
-  rpc SendSnapshot(stream SnapshotDataMessage) returns (ConfirmationMessage);
+  // 发送中继消息（主 -> 从，单向流）
+  rpc SendRelay(stream BatchRelayMessage) returns (ConfirmationMessage);
   
   // 发送Journal重放（主 -> 从，单向流）
   rpc SendJournal(stream JournalReplayMessage) returns (ConfirmationMessage);

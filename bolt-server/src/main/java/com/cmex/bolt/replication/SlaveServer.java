@@ -1,6 +1,9 @@
 package com.cmex.bolt.replication;
 
+import com.cmex.bolt.core.BoltConfig;
+import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.replication.ReplicationProto.*;
+import com.lmax.disruptor.RingBuffer;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import lombok.extern.slf4j.Slf4j;
@@ -19,10 +22,11 @@ public class SlaveServer {
     private final SlaveReplicationServiceImpl slaveService;
     private Server server;
     
-    public SlaveServer(int port, SlaveReplicationManager slaveReplicationManager) {
+    public SlaveServer(int port, SlaveReplicationManager slaveReplicationManager, 
+                      BoltConfig config, RingBuffer<NexusWrapper> sequencerRingBuffer) {
         this.port = port;
         this.slaveReplicationManager = slaveReplicationManager;
-        this.slaveService = new SlaveReplicationServiceImpl(slaveReplicationManager);
+        this.slaveService = new SlaveReplicationServiceImpl(slaveReplicationManager, config, sequencerRingBuffer);
     }
     
     /**
