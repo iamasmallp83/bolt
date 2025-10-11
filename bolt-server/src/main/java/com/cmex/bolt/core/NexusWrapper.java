@@ -22,6 +22,35 @@ public class NexusWrapper {
     @Getter
     @Setter
     private EventType eventType = EventType.BUSINESS;
+    
+    // 手动添加setter方法以避免Lombok问题
+    public void setId(long id) {
+        this.id = id;
+    }
+    
+    public void setPartition(int partition) {
+        this.partition = partition;
+    }
+    
+    public void setEventType(EventType eventType) {
+        this.eventType = eventType;
+    }
+    
+    public ByteBuf getBuffer() {
+        return buffer;
+    }
+    
+    public long getId() {
+        return id;
+    }
+    
+    public int getPartition() {
+        return partition;
+    }
+    
+    public EventType getEventType() {
+        return eventType;
+    }
 
     /**
      * 获取合并的partition和eventType字段

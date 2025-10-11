@@ -10,7 +10,6 @@ import com.cmex.bolt.domain.Transfer;
 import com.cmex.bolt.dto.DepthDto;
 import com.cmex.bolt.handler.*;
 import com.cmex.bolt.recovery.SnapshotData;
-import com.cmex.bolt.replication.ReplicationManager;
 import com.cmex.bolt.repository.impl.AccountRepository;
 import com.cmex.bolt.repository.impl.CurrencyRepository;
 import com.cmex.bolt.repository.impl.SymbolRepository;
@@ -147,12 +146,9 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
         // 然后进行journal重放，如果有snapshot则从snapshot之后开始
         JournalReplayer replayer = new JournalReplayer(sequencerRingBuffer, config);
-        if (snapshotData.timestamp() > 0) {
-            log.info("Starting journal replay from snapshot timestamp: {}", snapshotData.timestamp());
-            replayer.replayFromJournal(snapshotData.timestamp());
-        }
         log.info("starting journal replay from beginning");
-        replayer.replayFromJournal();
+        long maxId = replayer.replayFromJournal();
+        requestId.set(maxId);
 
         // 初始化性能导出器
         performanceExporter = new PerformanceExporter(sequencerRingBuffer);

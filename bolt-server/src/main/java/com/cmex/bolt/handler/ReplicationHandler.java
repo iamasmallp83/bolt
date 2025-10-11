@@ -3,7 +3,6 @@ package com.cmex.bolt.handler;
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.replication.MasterServer;
-import com.cmex.bolt.replication.ReplicationManager;
 import com.cmex.bolt.replication.ReplicationProto.*;
 import com.google.protobuf.ByteString;
 import com.lmax.disruptor.EventHandler;
@@ -18,11 +17,11 @@ import lombok.extern.slf4j.Slf4j;
 public class ReplicationHandler implements EventHandler<NexusWrapper>, LifecycleAware {
 
     private final BoltConfig config;
-    private final ReplicationManager replicationManager;
+    private final MasterServer masterServer;
 
     public ReplicationHandler(BoltConfig config) {
         this.config = config;
-        this.replicationManager = new ReplicationManager(config);
+        this.masterServer = new MasterServer(config);
     }
     
     @Override
@@ -33,7 +32,7 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
         }
 
         // 检查是否有就绪的节点需要同步
-        int readyNodeCount = replicationManager.getReadyNodeCount();
+        int readyNodeCount = masterServer.getReadyNodeCount();
         if (readyNodeCount == 0) {
             return;
         }
@@ -42,8 +41,8 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
             // 创建中继消息
             BatchRelayMessage relayMessage = createRelayMessage(wrapper, sequence);
             
-            // 通过ReplicationManager发送到所有就绪的节点
-            replicationManager.sendRelayMessage(relayMessage);
+            // 通过MasterServer发送到所有就绪的节点
+            masterServer.sendRelayMessage(relayMessage);
             
             log.debug("Replicated relay message sequence {} to {} nodes", sequence, readyNodeCount);
             
@@ -76,14 +75,22 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
     @Override
     public void onStart() {
         log.info("ReplicationHandler started");
-        // 启动ReplicationManager
-        replicationManager.start();
+        // 启动MasterServer
+        try {
+            masterServer.start();
+        } catch (Exception e) {
+            log.error("Failed to start MasterServer", e);
+        }
     }
 
     @Override
     public void onShutdown() {
         log.info("ReplicationHandler shutdown");
-        // 停止ReplicationManager
-        replicationManager.stop();
+        // 停止MasterServer
+        try {
+            masterServer.stop();
+        } catch (Exception e) {
+            log.error("Failed to stop MasterServer", e);
+        }
     }
 }

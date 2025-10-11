@@ -5,12 +5,16 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.*;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Map;
 import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 @Slf4j
 public class SnapshotReader {
@@ -46,32 +50,6 @@ public class SnapshotReader {
             latestTimestamp,
             timestampDir
         );
-    }
-
-    /**
-     * 查找最新的matching snapshot文件
-     */
-    public long findLatestMatchingSnapshotTimestamp() throws IOException {
-        Path matchingSnapshotDir = Paths.get(config.boltHome(), "snapshots");
-        
-        if (!Files.exists(matchingSnapshotDir)) {
-            return -1;
-        }
-
-        try (Stream<Path> paths = Files.list(matchingSnapshotDir)) {
-            return paths
-                .filter(Files::isDirectory)
-                .map(path -> {
-                    try {
-                        return Long.parseLong(path.getFileName().toString());
-                    } catch (NumberFormatException e) {
-                        return -1L;
-                    }
-                })
-                .filter(timestamp -> timestamp > 0)
-                .max(Long::compareTo)
-                .orElse(-1L);
-        }
     }
 
     /**
@@ -129,21 +107,190 @@ public class SnapshotReader {
     }
 
     /**
-     * 读取matching数据
+     * 将最新的快照文件夹打包压缩为字节数组
+     * 
+     * @return 压缩后的字节数组，如果快照不存在或打包失败则返回null
      */
-    public Map<String, Object> readMatchingData(Path matchingFile) throws IOException {
-        if (!Files.exists(matchingFile)) {
-            log.warn("Matching snapshot file not found: {}", matchingFile);
+    public byte[] packSnapshot() {
+        try {
+            SnapshotInfo snapshotInfo = findLatestSnapshot();
+            if (snapshotInfo == null || snapshotInfo.getTimestampDir() == null) {
+                log.info("No snapshot available for packing");
+                return null;
+            }
+            
+            Path snapshotDir = snapshotInfo.getTimestampDir();
+            if (!Files.exists(snapshotDir) || !Files.isDirectory(snapshotDir)) {
+                log.warn("Snapshot directory does not exist: {}", snapshotDir);
+                return null;
+            }
+            
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            try (ZipOutputStream zos = new ZipOutputStream(baos)) {
+                packDirectory(snapshotDir, snapshotDir.getFileName().toString(), zos);
+            }
+            
+            byte[] result = baos.toByteArray();
+            log.info("Successfully packed snapshot from {} to {} bytes", snapshotDir, result.length);
+            return result;
+            
+        } catch (IOException e) {
+            log.error("Failed to pack latest snapshot", e);
+            return null;
+        }
+    }
+    
+    /**
+     * 解压缩快照数据到本地快照目录
+     * 
+     * @param snapshotData 压缩的快照数据
+     * @return 解压缩后的快照目录路径，如果解压缩失败则返回null
+     */
+    public Path extractSnapshot(byte[] snapshotData) {
+        if (snapshotData == null || snapshotData.length == 0) {
+            log.warn("Snapshot data is null or empty");
             return null;
         }
         
-        JsonNode rootNode = objectMapper.readTree(matchingFile.toFile());
-        JsonNode symbolsNode = rootNode.get("symbols");
-        
-        if (symbolsNode != null) {
-            return objectMapper.convertValue(symbolsNode, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+        try {
+            // 创建快照目录
+            Path snapshotDir = Paths.get(config.boltHome(), "snapshots");
+            Files.createDirectories(snapshotDir);
+            
+            // 创建临时目录用于解压缩
+            Path tempDir = Files.createTempDirectory("snapshot_extract_");
+            
+            try (ByteArrayInputStream bais = new ByteArrayInputStream(snapshotData);
+                 ZipInputStream zis = new ZipInputStream(bais)) {
+                
+                ZipEntry entry;
+                while ((entry = zis.getNextEntry()) != null) {
+                    Path entryPath = tempDir.resolve(entry.getName());
+                    
+                    // 确保父目录存在
+                    Files.createDirectories(entryPath.getParent());
+                    
+                    // 解压缩文件
+                    try (FileOutputStream fos = new FileOutputStream(entryPath.toFile())) {
+                        byte[] buffer = new byte[8192];
+                        int length;
+                        while ((length = zis.read(buffer)) > 0) {
+                            fos.write(buffer, 0, length);
+                        }
+                    }
+                    
+                    log.debug("Extracted file: {}", entry.getName());
+                }
+            }
+            
+            // 将解压缩的文件移动到快照目录
+            // 假设压缩包中包含时间戳目录
+            Path[] extractedDirs = Files.list(tempDir)
+                    .filter(Files::isDirectory)
+                    .toArray(Path[]::new);
+            
+            if (extractedDirs.length == 0) {
+                log.warn("No directories found in extracted snapshot");
+                return null;
+            }
+            
+            // 使用第一个找到的目录（通常是时间戳目录）
+            Path sourceDir = extractedDirs[0];
+            Path targetDir = snapshotDir.resolve(sourceDir.getFileName());
+            
+            // 如果目标目录已存在，先删除
+            if (Files.exists(targetDir)) {
+                deleteDirectory(targetDir);
+            }
+            
+            // 移动目录
+            Files.move(sourceDir, targetDir);
+            
+            // 清理临时目录
+            deleteDirectory(tempDir);
+            
+            log.info("Successfully extracted snapshot to: {}", targetDir);
+            return targetDir;
+            
+        } catch (IOException e) {
+            log.error("Failed to extract snapshot", e);
+            return null;
         }
-        return null;
+    }
+    
+    /**
+     * 递归删除目录
+     */
+    private void deleteDirectory(Path dir) throws IOException {
+        if (Files.exists(dir)) {
+            Files.walk(dir)
+                    .sorted((a, b) -> b.compareTo(a)) // 反向排序，先删除文件再删除目录
+                    .forEach(path -> {
+                        try {
+                            Files.delete(path);
+                        } catch (IOException e) {
+                            log.warn("Failed to delete: {}", path, e);
+                        }
+                    });
+        }
+    }
+    
+    /**
+     * 检查快照文件夹是否存在且不为空
+     * 
+     * @param snapshotPath 快照文件夹路径
+     * @return 如果快照存在且包含文件则返回true
+     */
+    public boolean hasSnapshot(String snapshotPath) {
+        if (snapshotPath == null || snapshotPath.trim().isEmpty()) {
+            return false;
+        }
+        
+        Path snapshotDir = Paths.get(snapshotPath);
+        if (!Files.exists(snapshotDir) || !Files.isDirectory(snapshotDir)) {
+            return false;
+        }
+        
+        try {
+            return Files.walk(snapshotDir)
+                    .anyMatch(path -> Files.isRegularFile(path));
+        } catch (IOException e) {
+            log.error("Failed to check snapshot directory: {}", snapshotPath, e);
+            return false;
+        }
+    }
+    
+    /**
+     * 递归打包目录到ZipOutputStream
+     */
+    private void packDirectory(Path dir, String baseName, ZipOutputStream zos) throws IOException {
+        Files.walk(dir)
+                .filter(path -> !Files.isDirectory(path)) // 只处理文件，不处理目录
+                .forEach(file -> {
+                    try {
+                        String relativePath = dir.getParent() != null 
+                            ? dir.getParent().relativize(file).toString()
+                            : file.getFileName().toString();
+                        
+                        ZipEntry entry = new ZipEntry(relativePath);
+                        zos.putNextEntry(entry);
+                        
+                        try (FileInputStream fis = new FileInputStream(file.toFile())) {
+                            byte[] buffer = new byte[8192];
+                            int length;
+                            while ((length = fis.read(buffer)) > 0) {
+                                zos.write(buffer, 0, length);
+                            }
+                        }
+                        
+                        zos.closeEntry();
+                        log.debug("Added file to snapshot: {}", relativePath);
+                        
+                    } catch (IOException e) {
+                        log.error("Failed to add file to snapshot: {}", file, e);
+                        throw new RuntimeException(e);
+                    }
+                });
     }
 
     private long findLatestSnapshotTimestamp(Path sequencerSnapshotDir) throws IOException {
@@ -167,17 +314,6 @@ public class SnapshotReader {
         }
     }
 
-    private long extractTimestampFromPath(Path path) {
-        try {
-            String filename = path.getFileName().toString();
-            // 对于新目录结构，直接解析目录名作为时间戳
-            return Long.parseLong(filename);
-        } catch (NumberFormatException e) {
-            log.warn("Could not extract timestamp from path: {}", path, e);
-            return -1;
-        }
-    }
-
     /**
      * Snapshot信息封装类
      */
@@ -191,6 +327,8 @@ public class SnapshotReader {
         }
 
         public long getTimestamp() { return timestamp; }
+        
+        public Path getTimestampDir() { return timestampDir; }
         
         /**
          * 获取指定partition的账户文件路径
