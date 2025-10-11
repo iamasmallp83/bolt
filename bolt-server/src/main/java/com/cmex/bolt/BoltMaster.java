@@ -1,15 +1,10 @@
 package com.cmex.bolt;
 
 import com.cmex.bolt.core.BoltConfig;
-import com.cmex.bolt.recovery.SnapshotReader;
 import com.cmex.bolt.handler.JournalReplayer;
-import com.cmex.bolt.replication.MasterReplicationServiceImpl;
-import com.cmex.bolt.replication.MasterServer;
+import com.cmex.bolt.recovery.SnapshotReader;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import lombok.extern.slf4j.Slf4j;
-
-import java.io.IOException;
-import java.lang.InterruptedException;
 
 /**
  * Bolt主节点 - 负责处理gRPC复制服务

@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * 从节点复制管理器
  */
 @Slf4j
-public class SlaveReplicationManager {
+public class SlaveSyncManager {
 
     private final BoltConfig config;
     private final RingBuffer<NexusWrapper> sequencerRingBuffer;
@@ -28,8 +28,8 @@ public class SlaveReplicationManager {
     private volatile boolean isConnected = false;
 
     // MasterReplicationService stub
-    private MasterReplicationServiceGrpc.MasterReplicationServiceBlockingStub masterStub;
-    private MasterReplicationServiceGrpc.MasterReplicationServiceStub masterAsyncStub;
+    private ReplicationMasterServiceGrpc.ReplicationMasterServiceBlockingStub masterStub;
+    private ReplicationMasterServiceGrpc.ReplicationMasterServiceStub masterAsyncStub;
     private ManagedChannel masterChannel;
 
     // 中继消息缓冲
@@ -41,10 +41,11 @@ public class SlaveReplicationManager {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile long lastHeartbeatTime = 0;
 
-    public SlaveReplicationManager(BoltConfig config, RingBuffer<NexusWrapper> sequencerRingBuffer) {
+    public SlaveSyncManager(BoltConfig config, RingBuffer<NexusWrapper> sequencerRingBuffer) {
         this.config = config;
         this.assignedNodeId = config.nodeId();
         this.sequencerRingBuffer = sequencerRingBuffer;
+        this.start();
     }
 
     /**
@@ -84,8 +85,8 @@ public class SlaveReplicationManager {
                 .usePlaintext()
                 .build();
 
-        masterStub = MasterReplicationServiceGrpc.newBlockingStub(masterChannel);
-        masterAsyncStub = MasterReplicationServiceGrpc.newStub(masterChannel);
+        masterStub = ReplicationMasterServiceGrpc.newBlockingStub(masterChannel);
+        masterAsyncStub = ReplicationMasterServiceGrpc.newStub(masterChannel);
 
         log.info("Created connection to master at {}:{}", config.masterHost(), config.masterReplicationPort());
     }
@@ -164,8 +165,6 @@ public class SlaveReplicationManager {
                         
                         if (extractedPath != null) {
                             log.info("Successfully extracted snapshot to: {}", extractedPath);
-                            // 可以在这里触发快照恢复逻辑
-                            // TODO: 触发快照恢复
                         } else {
                             log.warn("Failed to extract snapshot data");
                         }
@@ -452,11 +451,11 @@ public class SlaveReplicationManager {
         return running.get();
     }
 
-    public MasterReplicationServiceGrpc.MasterReplicationServiceBlockingStub getMasterStub() {
+    public ReplicationMasterServiceGrpc.ReplicationMasterServiceBlockingStub getMasterStub() {
         return masterStub;
     }
 
-    public MasterReplicationServiceGrpc.MasterReplicationServiceStub getMasterAsyncStub() {
+    public ReplicationMasterServiceGrpc.ReplicationMasterServiceStub getMasterAsyncStub() {
         return masterAsyncStub;
     }
 }

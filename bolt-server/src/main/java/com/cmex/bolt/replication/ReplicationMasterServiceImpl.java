@@ -13,12 +13,12 @@ import java.util.concurrent.ConcurrentMap;
  * 主节点复制服务实现
  */
 @Slf4j
-public class MasterReplicationServiceImpl extends MasterReplicationServiceGrpc.MasterReplicationServiceImplBase {
+public class ReplicationMasterServiceImpl extends ReplicationMasterServiceGrpc.ReplicationMasterServiceImplBase {
     private final BoltConfig config;
     private final MasterServer masterServer;
     private final ConcurrentMap<Integer, StreamObserver<HeartbeatResponse>> heartbeatObservers = new ConcurrentHashMap<>();
 
-    public MasterReplicationServiceImpl(BoltConfig config, MasterServer masterServer) {
+    public ReplicationMasterServiceImpl(BoltConfig config, MasterServer masterServer) {
         this.config = config;
         this.masterServer = masterServer;
     }

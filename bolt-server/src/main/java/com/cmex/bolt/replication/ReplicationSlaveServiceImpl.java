@@ -18,17 +18,16 @@ import java.util.concurrent.atomic.AtomicLong;
  * 从节点复制服务实现
  */
 @Slf4j
-public class SlaveReplicationServiceImpl extends SlaveReplicationServiceGrpc.SlaveReplicationServiceImplBase {
+public class ReplicationSlaveServiceImpl extends ReplicationSlaveServiceGrpc.ReplicationSlaveServiceImplBase {
 
-    private final SlaveReplicationManager slaveReplicationManager;
+    private final SlaveSyncManager slaveSyncManager;
     private final BoltConfig config;
     private final AtomicLong lastRelaySequence = new AtomicLong(0);
     private final AtomicLong lastSnapshotSequence = new AtomicLong(0);
     private final AtomicLong lastJournalSequence = new AtomicLong(0);
 
-    public SlaveReplicationServiceImpl(SlaveReplicationManager slaveReplicationManager,
-                                       BoltConfig config, RingBuffer<NexusWrapper> sequencerRingBuffer) {
-        this.slaveReplicationManager = slaveReplicationManager;
+    public ReplicationSlaveServiceImpl(BoltConfig config, RingBuffer<NexusWrapper> sequencerRingBuffer) {
+        this.slaveSyncManager = new SlaveSyncManager(config, sequencerRingBuffer);
         this.config = config;
     }
 
@@ -44,7 +43,7 @@ public class SlaveReplicationServiceImpl extends SlaveReplicationServiceGrpc.Sla
                             relayMessage.getSequence(), relayMessage.getSize());
 
                     // 处理中继消息
-                    boolean success = slaveReplicationManager.processRelayMessage(relayMessage);
+                    boolean success = slaveSyncManager.processRelayMessage(relayMessage);
 
                     // 更新最后中继序列号
                     lastRelaySequence.set(relayMessage.getSequence());
@@ -52,7 +51,7 @@ public class SlaveReplicationServiceImpl extends SlaveReplicationServiceGrpc.Sla
                     // 只在第一次收到消息时发送确认，或者处理失败时发送错误确认
                     if (!hasResponded) {
                         ConfirmationMessage response = ConfirmationMessage.newBuilder()
-                                .setNodeId(slaveReplicationManager.getAssignedNodeId())
+                                .setNodeId(slaveSyncManager.getAssignedNodeId())
                                 .setSequence(relayMessage.getSequence())
                                 .setTimestamp(System.currentTimeMillis())
                                 .setSuccess(success)
@@ -68,7 +67,7 @@ public class SlaveReplicationServiceImpl extends SlaveReplicationServiceGrpc.Sla
                     // 如果还没有响应过，发送错误确认
                     if (!hasResponded) {
                         ConfirmationMessage response = ConfirmationMessage.newBuilder()
-                                .setNodeId(slaveReplicationManager.getAssignedNodeId())
+                                .setNodeId(slaveSyncManager.getAssignedNodeId())
                                 .setSequence(relayMessage.getSequence())
                                 .setTimestamp(System.currentTimeMillis())
                                 .setSuccess(false)
@@ -95,7 +94,7 @@ public class SlaveReplicationServiceImpl extends SlaveReplicationServiceGrpc.Sla
                 if (!hasResponded) {
                     // 如果流结束但还没有发送过响应，发送一个默认的成功确认
                     ConfirmationMessage response = ConfirmationMessage.newBuilder()
-                            .setNodeId(slaveReplicationManager.getAssignedNodeId())
+                            .setNodeId(slaveSyncManager.getAssignedNodeId())
                             .setSequence(lastRelaySequence.get())
                             .setTimestamp(System.currentTimeMillis())
                             .setSuccess(true)
@@ -125,7 +124,7 @@ public class SlaveReplicationServiceImpl extends SlaveReplicationServiceGrpc.Sla
                     // 只在第一次收到消息时发送确认，或者处理失败时发送错误确认
                     if (!hasResponded) {
                         ConfirmationMessage response = ConfirmationMessage.newBuilder()
-                                .setNodeId(slaveReplicationManager.getAssignedNodeId())
+                                .setNodeId(slaveSyncManager.getAssignedNodeId())
                                 .setSequence(System.currentTimeMillis()) // 使用时间戳作为序列号
                                 .setTimestamp(System.currentTimeMillis())
                                 .setSuccess(true)
@@ -137,8 +136,8 @@ public class SlaveReplicationServiceImpl extends SlaveReplicationServiceGrpc.Sla
 
                     // 如果是最后一块，发布缓冲的中继消息
                     // if (journalMessage.getIsLastChunk()) {
-                        // slaveReplicationManager.publishBufferedRelayMessages();
-                        // log.info("Journal sync completed, published buffered relay messages");
+                    // slaveReplicationManager.publishBufferedRelayMessages();
+                    // log.info("Journal sync completed, published buffered relay messages");
                     // }
 
                 } catch (Exception e) {
@@ -147,7 +146,7 @@ public class SlaveReplicationServiceImpl extends SlaveReplicationServiceGrpc.Sla
                     // 如果还没有响应过，发送错误确认
                     if (!hasResponded) {
                         ConfirmationMessage response = ConfirmationMessage.newBuilder()
-                                .setNodeId(slaveReplicationManager.getAssignedNodeId())
+                                .setNodeId(slaveSyncManager.getAssignedNodeId())
                                 .setSequence(System.currentTimeMillis()) // 使用时间戳作为序列号
                                 .setTimestamp(System.currentTimeMillis())
                                 .setSuccess(false)
@@ -174,7 +173,7 @@ public class SlaveReplicationServiceImpl extends SlaveReplicationServiceGrpc.Sla
                 if (!hasResponded) {
                     // 如果流结束但还没有发送过响应，发送一个默认的成功确认
                     ConfirmationMessage response = ConfirmationMessage.newBuilder()
-                            .setNodeId(slaveReplicationManager.getAssignedNodeId())
+                            .setNodeId(slaveSyncManager.getAssignedNodeId())
                             .setSequence(lastJournalSequence.get())
                             .setTimestamp(System.currentTimeMillis())
                             .setSuccess(true)
@@ -193,23 +192,23 @@ public class SlaveReplicationServiceImpl extends SlaveReplicationServiceGrpc.Sla
     private void writeJournalDataToFile(JournalReplayMessage journalMessage) throws IOException {
         // 获取journal文件路径
         Path journalPath = Paths.get(config.journalFilePath());
-        
+
         // 确保目录存在
         Files.createDirectories(journalPath.getParent());
-        
+
         // 根据isBinary判断写入方式
         if (config.isBinary()) {
             // 二进制格式：直接写入字节数据
-            Files.write(journalPath, journalMessage.getJournalData().toByteArray(), 
+            Files.write(journalPath, journalMessage.getJournalData().toByteArray(),
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-            log.debug("Wrote {} bytes of binary journal data to {}", 
+            log.debug("Wrote {} bytes of binary journal data to {}",
                     journalMessage.getJournalData().size(), journalPath);
         } else {
             // JSON格式：将字节数据转换为字符串写入
             String journalData = new String(journalMessage.getJournalData().toByteArray());
-            Files.write(journalPath, journalData.getBytes(), 
+            Files.write(journalPath, journalData.getBytes(),
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-            log.debug("Wrote {} characters of JSON journal data to {}", 
+            log.debug("Wrote {} characters of JSON journal data to {}",
                     journalData.length(), journalPath);
         }
     }

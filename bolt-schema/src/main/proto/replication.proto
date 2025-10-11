@@ -122,7 +122,7 @@ message LatestReplicationMessage {
 }
 
 // 主节点服务定义（从节点调用主节点）
-service MasterReplicationService {
+service ReplicationMasterService {
   // 从节点注册到主节点（从 -> 主）
   rpc RegisterSlave(RegisterMessage) returns (RegisterResponse);
   
@@ -135,7 +135,7 @@ service MasterReplicationService {
 }
 
 // 从节点服务定义（主节点调用从节点）
-service SlaveReplicationService {
+service ReplicationSlaveService {
   // 发送中继消息（主 -> 从，单向流）
   rpc SendRelay(stream BatchRelayMessage) returns (ConfirmationMessage);
   

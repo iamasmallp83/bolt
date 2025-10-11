@@ -43,7 +43,7 @@ public class ReplicationInfo {
     
     // gRPC 连接和 stub
     private volatile ManagedChannel slaveChannel;
-    private volatile SlaveReplicationServiceGrpc.SlaveReplicationServiceStub slaveAsyncStub;
+    private volatile ReplicationSlaveServiceGrpc.ReplicationSlaveServiceStub slaveAsyncStub;
 
     @Builder
     public ReplicationInfo(int nodeId, String host, int port, int replicationPort) {

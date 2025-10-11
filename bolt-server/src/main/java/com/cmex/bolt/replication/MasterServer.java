@@ -25,12 +25,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class MasterServer {
     
     private final BoltConfig config;
-    private final MasterReplicationServiceImpl masterService;
+    private final ReplicationMasterServiceImpl masterService;
     private Server server;
     
     // 存储从节点的stub连接
-    private final ConcurrentMap<Integer, SlaveReplicationServiceGrpc.SlaveReplicationServiceBlockingStub> slaveStubs = new ConcurrentHashMap<>();
-    private final ConcurrentMap<Integer, SlaveReplicationServiceGrpc.SlaveReplicationServiceStub> slaveAsyncStubs = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Integer, ReplicationSlaveServiceGrpc.ReplicationSlaveServiceBlockingStub> slaveStubs = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Integer, ReplicationSlaveServiceGrpc.ReplicationSlaveServiceStub> slaveAsyncStubs = new ConcurrentHashMap<>();
     
     // 存储所有slave节点的信息
     private final ConcurrentMap<Integer, ReplicationInfo> slaveNodes = new ConcurrentHashMap<>();
@@ -43,7 +43,7 @@ public class MasterServer {
     
     public MasterServer(BoltConfig boltConfig) {
         this.config = boltConfig;
-        this.masterService = new MasterReplicationServiceImpl(boltConfig, this);
+        this.masterService = new ReplicationMasterServiceImpl(boltConfig, this);
     }
     
     /**
@@ -132,10 +132,10 @@ public class MasterServer {
                     .build();
             
             // 创建stub
-            SlaveReplicationServiceGrpc.SlaveReplicationServiceBlockingStub slaveStub = 
-                    SlaveReplicationServiceGrpc.newBlockingStub(slaveChannel);
-            SlaveReplicationServiceGrpc.SlaveReplicationServiceStub slaveAsyncStub = 
-                    SlaveReplicationServiceGrpc.newStub(slaveChannel);
+            ReplicationSlaveServiceGrpc.ReplicationSlaveServiceBlockingStub slaveStub =
+                    ReplicationSlaveServiceGrpc.newBlockingStub(slaveChannel);
+            ReplicationSlaveServiceGrpc.ReplicationSlaveServiceStub slaveAsyncStub =
+                    ReplicationSlaveServiceGrpc.newStub(slaveChannel);
             // 存储stub
             slaveStubs.put(nodeId, slaveStub);
             slaveAsyncStubs.put(nodeId, slaveAsyncStub);
@@ -150,14 +150,14 @@ public class MasterServer {
     /**
      * 获取从节点stub
      */
-    public SlaveReplicationServiceGrpc.SlaveReplicationServiceBlockingStub getSlaveStub(int nodeId) {
+    public ReplicationSlaveServiceGrpc.ReplicationSlaveServiceBlockingStub getSlaveStub(int nodeId) {
         return slaveStubs.get(nodeId);
     }
     
     /**
      * 获取从节点异步stub
      */
-    public SlaveReplicationServiceGrpc.SlaveReplicationServiceStub getSlaveAsyncStub(int nodeId) {
+    public ReplicationSlaveServiceGrpc.ReplicationSlaveServiceStub getSlaveAsyncStub(int nodeId) {
         return slaveAsyncStubs.get(nodeId);
     }
     
@@ -222,8 +222,8 @@ public class MasterServer {
                     .build();
 
             // 创建异步stub
-            SlaveReplicationServiceGrpc.SlaveReplicationServiceStub asyncStub =
-                    SlaveReplicationServiceGrpc.newStub(channel);
+            ReplicationSlaveServiceGrpc.ReplicationSlaveServiceStub asyncStub =
+                    ReplicationSlaveServiceGrpc.newStub(channel);
 
             // 保存连接和stub
             replicationInfo.setSlaveChannel(channel);
@@ -312,7 +312,6 @@ public class MasterServer {
                 }
             };
 
-            // 开始发送Journal数据流
             StreamObserver<JournalReplayMessage> requestObserver =
                     replicationInfo.getSlaveAsyncStub().sendJournal(responseObserver);
 
