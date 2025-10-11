@@ -210,9 +210,9 @@ public class MasterReplicationServiceImpl extends MasterReplicationServiceGrpc.M
     }
     
     @Override
-    public void confirmBusinessPublish(BusinessPublishConfirmMessage request, StreamObserver<ConfirmationMessage> responseObserver) {
+    public void confirmRelayPublish(RelayPublishConfirmMessage request, StreamObserver<ConfirmationMessage> responseObserver) {
         try {
-            log.info("Received business publish confirmation from node {}: sequence={}", 
+            log.info("Received relay publish confirmation from node {}: sequence={}", 
                     request.getNodeId(), request.getPublishedSequence());
             
             // 更新节点状态为就绪
@@ -229,7 +229,7 @@ public class MasterReplicationServiceImpl extends MasterReplicationServiceGrpc.M
             responseObserver.onCompleted();
             
         } catch (Exception e) {
-            log.error("Failed to process business publish confirmation from node {}", request.getNodeId(), e);
+            log.error("Failed to process relay publish confirmation from node {}", request.getNodeId(), e);
             
             ConfirmationMessage response = ConfirmationMessage.newBuilder()
                     .setNodeId(request.getNodeId())

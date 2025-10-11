@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class SlaveReplicationServiceImpl extends SlaveReplicationServiceGrpc.SlaveReplicationServiceImplBase {
     
     private final SlaveReplicationManager slaveReplicationManager;
-    private final AtomicLong lastBusinessSequence = new AtomicLong(0);
+    private final AtomicLong lastRelaySequence = new AtomicLong(0);
     private final AtomicLong lastSnapshotSequence = new AtomicLong(0);
     private final AtomicLong lastJournalSequence = new AtomicLong(0);
     
@@ -22,23 +22,23 @@ public class SlaveReplicationServiceImpl extends SlaveReplicationServiceGrpc.Sla
     }
     
     @Override
-    public StreamObserver<BatchBusinessMessage> sendBusiness(StreamObserver<ConfirmationMessage> responseObserver) {
-        return new StreamObserver<BatchBusinessMessage>() {
+    public StreamObserver<BatchRelayMessage> sendRelay(StreamObserver<ConfirmationMessage> responseObserver) {
+        return new StreamObserver<BatchRelayMessage>() {
             @Override
-            public void onNext(BatchBusinessMessage businessMessage) {
+            public void onNext(BatchRelayMessage relayMessage) {
                 try {
-                    log.debug("Received business message batch {} with {} messages", 
-                            businessMessage.getBatchId(), businessMessage.getBatchSize());
+                    log.debug("Received relay message batch {} with {} messages", 
+                            relayMessage.getSequence(), relayMessage.getSize());
                     
-                    // 处理业务消息
-                    boolean success = slaveReplicationManager.processBusinessMessage(businessMessage);
+                    // 处理中继消息
+                    boolean success = slaveReplicationManager.processRelayMessage(relayMessage);
                     
-                    // 更新最后业务序列号
-                    lastBusinessSequence.set(businessMessage.getEndSequence());
+                    // 更新最后中继序列号
+                    lastRelaySequence.set(relayMessage.getSequence());
                     
                     ConfirmationMessage response = ConfirmationMessage.newBuilder()
                             .setNodeId(slaveReplicationManager.getAssignedNodeId())
-                            .setSequence(businessMessage.getEndSequence())
+                            .setSequence(relayMessage.getSequence())
                             .setTimestamp(System.currentTimeMillis())
                             .setSuccess(success)
                             .build();
@@ -46,11 +46,11 @@ public class SlaveReplicationServiceImpl extends SlaveReplicationServiceGrpc.Sla
                     responseObserver.onNext(response);
                     
                 } catch (Exception e) {
-                    log.error("Failed to process business message batch {}", businessMessage.getBatchId(), e);
+                    log.error("Failed to process relay message batch {}", relayMessage.getSequence(), e);
                     
                     ConfirmationMessage response = ConfirmationMessage.newBuilder()
                             .setNodeId(slaveReplicationManager.getAssignedNodeId())
-                            .setSequence(businessMessage.getEndSequence())
+                            .setSequence(relayMessage.getSequence())
                             .setTimestamp(System.currentTimeMillis())
                             .setSuccess(false)
                             .setErrorMessage(e.getMessage())
@@ -62,22 +62,22 @@ public class SlaveReplicationServiceImpl extends SlaveReplicationServiceGrpc.Sla
             
             @Override
             public void onError(Throwable t) {
-                log.error("Business message stream error", t);
+                log.error("Relay message stream error", t);
             }
             
             @Override
             public void onCompleted() {
-                log.info("Business message stream completed");
+                log.info("Relay message stream completed");
                 responseObserver.onCompleted();
             }
         };
     }
     
     @Override
-    public StreamObserver<SnapshotDataMessage> sendSnapshot(StreamObserver<ConfirmationMessage> responseObserver) {
-        return new StreamObserver<SnapshotDataMessage>() {
+    public StreamObserver<SnapshotReplayMessage> sendSnapshot(StreamObserver<ConfirmationMessage> responseObserver) {
+        return new StreamObserver<SnapshotReplayMessage>() {
             @Override
-            public void onNext(SnapshotDataMessage snapshotMessage) {
+            public void onNext(SnapshotReplayMessage snapshotMessage) {
                 try {
                     log.info("Received snapshot data: partition={}, type={}, isLast={}", 
                             snapshotMessage.getPartition(), 
@@ -101,8 +101,8 @@ public class SlaveReplicationServiceImpl extends SlaveReplicationServiceGrpc.Sla
                     
                     // 如果是最后一个分区，更新状态
                     if (snapshotMessage.getIsLastPartition()) {
-                        slaveReplicationManager.updateState(ReplicationState.BUSINESS_BUFFERING);
-                        log.info("Snapshot sync completed, switching to business buffering state");
+                        slaveReplicationManager.updateState(ReplicationState.RELAY_BUFFERING);
+                        log.info("Snapshot sync completed, switching to relay buffering state");
                     }
                     
                 } catch (Exception e) {
@@ -159,8 +159,8 @@ public class SlaveReplicationServiceImpl extends SlaveReplicationServiceGrpc.Sla
                     
                     // 如果是最后一块，发布缓冲的业务消息
                     if (journalMessage.getIsLastChunk()) {
-                        slaveReplicationManager.publishBufferedBusinessMessages();
-                        log.info("Journal sync completed, published buffered business messages");
+                        slaveReplicationManager.publishBufferedRelayMessages();
+                        log.info("Journal sync completed, published buffered relay messages");
                     }
                     
                 } catch (Exception e) {
@@ -192,10 +192,10 @@ public class SlaveReplicationServiceImpl extends SlaveReplicationServiceGrpc.Sla
     }
     
     /**
-     * 获取最后业务序列号
+     * 获取最后中继序列号
      */
-    public long getLastBusinessSequence() {
-        return lastBusinessSequence.get();
+    public long getLastRelaySequence() {
+        return lastRelaySequence.get();
     }
     
     /**

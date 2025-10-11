@@ -126,10 +126,84 @@ public class NexusWrapper {
      *
      * @return buffer的副本
      */
-    public byte[] getBufferCopy() {
+    public byte[] cloneBuffer() {
         byte[] copy = new byte[buffer.readableBytes()];
         buffer.getBytes(buffer.readerIndex(), copy);
         return copy;
+    }
+
+    /**
+     * NexusWrapper的副本类，包含所有必要的元数据
+     */
+    public static class NexusWrapperCopy {
+        private final long id;
+        private final int partition;
+        private final EventType eventType;
+        private final byte[] bufferData;
+
+        public NexusWrapperCopy(long id, int partition, EventType eventType, byte[] bufferData) {
+            this.id = id;
+            this.partition = partition;
+            this.eventType = eventType;
+            this.bufferData = bufferData;
+        }
+
+        public long getId() {
+            return id;
+        }
+
+        public int getPartition() {
+            return partition;
+        }
+
+        public EventType getEventType() {
+            return eventType;
+        }
+
+        public byte[] getBufferData() {
+            return bufferData;
+        }
+
+        /**
+         * 获取合并的partition和eventType字段
+         */
+        public int getCombinedPartitionAndEventType() {
+            return (eventType.getValue() << 7) | (partition & 0x7F);
+        }
+
+        /**
+         * 检查是否为业务事件
+         */
+        public boolean isBusinessEvent() {
+            return eventType == EventType.BUSINESS;
+        }
+
+        /**
+         * 检查是否为回放事件
+         */
+        public boolean isJournalEvent() {
+            return eventType == EventType.JOURNAL;
+        }
+
+        /**
+         * 检查是否为快照事件
+         */
+        public boolean isSnapshotEvent() {
+            return eventType == EventType.SNAPSHOT;
+        }
+
+        /**
+         * 检查是否为内部事件
+         */
+        public boolean isInternalEvent() {
+            return eventType == EventType.INTERNAL;
+        }
+
+        @Override
+        public String toString() {
+            return String.format("NexusWrapperCopy{id=%d, partition=%d, eventType=%s, bufferSize=%d}",
+                    id, partition, eventType, bufferData.length);
+        }
     }
 
     /**

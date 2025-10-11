@@ -36,8 +36,8 @@ public class ReplicationManager {
     // 运行状态
     private final AtomicBoolean running = new AtomicBoolean(false);
     
-    // 业务消息流观察者缓存
-    private final ConcurrentMap<Integer, StreamObserver<BatchBusinessMessage>> businessStreamObservers = new ConcurrentHashMap<>();
+    // 中继消息流观察者缓存
+    private final ConcurrentMap<Integer, StreamObserver<BatchRelayMessage>> relayStreamObservers = new ConcurrentHashMap<>();
     
     public ReplicationManager(BoltConfig config) {
         this.config = config;
@@ -168,8 +168,8 @@ public class ReplicationManager {
             log.info("Successfully created gRPC connection to slave node {} at {}:{}", 
                     replicationInfo.getNodeId(), replicationInfo.getHost(), replicationInfo.getReplicationPort());
             
-            // 创建持久的业务消息流
-            createBusinessMessageStream(replicationInfo);
+            // 创建持久的中继消息流
+            createRelayMessageStream(replicationInfo);
             
             // 延迟开始发送快照数据，确保连接稳定
             scheduler.schedule(() -> {
@@ -195,35 +195,35 @@ public class ReplicationManager {
     }
     
     /**
-     * 创建持久的业务消息流
+     * 创建持久的中继消息流
      */
-    private void createBusinessMessageStream(ReplicationInfo replicationInfo) {
+    private void createRelayMessageStream(ReplicationInfo replicationInfo) {
         try {
             // 创建响应观察者
             StreamObserver<ConfirmationMessage> responseObserver = new StreamObserver<ConfirmationMessage>() {
                 @Override
                 public void onNext(ConfirmationMessage response) {
                     if (response.getSuccess()) {
-                        log.debug("Business message confirmed by node {}", replicationInfo.getNodeId());
+                        log.debug("Relay message confirmed by node {}", replicationInfo.getNodeId());
                     } else {
-                        log.error("Business message failed for node {}: {}", replicationInfo.getNodeId(), response.getErrorMessage());
+                        log.error("Relay message failed for node {}: {}", replicationInfo.getNodeId(), response.getErrorMessage());
                     }
                 }
                 
                 @Override
                 public void onError(Throwable t) {
-                    log.error("Business message stream error for node {}: {}", replicationInfo.getNodeId(), t.getMessage());
+                    log.error("Relay message stream error for node {}: {}", replicationInfo.getNodeId(), t.getMessage());
                     
                     // 如果是连接错误，尝试重新创建流
                     if (t.getMessage().contains("CANCELLED") || t.getMessage().contains("UNAVAILABLE")) {
-                        log.info("Business stream error detected, will recreate stream for node {}", replicationInfo.getNodeId());
+                        log.info("Relay stream error detected, will recreate stream for node {}", replicationInfo.getNodeId());
                         
-                        // 延迟重新创建业务消息流
+                        // 延迟重新创建中继消息流
                         scheduler.schedule(() -> {
                             try {
-                                createBusinessMessageStream(replicationInfo);
+                                createRelayMessageStream(replicationInfo);
                             } catch (Exception e) {
-                                log.error("Failed to recreate business stream for node {}", replicationInfo.getNodeId(), e);
+                                log.error("Failed to recreate relay stream for node {}", replicationInfo.getNodeId(), e);
                             }
                         }, 3, TimeUnit.SECONDS);
                     } else {
@@ -233,22 +233,22 @@ public class ReplicationManager {
                 
                 @Override
                 public void onCompleted() {
-                    log.info("Business message stream completed for node {}", replicationInfo.getNodeId());
-                    businessStreamObservers.remove(replicationInfo.getNodeId());
+                    log.info("Relay message stream completed for node {}", replicationInfo.getNodeId());
+                    relayStreamObservers.remove(replicationInfo.getNodeId());
                 }
             };
             
             // 创建请求观察者
-            StreamObserver<BatchBusinessMessage> requestObserver = 
-                    replicationInfo.getSlaveAsyncStub().sendBusiness(responseObserver);
+            StreamObserver<BatchRelayMessage> requestObserver = 
+                    replicationInfo.getSlaveAsyncStub().sendRelay(responseObserver);
             
-            // 保存业务消息流观察者
-            businessStreamObservers.put(replicationInfo.getNodeId(), requestObserver);
+            // 保存中继消息流观察者
+            relayStreamObservers.put(replicationInfo.getNodeId(), requestObserver);
             
-            log.info("Created persistent business message stream for node {}", replicationInfo.getNodeId());
+            log.info("Created persistent relay message stream for node {}", replicationInfo.getNodeId());
             
         } catch (Exception e) {
-            log.error("Failed to create business message stream for node {}", replicationInfo.getNodeId(), e);
+            log.error("Failed to create relay message stream for node {}", replicationInfo.getNodeId(), e);
         }
     }
     
@@ -256,13 +256,13 @@ public class ReplicationManager {
      * 断开节点连接
      */
     private void disconnectNode(ReplicationInfo replicationInfo) {
-        // 清理业务消息流
-        StreamObserver<BatchBusinessMessage> businessObserver = businessStreamObservers.remove(replicationInfo.getNodeId());
-        if (businessObserver != null) {
+        // 清理中继消息流
+        StreamObserver<BatchRelayMessage> relayObserver = relayStreamObservers.remove(replicationInfo.getNodeId());
+        if (relayObserver != null) {
             try {
-                businessObserver.onCompleted();
+                relayObserver.onCompleted();
             } catch (Exception e) {
-                log.warn("Failed to complete business stream for node {}", replicationInfo.getNodeId(), e);
+                log.warn("Failed to complete relay stream for node {}", replicationInfo.getNodeId(), e);
             }
         }
         
@@ -323,12 +323,12 @@ public class ReplicationManager {
                 @Override
                 public void onCompleted() {
                     log.info("Snapshot sync completed for node {}", replicationInfo.getNodeId());
-                    replicationInfo.setState(ReplicationState.BUSINESS_BUFFERING);
+                    replicationInfo.setState(ReplicationState.RELAY_BUFFERING);
                 }
             };
             
             // 开始发送快照数据流
-            StreamObserver<SnapshotDataMessage> requestObserver = 
+            StreamObserver<SnapshotReplayMessage> requestObserver = 
                     replicationInfo.getSlaveAsyncStub().sendSnapshot(responseObserver);
             
             // TODO: 实际发送快照数据
@@ -344,12 +344,12 @@ public class ReplicationManager {
     /**
      * 发送快照数据
      */
-    private void sendSnapshotData(StreamObserver<SnapshotDataMessage> requestObserver, ReplicationInfo replicationInfo) {
+    private void sendSnapshotData(StreamObserver<SnapshotReplayMessage> requestObserver, ReplicationInfo replicationInfo) {
         try {
             // TODO: 从实际的快照存储中读取数据
             // 这里只是示例，实际需要从文件系统或数据库读取快照数据
             
-            SnapshotDataMessage snapshotMessage = SnapshotDataMessage.newBuilder()
+            SnapshotReplayMessage snapshotMessage = SnapshotReplayMessage.newBuilder()
                     .setSnapshotTimestamp(System.currentTimeMillis())
                     .setPartition(1)
                     .setDataType("SNAPSHOT")
@@ -398,7 +398,7 @@ public class ReplicationManager {
         ReplicationInfo replicationInfo = slaveNodes.get(nodeId);
         
         if (replicationInfo != null) {
-            replicationInfo.setFirstBufferedBusinessId(reportMessage.getFirstBufferedId());
+            replicationInfo.setFirstBufferedRelayId(reportMessage.getFirstBufferedId());
             replicationInfo.setBufferSize(reportMessage.getBufferSize());
             replicationInfo.setState(ReplicationState.JOURNAL_SYNC);
             
@@ -416,7 +416,7 @@ public class ReplicationManager {
     private void triggerJournalSync(ReplicationInfo replicationInfo) {
         try {
             log.info("Triggering journal sync for node {} from sequence {} to {}", 
-                    replicationInfo.getNodeId(), 1, replicationInfo.getFirstBufferedBusinessId());
+                    replicationInfo.getNodeId(), 1, replicationInfo.getFirstBufferedRelayId());
             
             // 更新状态为Journal同步
             replicationInfo.setState(ReplicationState.JOURNAL_SYNC);
@@ -467,7 +467,7 @@ public class ReplicationManager {
             // 这里只是示例，实际需要从Journal文件读取数据
             
             JournalReplayMessage journalMessage = JournalReplayMessage.newBuilder()
-                    .setSequence(replicationInfo.getFirstBufferedBusinessId())
+                    .setSequence(replicationInfo.getFirstBufferedRelayId())
                     .setStartTimestamp(System.currentTimeMillis())
                     .setEndTimestamp(System.currentTimeMillis())
                     .setJournalData(com.google.protobuf.ByteString.copyFromUtf8("Sample journal data"))
@@ -486,39 +486,39 @@ public class ReplicationManager {
     }
     
     /**
-     * 发送业务消息到所有就绪的节点
+     * 发送中继消息到所有就绪的节点
      */
-    public void sendBusinessMessage(BatchBusinessMessage businessMessage) {
+    public void sendRelayMessage(BatchRelayMessage relayMessage) {
         slaveNodes.values().stream()
                 //TODO fixme
 //                .filter(ReplicationInfo::isReady)
                 .filter(ReplicationInfo::isConnected)
-                .forEach(node -> sendBusinessMessageToNode(node, businessMessage));
+                .forEach(node -> sendRelayMessageToNode(node, relayMessage));
     }
     
     /**
-     * 发送业务消息到指定节点
+     * 发送中继消息到指定节点
      */
-    private void sendBusinessMessageToNode(ReplicationInfo node, BatchBusinessMessage businessMessage) {
+    private void sendRelayMessageToNode(ReplicationInfo node, BatchRelayMessage relayMessage) {
         try {
-            // 获取持久的业务消息流观察者
-            StreamObserver<BatchBusinessMessage> requestObserver = businessStreamObservers.get(node.getNodeId());
+            // 获取持久的中继消息流观察者
+            StreamObserver<BatchRelayMessage> requestObserver = relayStreamObservers.get(node.getNodeId());
             
             if (requestObserver == null) {
-                log.warn("No business stream observer available for node {}", node.getNodeId());
+                log.warn("No relay stream observer available for node {}", node.getNodeId());
                 return;
             }
             
             // 使用持久的流发送消息
-            requestObserver.onNext(businessMessage);
+            requestObserver.onNext(relayMessage);
             
-            // 更新最后业务序列号
-            node.setLastBusinessSequence(businessMessage.getEndSequence());
+            // 更新最后中继序列号
+            node.setLastRelaySequence(relayMessage.getSequence());
             
-            log.debug("Sent business message to node {} via persistent stream", node.getNodeId());
+            log.debug("Sent relay message to node {} via persistent stream", node.getNodeId());
             
         } catch (Exception e) {
-            log.error("Failed to send business message to node {}", node.getNodeId(), e);
+            log.error("Failed to send relay message to node {}", node.getNodeId(), e);
             node.setErrorMessage(e.getMessage());
         }
     }
@@ -526,7 +526,7 @@ public class ReplicationManager {
     /**
      * 发送快照数据到节点
      */
-    public void sendSnapshotToNode(int nodeId, SnapshotDataMessage snapshotMessage) {
+    public void sendSnapshotToNode(int nodeId, SnapshotReplayMessage snapshotMessage) {
         ReplicationInfo replicationInfo = slaveNodes.get(nodeId);
         if (replicationInfo != null) {
             try {

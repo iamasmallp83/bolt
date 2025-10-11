@@ -30,12 +30,12 @@ public class ReplicationInfo {
     // 序列号信息
     private final AtomicLong lastSnapshotSequence = new AtomicLong(0);
     private final AtomicLong lastJournalSequence = new AtomicLong(0);
-    private final AtomicLong lastBusinessSequence = new AtomicLong(0);
+    private final AtomicLong lastRelaySequence = new AtomicLong(0);
     
     // 缓冲信息
-    private volatile long firstBufferedBusinessId = -1;
+    private volatile long firstBufferedRelayId = -1;
     private volatile int bufferSize = 0;
-    private volatile boolean canPublishBusiness = false;
+    private volatile boolean canPublishRelay = false;
     
     // 连接状态
     private volatile boolean isConnected = false;
@@ -58,8 +58,8 @@ public class ReplicationInfo {
         this.lastHeartbeat = LocalDateTime.now();
     }
 
-    public void setLastBusinessSequence(long sequence) {
-        this.lastBusinessSequence.set(sequence);
+    public void setLastRelaySequence(long sequence) {
+        this.lastRelaySequence.set(sequence);
     }
 
     public void updateHeartbeat() {
@@ -80,7 +80,7 @@ public class ReplicationInfo {
     }
 
     public boolean needsJournalSync() {
-        return state == ReplicationState.BUSINESS_BUFFERING && firstBufferedBusinessId > 0;
+        return state == ReplicationState.RELAY_BUFFERING && firstBufferedRelayId > 0;
     }
 
     // Manual getter/setter methods due to Lombok issues
@@ -96,11 +96,11 @@ public class ReplicationInfo {
     public void setConnected(boolean connected) { this.isConnected = connected; }
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
-    public long getFirstBufferedBusinessId() { return firstBufferedBusinessId; }
-    public void setFirstBufferedBusinessId(long firstBufferedBusinessId) { this.firstBufferedBusinessId = firstBufferedBusinessId; }
+    public long getFirstBufferedRelayId() { return firstBufferedRelayId; }
+    public void setFirstBufferedRelayId(long firstBufferedRelayId) { this.firstBufferedRelayId = firstBufferedRelayId; }
     public int getBufferSize() { return bufferSize; }
     public void setBufferSize(int bufferSize) { this.bufferSize = bufferSize; }
-    public long getLastBusinessSequence() { return lastBusinessSequence.get(); }
+    public long getLastRelaySequence() { return lastRelaySequence.get(); }
     public long getLastSnapshotSequence() { return lastSnapshotSequence.get(); }
     
     // gRPC 连接相关方法

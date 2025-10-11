@@ -4,7 +4,7 @@ import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.replication.MasterServer;
 import com.cmex.bolt.replication.ReplicationManager;
-import com.cmex.bolt.replication.ReplicationProto.BatchBusinessMessage;
+import com.cmex.bolt.replication.ReplicationProto.*;
 import com.google.protobuf.ByteString;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
@@ -27,7 +27,7 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
     
     @Override
     public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) throws Exception {
-        // 早期返回检查 - 只处理业务事件
+        // 早期返回检查 - 只处理中继事件
         if (!wrapper.isBusinessEvent()) {
             return;
         }
@@ -39,31 +39,37 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
         }
 
         try {
-            // 创建业务消息
-            BatchBusinessMessage businessMessage = createBusinessMessage(wrapper, sequence);
+            // 创建中继消息
+            BatchRelayMessage relayMessage = createRelayMessage(wrapper, sequence);
             
             // 通过ReplicationManager发送到所有就绪的节点
-            replicationManager.sendBusinessMessage(businessMessage);
+            replicationManager.sendRelayMessage(relayMessage);
             
-            log.debug("Replicated business message sequence {} to {} nodes", sequence, readyNodeCount);
+            log.debug("Replicated relay message sequence {} to {} nodes", sequence, readyNodeCount);
             
         } catch (Exception e) {
-            log.error("Failed to replicate business message sequence {}: {}", sequence, e.getMessage());
+            log.error("Failed to replicate relay message sequence {}: {}", sequence, e.getMessage());
         }
         wrapper.getBuffer().resetReaderIndex();
     }
 
     /**
-     * 创建业务消息
+     * 创建中继消息
      */
-    private BatchBusinessMessage createBusinessMessage(NexusWrapper wrapper, long sequence) {
-        return BatchBusinessMessage.newBuilder()
-                .setBatchId(System.currentTimeMillis())
-                .setBatchSize(1)
-                .setStartSequence(sequence)
-                .setEndSequence(sequence)
+    private BatchRelayMessage createRelayMessage(NexusWrapper wrapper, long sequence) {
+        // 创建包含完整元数据的消息数据
+        RelayMessageData messageData = RelayMessageData.newBuilder()
+                .setId(wrapper.getId())
+                .setPartition(wrapper.getPartition())
+                .setEventType(wrapper.getEventType().getValue())
+                .setData(ByteString.copyFrom(wrapper.cloneBuffer()))
+                .build();
+
+        return BatchRelayMessage.newBuilder()
+                .setSequence(sequence)
+                .setSize(1)
                 .setTimestamp(System.currentTimeMillis())
-                .addMessages(ByteString.copyFrom(wrapper.getBufferCopy()))
+                .addMessages(messageData)
                 .build();
     }
 
