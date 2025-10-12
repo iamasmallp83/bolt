@@ -34,9 +34,7 @@ message ProtocolHeader {
 message RegisterMessage {
   int32 node_id = 1;         // 节点ID
   string host = 2;           // 主机地址
-  int32 port = 3;            // 端口
-  int32 replication_port = 4; // 复制端口
-  map<string, string> metadata = 5; // 元数据
+  int32 replication_port = 3; // 复制端口
 }
 
 // 注册响应

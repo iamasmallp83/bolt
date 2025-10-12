@@ -184,19 +184,16 @@ public class MasterServer {
         try {
             int nodeId = registerMessage.getNodeId();
             String host = registerMessage.getHost();
-            int port = registerMessage.getPort();
             int replicationPort = registerMessage.getReplicationPort();
 
-            ReplicationInfo replicationInfo = new ReplicationInfo(nodeId, host, port, replicationPort);
+            ReplicationInfo replicationInfo = new ReplicationInfo(nodeId, host, replicationPort);
             replicationInfo.setState(ReplicationState.REGISTERED);
             replicationInfo.setConnected(true);
 
             slaveNodes.put(nodeId, replicationInfo);
 
-            log.info("Node {} registered successfully: {}:{}", nodeId, host, port);
+            log.info("Node {} registered successfully: {}", nodeId, host);
             createNodeConnection(replicationInfo);
-            // 创建从节点的stub连接
-            createSlaveStub(nodeId, host, replicationPort);
             return true;
         } catch (Exception e) {
             log.error("Failed to register node", e);
@@ -217,13 +214,14 @@ public class MasterServer {
                     .usePlaintext()
                     .maxInboundMessageSize(16 * 1024 * 1024) // 16MB
                     .keepAliveTime(30, TimeUnit.SECONDS)
-                    .keepAliveTimeout(5, TimeUnit.SECONDS)
+                    .keepAliveTimeout(30, TimeUnit.SECONDS)
                     .keepAliveWithoutCalls(true)
                     .build();
 
             // 创建异步stub
             ReplicationSlaveServiceGrpc.ReplicationSlaveServiceStub asyncStub =
-                    ReplicationSlaveServiceGrpc.newStub(channel);
+                    ReplicationSlaveServiceGrpc.newStub(channel)
+                            .withDeadlineAfter(60, TimeUnit.SECONDS);
 
             // 保存连接和stub
             replicationInfo.setSlaveChannel(channel);
@@ -312,6 +310,7 @@ public class MasterServer {
                 }
             };
 
+            log.info("stub info {} , {}", replicationInfo.getSlaveAsyncStub(), replicationInfo.getSlaveChannel().isTerminated());
             StreamObserver<JournalReplayMessage> requestObserver =
                     replicationInfo.getSlaveAsyncStub().sendJournal(responseObserver);
 

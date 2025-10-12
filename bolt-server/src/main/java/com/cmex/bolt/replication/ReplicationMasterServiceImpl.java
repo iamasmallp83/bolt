@@ -26,8 +26,8 @@ public class ReplicationMasterServiceImpl extends ReplicationMasterServiceGrpc.R
     @Override
     public void registerSlave(RegisterMessage request, StreamObserver<RegisterResponse> responseObserver) {
         try {
-            log.info("Received slave registration request from node {} at {}:{}",
-                    request.getNodeId(), request.getHost(), request.getPort());
+            log.info("Received slave registration request from node {} at {}",
+                    request.getNodeId(), request.getHost());
 
             // 分配节点ID（如果请求中没有指定）
             int assignedNodeId = request.getNodeId();

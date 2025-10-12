@@ -200,6 +200,7 @@ public class JournalReader {
                             }
 
                             // 打包这条记录
+                            line += "\n";
                             byte[] record = line.getBytes(StandardCharsets.UTF_8);
                             journalRecords.add(record);
 

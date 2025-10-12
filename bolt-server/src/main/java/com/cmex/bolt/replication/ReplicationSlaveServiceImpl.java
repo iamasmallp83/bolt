@@ -111,77 +111,64 @@ public class ReplicationSlaveServiceImpl extends ReplicationSlaveServiceGrpc.Rep
     public StreamObserver<JournalReplayMessage> sendJournal(StreamObserver<ConfirmationMessage> responseObserver) {
         return new StreamObserver<JournalReplayMessage>() {
             private boolean hasResponded = false;
+            private boolean processingSuccessful = true;
+            private String errorMessage = null;
 
             @Override
             public void onNext(JournalReplayMessage journalMessage) {
                 try {
-                    log.debug("Received journal replay: dataSize={}, isLast={}",
+                    log.info("Received journal replay: dataSize={}, isLast={}",
                             journalMessage.getJournalData().size(), journalMessage.getIsLastChunk());
 
                     // 直接将journal data写入文件
                     writeJournalDataToFile(journalMessage);
 
-                    // 只在第一次收到消息时发送确认，或者处理失败时发送错误确认
-                    if (!hasResponded) {
-                        ConfirmationMessage response = ConfirmationMessage.newBuilder()
-                                .setNodeId(slaveSyncManager.getAssignedNodeId())
-                                .setSequence(System.currentTimeMillis()) // 使用时间戳作为序列号
-                                .setTimestamp(System.currentTimeMillis())
-                                .setSuccess(true)
-                                .build();
-
-                        responseObserver.onNext(response);
-                        hasResponded = true;
-                    }
-
-                    // 如果是最后一块，发布缓冲的中继消息
-                    // if (journalMessage.getIsLastChunk()) {
-                    // slaveReplicationManager.publishBufferedRelayMessages();
-                    // log.info("Journal sync completed, published buffered relay messages");
-                    // }
+                    log.info("Successfully processed journal chunk: {} bytes",
+                            journalMessage.getJournalData().size());
 
                 } catch (Exception e) {
                     log.error("Failed to process journal replay", e);
-
-                    // 如果还没有响应过，发送错误确认
-                    if (!hasResponded) {
-                        ConfirmationMessage response = ConfirmationMessage.newBuilder()
-                                .setNodeId(slaveSyncManager.getAssignedNodeId())
-                                .setSequence(System.currentTimeMillis()) // 使用时间戳作为序列号
-                                .setTimestamp(System.currentTimeMillis())
-                                .setSuccess(false)
-                                .setErrorMessage(e.getMessage())
-                                .build();
-
-                        responseObserver.onNext(response);
-                        hasResponded = true;
-                    }
+                    processingSuccessful = false;
+                    errorMessage = e.getMessage();
                 }
             }
 
             @Override
             public void onError(Throwable t) {
                 log.error("Journal replay stream error", t);
+                processingSuccessful = false;
+                errorMessage = t.getMessage();
+
                 if (!hasResponded) {
-                    responseObserver.onError(t);
+                    ConfirmationMessage response = ConfirmationMessage.newBuilder()
+                            .setNodeId(slaveSyncManager.getAssignedNodeId())
+                            .setSequence(System.currentTimeMillis())
+                            .setTimestamp(System.currentTimeMillis())
+                            .setSuccess(false)
+                            .setErrorMessage(errorMessage)
+                            .build();
+
+                    responseObserver.onNext(response);
+                    hasResponded = true;
                 }
             }
 
             @Override
             public void onCompleted() {
-                log.info("Journal replay stream completed");
-                if (!hasResponded) {
-                    // 如果流结束但还没有发送过响应，发送一个默认的成功确认
-                    ConfirmationMessage response = ConfirmationMessage.newBuilder()
-                            .setNodeId(slaveSyncManager.getAssignedNodeId())
-                            .setSequence(lastJournalSequence.get())
-                            .setTimestamp(System.currentTimeMillis())
-                            .setSuccess(true)
-                            .build();
+                log.info("Journal replay stream completed, processing successful: {}", processingSuccessful);
 
-                    responseObserver.onNext(response);
-                }
+                // 发送最终确认消息
+                ConfirmationMessage response = ConfirmationMessage.newBuilder()
+                        .setNodeId(slaveSyncManager.getAssignedNodeId())
+                        .setSequence(System.currentTimeMillis())
+                        .setTimestamp(System.currentTimeMillis())
+                        .setSuccess(processingSuccessful)
+                        .build();
+
+                responseObserver.onNext(response);
                 responseObserver.onCompleted();
+
+                log.info("Sent journal replay confirmation: success={}", processingSuccessful);
             }
         };
     }
@@ -199,16 +186,17 @@ public class ReplicationSlaveServiceImpl extends ReplicationSlaveServiceGrpc.Rep
         // 根据isBinary判断写入方式
         if (config.isBinary()) {
             // 二进制格式：直接写入字节数据
+            // 使用TRUNCATE_EXISTING确保覆盖现有文件，避免重复数据
             Files.write(journalPath, journalMessage.getJournalData().toByteArray(),
-                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-            log.debug("Wrote {} bytes of binary journal data to {}",
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            log.info("Wrote {} bytes of binary journal data to {}",
                     journalMessage.getJournalData().size(), journalPath);
         } else {
             // JSON格式：将字节数据转换为字符串写入
             String journalData = new String(journalMessage.getJournalData().toByteArray());
             Files.write(journalPath, journalData.getBytes(),
-                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-            log.debug("Wrote {} characters of JSON journal data to {}",
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            log.info("Wrote {} characters of JSON journal data to {}",
                     journalData.length(), journalPath);
         }
     }

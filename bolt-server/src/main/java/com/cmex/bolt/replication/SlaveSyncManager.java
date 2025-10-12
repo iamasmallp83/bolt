@@ -137,12 +137,9 @@ public class SlaveSyncManager {
             String localHost = InetAddress.getLocalHost().getHostAddress();
 
             RegisterMessage registerMessage = RegisterMessage.newBuilder()
-                    .setNodeId(assignedNodeId)
-                    .setHost(localHost)
-                    .setPort(config.port())
+                    .setNodeId(config.nodeId())
+                    .setHost("127.0.0.1")
                     .setReplicationPort(config.slaveReplicationPort())
-                    .putMetadata("role", "slave")
-                    .putMetadata("version", "1.0")
                     .build();
 
             log.info("Registering to master with message: {}", registerMessage);

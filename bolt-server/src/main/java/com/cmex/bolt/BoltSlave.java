@@ -3,9 +3,6 @@ package com.cmex.bolt;
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.replication.SlaveServer;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
-import io.grpc.netty.shaded.io.netty.channel.EventLoopGroup;
-import io.grpc.netty.shaded.io.netty.channel.nio.NioEventLoopGroup;
-import io.grpc.netty.shaded.io.netty.util.concurrent.DefaultThreadFactory;
 
 import java.io.IOException;
 

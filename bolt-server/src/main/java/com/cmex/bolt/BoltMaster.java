@@ -22,8 +22,8 @@ public class BoltMaster extends BoltBase {
         }
 
         // 创建gRPC复制服务
-        SnapshotReader snapshotReader = new SnapshotReader(config);
-        JournalReplayer journalReplayer = new JournalReplayer(envoyServer.getSequencerRingBuffer(), config);
+//        SnapshotReader snapshotReader = new SnapshotReader(config);
+//        JournalReplayer journalReplayer = new JournalReplayer(envoyServer.getSequencerRingBuffer(), config);
         log.info("BoltMaster initialized with EnvoyServer and MasterServer");
     }
 

@@ -18,7 +18,6 @@ public class ReplicationInfo {
 
     private final int nodeId;
     private final String host;
-    private final int port;
     private final int replicationPort;
     private final InetSocketAddress tcpAddress;
     private final InetSocketAddress replicationTcpAddress;
@@ -46,12 +45,11 @@ public class ReplicationInfo {
     private volatile ReplicationSlaveServiceGrpc.ReplicationSlaveServiceStub slaveAsyncStub;
 
     @Builder
-    public ReplicationInfo(int nodeId, String host, int port, int replicationPort) {
+    public ReplicationInfo(int nodeId, String host, int replicationPort) {
         this.nodeId = nodeId;
         this.host = host;
-        this.port = port;
         this.replicationPort = replicationPort;
-        this.tcpAddress = new InetSocketAddress(host, port);
+        this.tcpAddress = new InetSocketAddress(host, replicationPort);
         this.replicationTcpAddress = new InetSocketAddress(host, replicationPort);
         this.state = ReplicationState.INITIAL;
         this.registeredTime = LocalDateTime.now();
