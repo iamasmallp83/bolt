@@ -123,20 +123,17 @@ message LatestReplicationMessage {
 service ReplicationMasterService {
   // 从节点注册到主节点（从 -> 主）
   rpc RegisterSlave(RegisterMessage) returns (RegisterResponse);
-  
+
   // 心跳服务（从 -> 主，双向流）
   rpc Heartbeat(stream HeartbeatMessage) returns (stream HeartbeatResponse);
-  
-  // 缓冲第一条数据ID报告（从 -> 主）
-  rpc reportLatestReplication(LatestReplicationMessage) returns (ConfirmationMessage);
-  
+
 }
 
 // 从节点服务定义（主节点调用从节点）
 service ReplicationSlaveService {
   // 发送中继消息（主 -> 从，单向流）
   rpc SendRelay(stream BatchRelayMessage) returns (ConfirmationMessage);
-  
+
   // 发送Journal重放（主 -> 从，单向流）
   rpc SendJournal(stream JournalReplayMessage) returns (ConfirmationMessage);
 }

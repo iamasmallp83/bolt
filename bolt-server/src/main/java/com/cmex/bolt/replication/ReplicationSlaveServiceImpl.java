@@ -2,6 +2,7 @@ package com.cmex.bolt.replication;
 
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
+import com.cmex.bolt.handler.JournalReplayer;
 import com.cmex.bolt.replication.ReplicationProto.*;
 import com.lmax.disruptor.RingBuffer;
 import io.grpc.stub.StreamObserver;
@@ -23,8 +24,6 @@ public class ReplicationSlaveServiceImpl extends ReplicationSlaveServiceGrpc.Rep
     private final SlaveSyncManager slaveSyncManager;
     private final BoltConfig config;
     private final AtomicLong lastRelaySequence = new AtomicLong(0);
-    private final AtomicLong lastSnapshotSequence = new AtomicLong(0);
-    private final AtomicLong lastJournalSequence = new AtomicLong(0);
 
     public ReplicationSlaveServiceImpl(BoltConfig config, RingBuffer<NexusWrapper> sequencerRingBuffer) {
         this.slaveSyncManager = new SlaveSyncManager(config, sequencerRingBuffer);
@@ -201,24 +200,4 @@ public class ReplicationSlaveServiceImpl extends ReplicationSlaveServiceGrpc.Rep
         }
     }
 
-    /**
-     * 获取最后中继序列号
-     */
-    public long getLastRelaySequence() {
-        return lastRelaySequence.get();
-    }
-
-    /**
-     * 获取最后快照序列号
-     */
-    public long getLastSnapshotSequence() {
-        return lastSnapshotSequence.get();
-    }
-
-    /**
-     * 获取最后Journal序列号
-     */
-    public long getLastJournalSequence() {
-        return lastJournalSequence.get();
-    }
 }

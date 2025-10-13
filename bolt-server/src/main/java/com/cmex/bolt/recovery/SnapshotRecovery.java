@@ -18,13 +18,13 @@ import java.util.List;
 import java.util.Map;
 
 @Slf4j
-public class DataRecovery {
+public class SnapshotRecovery {
 
     private final BoltConfig config;
     private final SnapshotReader snapshotReader;
     private final ObjectMapper objectMapper;
 
-    public DataRecovery(BoltConfig config) {
+    public SnapshotRecovery(BoltConfig config) {
         this.config = config;
         this.snapshotReader = new SnapshotReader(config);
         this.objectMapper = new ObjectMapper();

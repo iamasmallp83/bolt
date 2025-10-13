@@ -23,49 +23,46 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 @Slf4j
 public class MasterServer {
-    
+
     private final BoltConfig config;
     private final ReplicationMasterServiceImpl masterService;
     private Server server;
-    
+
     // 存储从节点的stub连接
     private final ConcurrentMap<Integer, ReplicationSlaveServiceGrpc.ReplicationSlaveServiceBlockingStub> slaveStubs = new ConcurrentHashMap<>();
     private final ConcurrentMap<Integer, ReplicationSlaveServiceGrpc.ReplicationSlaveServiceStub> slaveAsyncStubs = new ConcurrentHashMap<>();
-    
+
     // 存储所有slave节点的信息
-    private final ConcurrentMap<Integer, ReplicationInfo> slaveNodes = new ConcurrentHashMap<>();
-    
-    // 定时任务执行器
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
-    
+    private final ConcurrentMap<Integer, SlaveInfo> slaveNodes = new ConcurrentHashMap<>();
+
     // 运行状态
     private final AtomicBoolean running = new AtomicBoolean(false);
-    
+
     public MasterServer(BoltConfig boltConfig) {
         this.config = boltConfig;
         this.masterService = new ReplicationMasterServiceImpl(boltConfig, this);
     }
-    
+
     /**
      * 启动主节点服务器
      */
     public void start() throws IOException {
         if (running.compareAndSet(false, true)) {
             log.info("Starting MasterServer");
-            
+
             server = ServerBuilder.forPort(config.masterReplicationPort())
                     .addService(masterService)
                     .build()
                     .start();
 
             log.info("Replication Master server started, listening on port {}", config.masterReplicationPort());
-            
+
             // 启动心跳检查任务
             // scheduler.scheduleWithFixedDelay(this::checkHeartbeats, 30, 30, TimeUnit.SECONDS);
-            
+
             // 启动状态同步任务
             // scheduler.scheduleWithFixedDelay(this::syncStates, 10, 10, TimeUnit.SECONDS);
-            
+
             // 添加关闭钩子
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 log.info("Shutting down master server");
@@ -76,41 +73,30 @@ public class MasterServer {
                     Thread.currentThread().interrupt();
                 }
             }));
-            
+
             log.info("MasterServer started successfully");
         }
     }
-    
+
     /**
      * 停止主节点服务器
      */
     public void stop() throws InterruptedException {
         if (running.compareAndSet(true, false)) {
             log.info("Stopping MasterServer");
-            
+
             if (server != null) {
                 server.shutdown().awaitTermination(30, TimeUnit.SECONDS);
             }
-            
-            // 关闭定时任务执行器
-            scheduler.shutdown();
-            try {
-                if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                    scheduler.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                scheduler.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
-            
+
             // 关闭所有从节点连接
             slaveStubs.clear();
             slaveAsyncStubs.clear();
-            
+
             log.info("MasterServer stopped");
         }
     }
-    
+
     /**
      * 等待服务器终止
      */
@@ -119,7 +105,7 @@ public class MasterServer {
             server.awaitTermination();
         }
     }
-    
+
     /**
      * 创建从节点的stub连接
      */
@@ -130,7 +116,7 @@ public class MasterServer {
                     .forAddress(slaveHost, slavePort)
                     .usePlaintext()
                     .build();
-            
+
             // 创建stub
             ReplicationSlaveServiceGrpc.ReplicationSlaveServiceBlockingStub slaveStub =
                     ReplicationSlaveServiceGrpc.newBlockingStub(slaveChannel);
@@ -141,26 +127,26 @@ public class MasterServer {
             slaveAsyncStubs.put(nodeId, slaveAsyncStub);
 
             log.info("Created slave stub for node {} at {}:{}", nodeId, slaveHost, slavePort);
-            
+
         } catch (Exception e) {
             log.error("Failed to create slave stub for node {} at {}:{}: {}", nodeId, slaveHost, slavePort, e.getMessage());
         }
     }
-    
+
     /**
      * 获取从节点stub
      */
     public ReplicationSlaveServiceGrpc.ReplicationSlaveServiceBlockingStub getSlaveStub(int nodeId) {
         return slaveStubs.get(nodeId);
     }
-    
+
     /**
      * 获取从节点异步stub
      */
     public ReplicationSlaveServiceGrpc.ReplicationSlaveServiceStub getSlaveAsyncStub(int nodeId) {
         return slaveAsyncStubs.get(nodeId);
     }
-    
+
     /**
      * 移除从节点stub
      */
@@ -169,14 +155,14 @@ public class MasterServer {
         slaveAsyncStubs.remove(nodeId);
         System.out.println("Removed slave stub for node " + nodeId);
     }
-    
+
     /**
      * 获取所有从节点ID
      */
     public java.util.Set<Integer> getAllSlaveNodeIds() {
         return slaveStubs.keySet();
     }
-    
+
     /**
      * 注册节点
      */
@@ -186,14 +172,17 @@ public class MasterServer {
             String host = registerMessage.getHost();
             int replicationPort = registerMessage.getReplicationPort();
 
-            ReplicationInfo replicationInfo = new ReplicationInfo(nodeId, host, replicationPort);
-            replicationInfo.setState(ReplicationState.REGISTERED);
-            replicationInfo.setConnected(true);
+            SlaveInfo slaveInfo = new SlaveInfo(nodeId, host, replicationPort);
+            slaveInfo.setState(ReplicationState.REGISTERED);
+            slaveInfo.setConnected(true);
 
-            slaveNodes.put(nodeId, replicationInfo);
+            slaveNodes.put(nodeId, slaveInfo);
 
             log.info("Node {} registered successfully: {}", nodeId, host);
-            createNodeConnection(replicationInfo);
+            createNodeConnection(slaveInfo);
+            // 创建连接后立即触发journal同步
+            log.info("Triggering journal sync for node {} after connection established", slaveInfo.getNodeId());
+            triggerJournalSync(slaveInfo);
             return true;
         } catch (Exception e) {
             log.error("Failed to register node", e);
@@ -204,13 +193,13 @@ public class MasterServer {
     /**
      * 创建节点的gRPC连接
      */
-    private void createNodeConnection(ReplicationInfo replicationInfo) {
+    private void createNodeConnection(SlaveInfo slaveInfo) {
         try {
             log.info("Attempting to create gRPC connection to slave node {} at {}:{}",
-                    replicationInfo.getNodeId(), replicationInfo.getHost(), replicationInfo.getReplicationPort());
+                    slaveInfo.getNodeId(), slaveInfo.getHost(), slaveInfo.getReplicationPort());
 
             ManagedChannel channel = ManagedChannelBuilder
-                    .forAddress(replicationInfo.getHost(), replicationInfo.getReplicationPort())
+                    .forAddress(slaveInfo.getHost(), slaveInfo.getReplicationPort())
                     .usePlaintext()
                     .maxInboundMessageSize(16 * 1024 * 1024) // 16MB
                     .keepAliveTime(30, TimeUnit.SECONDS)
@@ -218,23 +207,23 @@ public class MasterServer {
                     .keepAliveWithoutCalls(true)
                     .build();
 
-            // 创建异步stub
+            // 创建异步stub，设置更长的超时时间用于journal同步
             ReplicationSlaveServiceGrpc.ReplicationSlaveServiceStub asyncStub =
                     ReplicationSlaveServiceGrpc.newStub(channel)
-                            .withDeadlineAfter(60, TimeUnit.SECONDS);
+                            .withDeadlineAfter(300, TimeUnit.SECONDS); // 5分钟超时
 
             // 保存连接和stub
-            replicationInfo.setSlaveChannel(channel);
-            replicationInfo.setSlaveAsyncStub(asyncStub);
-            replicationInfo.setConnected(true);
+            slaveInfo.setSlaveChannel(channel);
+            slaveInfo.setSlaveAsyncStub(asyncStub);
+            slaveInfo.setConnected(true);
 
             log.info("Successfully created gRPC connection to slave node {} at {}:{}",
-                    replicationInfo.getNodeId(), replicationInfo.getHost(), replicationInfo.getReplicationPort());
-
+                    slaveInfo.getNodeId(), slaveInfo.getHost(), slaveInfo.getReplicationPort());
+            triggerJournalSync(slaveInfo);
         } catch (Exception e) {
-            log.error("Failed to create connection to node {}: {}", replicationInfo.getNodeId(), e.getMessage());
-            replicationInfo.setConnected(false);
-            replicationInfo.setErrorMessage(e.getMessage());
+            log.error("Failed to create connection to node {}: {}", slaveInfo.getNodeId(), e.getMessage());
+            slaveInfo.setConnected(false);
+            slaveInfo.setErrorMessage(e.getMessage());
         }
     }
 
@@ -242,9 +231,9 @@ public class MasterServer {
      * 更新节点心跳
      */
     public void updateHeartbeat(int nodeId) {
-        ReplicationInfo replicationInfo = slaveNodes.get(nodeId);
-        if (replicationInfo != null) {
-            replicationInfo.updateHeartbeat();
+        SlaveInfo slaveInfo = slaveNodes.get(nodeId);
+        if (slaveInfo != null) {
+            slaveInfo.updateHeartbeat();
         }
     }
 
@@ -252,92 +241,71 @@ public class MasterServer {
      * 更新节点状态
      */
     public void updateNodeState(int nodeId, ReplicationState state) {
-        ReplicationInfo replicationInfo = slaveNodes.get(nodeId);
-        if (replicationInfo != null) {
-            replicationInfo.setState(state);
+        SlaveInfo slaveInfo = slaveNodes.get(nodeId);
+        if (slaveInfo != null) {
+            slaveInfo.setState(state);
             log.info("Updated node {} state to {}", nodeId, state);
-        }
-    }
-
-    /**
-     * 处理最新复制ID报告
-     */
-    public void handleLatestReplicationReport(LatestReplicationMessage reportMessage) {
-        int nodeId = reportMessage.getNodeId();
-        ReplicationInfo replicationInfo = slaveNodes.get(nodeId);
-
-        if (replicationInfo != null) {
-            replicationInfo.setFirstReplicationId(reportMessage.getReplicationId());
-            replicationInfo.setState(ReplicationState.REGISTERED);
-
-            log.info("Slave node {} reported latest replication ID: {}",
-                    nodeId, reportMessage.getReplicationId());
-
-            // 触发Journal同步
-            triggerJournalSync(replicationInfo);
         }
     }
 
     /**
      * 触发Journal同步
      */
-    private void triggerJournalSync(ReplicationInfo replicationInfo) {
+    private void triggerJournalSync(SlaveInfo slaveInfo) {
         try {
-            log.info("Triggering journal sync for node {} from sequence {} to {}",
-                    replicationInfo.getNodeId(), 1, replicationInfo.getFirstReplicationId());
+            log.info("Starting journal sync for node {} with maxRequestId: {}",
+                    slaveInfo.getNodeId(), slaveInfo.getMaxRequestId());
 
             // 创建Journal响应观察者
             StreamObserver<ConfirmationMessage> responseObserver = new StreamObserver<ConfirmationMessage>() {
                 @Override
                 public void onNext(ConfirmationMessage response) {
                     if (response.getSuccess()) {
-                        log.debug("Journal chunk confirmed by node {}", replicationInfo.getNodeId());
+                        log.debug("Journal chunk confirmed by node {}", slaveInfo.getNodeId());
                     } else {
-                        log.error("Journal chunk failed for node {}: {}", replicationInfo.getNodeId(), response.getErrorMessage());
+                        log.error("Journal chunk failed for node {}: {}", slaveInfo.getNodeId(), response.getErrorMessage());
+                        slaveInfo.setErrorMessage(response.getErrorMessage());
                     }
                 }
 
                 @Override
                 public void onError(Throwable t) {
-                    log.error("Journal sync error for node {}", replicationInfo.getNodeId(), t);
-                    replicationInfo.setState(ReplicationState.ERROR);
+                    log.error("Journal sync error for node {}: {}", slaveInfo.getNodeId(), t.getMessage());
+                    slaveInfo.setState(ReplicationState.ERROR);
+                    slaveInfo.setErrorMessage(t.getMessage());
                 }
 
                 @Override
                 public void onCompleted() {
-                    log.info("Journal sync completed for node {}", replicationInfo.getNodeId());
-                    replicationInfo.setState(ReplicationState.READY);
+                    log.info("Journal sync completed for node {}", slaveInfo.getNodeId());
+                    slaveInfo.setState(ReplicationState.READY);
                 }
             };
 
-            log.info("stub info {} , {}", replicationInfo.getSlaveAsyncStub(), replicationInfo.getSlaveChannel().isTerminated());
-            StreamObserver<JournalReplayMessage> requestObserver =
-                    replicationInfo.getSlaveAsyncStub().sendJournal(responseObserver);
+            StreamObserver<JournalReplayMessage> requestObserver = 
+                    slaveInfo.getSlaveAsyncStub().sendJournal(responseObserver);
 
             // 发送Journal数据
-            sendJournalData(requestObserver, replicationInfo);
+            sendJournalData(requestObserver, slaveInfo);
 
         } catch (Exception e) {
-            log.error("Failed to trigger journal sync for node {}", replicationInfo.getNodeId(), e);
-            replicationInfo.setState(ReplicationState.ERROR);
+            log.error("Failed to trigger journal sync for node {}: {}", slaveInfo.getNodeId(), e.getMessage());
+            slaveInfo.setState(ReplicationState.ERROR);
+            slaveInfo.setErrorMessage(e.getMessage());
         }
     }
 
     /**
      * 发送Journal数据
      */
-    private void sendJournalData(StreamObserver<JournalReplayMessage> requestObserver, ReplicationInfo replicationInfo) {
+    private void sendJournalData(StreamObserver<JournalReplayMessage> requestObserver, SlaveInfo slaveInfo) {
         try {
             // 使用JournalReader读取journal数据
             JournalReader journalReader = new JournalReader(config);
-            byte[] journalData = journalReader.readJournalToReplicationId(replicationInfo.getFirstReplicationId());
-            
-            if (journalData.length == 0) {
-                log.warn("No journal data found for replication ID {}", replicationInfo.getFirstReplicationId());
-            } else {
-                log.info("Read {} bytes of journal data for replication ID {}", 
-                        journalData.length, replicationInfo.getFirstReplicationId());
-            }
+            byte[] journalData = journalReader.readJournalToReplicationId(slaveInfo.getMaxRequestId());
+
+            log.info("Read {} bytes of journal data for node {} with maxRequestId: {}",
+                    journalData.length, slaveInfo.getNodeId(), slaveInfo.getMaxRequestId());
 
             JournalReplayMessage journalMessage = JournalReplayMessage.newBuilder()
                     .setJournalData(com.google.protobuf.ByteString.copyFrom(journalData))
@@ -347,11 +315,16 @@ public class MasterServer {
             requestObserver.onNext(journalMessage);
             requestObserver.onCompleted();
 
-            log.info("Sent journal data to node {}: {} bytes", replicationInfo.getNodeId(), journalData.length);
+            log.info("Sent journal data to node {}: {} bytes", slaveInfo.getNodeId(), journalData.length);
 
         } catch (Exception e) {
-            log.error("Failed to send journal data to node {}", replicationInfo.getNodeId(), e);
-            requestObserver.onError(e);
+            log.error("Failed to send journal data to node {}: {}", slaveInfo.getNodeId(), e.getMessage());
+            try {
+                requestObserver.onError(e);
+            } catch (Exception onErrorException) {
+                log.warn("Failed to send error to observer for node {}: {}",
+                        slaveInfo.getNodeId(), onErrorException.getMessage());
+            }
         }
     }
 
@@ -360,14 +333,14 @@ public class MasterServer {
      */
     public void sendRelayMessage(BatchRelayMessage relayMessage) {
         slaveNodes.values().stream()
-                .filter(ReplicationInfo::isConnected)
+                .filter(SlaveInfo::isConnected)
                 .forEach(node -> sendRelayMessageToNode(node, relayMessage));
     }
 
     /**
      * 发送中继消息到指定节点
      */
-    private void sendRelayMessageToNode(ReplicationInfo node, BatchRelayMessage relayMessage) {
+    private void sendRelayMessageToNode(SlaveInfo node, BatchRelayMessage relayMessage) {
         try {
             // 检查节点是否已连接
             if (!node.isConnected() || node.getSlaveAsyncStub() == null) {
@@ -375,17 +348,27 @@ public class MasterServer {
                 return;
             }
 
+            // 计算当前消息的最大ID，用于更新slaveInfo的maxRequestId
+            // TODO 不需要每次计算
+            if (node.getMaxRequestId() != -1) {
+                long maxMessageId = relayMessage.getMessagesList().stream()
+                        .mapToLong(RelayMessageData::getId)
+                        .max()
+                        .orElse(0L);
+                node.setMaxRequestId(maxMessageId);
+                // 更新slaveInfo的maxRequestId为当前消息的最大ID
+                log.debug("Updated maxRequestId for node {} to {}", node.getNodeId(), maxMessageId);
+            }
+
             // 创建响应观察者
             StreamObserver<ConfirmationMessage> responseObserver = new StreamObserver<ConfirmationMessage>() {
                 @Override
                 public void onNext(ConfirmationMessage response) {
                     if (response.getSuccess()) {
-                        log.debug("Relay message confirmed by node {} for sequence {}", 
+                        log.debug("Relay message confirmed by node {} for sequence {}",
                                 node.getNodeId(), response.getSequence());
-                        // 更新最后中继序列号
-                        node.setLastRelaySequence(response.getSequence());
                     } else {
-                        log.error("Relay message failed for node {}: {}", 
+                        log.error("Relay message failed for node {}: {}",
                                 node.getNodeId(), response.getErrorMessage());
                         node.setErrorMessage(response.getErrorMessage());
                     }
@@ -393,7 +376,7 @@ public class MasterServer {
 
                 @Override
                 public void onError(Throwable t) {
-                    log.error("Relay message stream error for node {}: {}", 
+                    log.error("Relay message stream error for node {}: {}",
                             node.getNodeId(), t.getMessage());
                     node.setState(ReplicationState.ERROR);
                     node.setErrorMessage(t.getMessage());
@@ -406,15 +389,13 @@ public class MasterServer {
             };
 
             // 创建请求观察者并发送消息
-            StreamObserver<BatchRelayMessage> requestObserver = 
+            StreamObserver<BatchRelayMessage> requestObserver =
                     node.getSlaveAsyncStub().sendRelay(responseObserver);
 
             // 发送中继消息
             requestObserver.onNext(relayMessage);
             requestObserver.onCompleted();
 
-            log.debug("Sent relay message to node {} with sequence {}", 
-                    node.getNodeId(), relayMessage.getSequence());
 
         } catch (Exception e) {
             log.error("Failed to send relay message to node {}", node.getNodeId(), e);
@@ -429,11 +410,11 @@ public class MasterServer {
      */
     private void checkHeartbeats() {
         LocalDateTime now = LocalDateTime.now();
-        slaveNodes.values().forEach(replicationInfo -> {
-            if (replicationInfo.getLastHeartbeat().isBefore(now.minusMinutes(2))) {
-                log.warn("Node {} heartbeat timeout", replicationInfo.getNodeId());
-                replicationInfo.setConnected(false);
-                replicationInfo.setState(ReplicationState.ERROR);
+        slaveNodes.values().forEach(slaveInfo -> {
+            if (slaveInfo.getLastHeartbeat().isBefore(now.minusMinutes(2))) {
+                log.warn("Node {} heartbeat timeout", slaveInfo.getNodeId());
+                slaveInfo.setConnected(false);
+                slaveInfo.setState(ReplicationState.ERROR);
             }
         });
     }
@@ -442,14 +423,14 @@ public class MasterServer {
     /**
      * 获取节点信息
      */
-    public ReplicationInfo getNodeInfo(int nodeId) {
+    public SlaveInfo getNodeInfo(int nodeId) {
         return slaveNodes.get(nodeId);
     }
 
     /**
      * 获取所有节点
      */
-    public ConcurrentMap<Integer, ReplicationInfo> getAllNodes() {
+    public ConcurrentMap<Integer, SlaveInfo> getAllNodes() {
         return new ConcurrentHashMap<>(slaveNodes);
     }
 

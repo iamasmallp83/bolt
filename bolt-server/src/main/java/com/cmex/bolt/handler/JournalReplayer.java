@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lmax.disruptor.RingBuffer;
 import io.grpc.netty.shaded.io.netty.buffer.ByteBuf;
+import io.grpc.netty.shaded.io.netty.buffer.PooledByteBufAllocator;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.BufferedReader;
@@ -27,7 +28,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class JournalReplayer {
 
     private final BoltConfig config;
-    private final RingBuffer<NexusWrapper> targetRingBuffer;
+    private final RingBuffer<NexusWrapper> sequencerRingBuffer;
 
     // 性能监控和配置
     private final AtomicLong totalReplayTime = new AtomicLong(0);
@@ -39,9 +40,9 @@ public class JournalReplayer {
     // JSON处理
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public JournalReplayer(RingBuffer<NexusWrapper> targetRingBuffer, BoltConfig config) {
+    public JournalReplayer(BoltConfig config, RingBuffer<NexusWrapper> sequencerRingBuffer) {
         this.config = config;
-        this.targetRingBuffer = targetRingBuffer;
+        this.sequencerRingBuffer = sequencerRingBuffer;
 
         log.info("JournalReplayer initialized with config: port={}, isProd={}, journalPath={}, isBinary={}", config.port(), config.isProd(), config.journalFilePath(), config.isBinary());
     }
@@ -288,7 +289,7 @@ public class JournalReplayer {
             }
 
             // 直接发布事件到RingBuffer，不返回ByteBuffer避免重复处理
-            targetRingBuffer.publishEvent((wrapper, sequence) -> {
+            sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
                 ByteBuf buffer = wrapper.getBuffer();
                 buffer.clear();
                 buffer.writeBytes(capnProtoBuffer);
@@ -330,7 +331,7 @@ public class JournalReplayer {
 
             // 使用Transfer类来创建Cap'n Proto消息
             com.cmex.bolt.domain.Transfer transfer = new com.cmex.bolt.domain.Transfer();
-            io.grpc.netty.shaded.io.netty.buffer.ByteBuf buffer = io.grpc.netty.shaded.io.netty.buffer.PooledByteBufAllocator.DEFAULT.buffer(1024);
+            ByteBuf buffer = PooledByteBufAllocator.DEFAULT.buffer(1024);
 
             try {
                 // 根据payloadType创建相应的Cap'n Proto消息
@@ -398,12 +399,16 @@ public class JournalReplayer {
                 buffer.getBytes(buffer.readerIndex(), result);
                 result.flip();
 
-                // 注意：不要释放buffer，它是NexusWrapper中的池化ByteBuf
                 return result;
 
             } catch (Exception e) {
-                // 注意：不要释放buffer，它是NexusWrapper中的池化ByteBuf
+                log.error("Error processing payload type {}: {}", payloadType, e.getMessage(), e);
                 throw e;
+            } finally {
+                // 确保释放ByteBuf以避免内存泄漏
+                if (buffer.refCnt() > 0) {
+                    buffer.release();
+                }
             }
 
         } catch (Exception e) {
@@ -417,7 +422,7 @@ public class JournalReplayer {
      * 将事件发布到目标 RingBuffer，包含ID、partition和eventType信息
      */
     private void publishEventToRingBuffer(ByteBuffer messageBuffer, int combined) {
-        targetRingBuffer.publishEvent((wrapper, sequence) -> {
+        sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
             // 将 ByteBuffer 内容复制到 NexusWrapper 的 ByteBuf
             ByteBuf buffer = wrapper.getBuffer();
             buffer.clear();
