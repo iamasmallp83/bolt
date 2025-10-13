@@ -198,7 +198,6 @@ public class JournalReader {
                             byte[] record = line.getBytes(StandardCharsets.UTF_8);
                             journalRecords.add(record);
 
-                            log.debug("Read journal record: id={}", id);
                         }
                     }
                 } catch (Exception e) {

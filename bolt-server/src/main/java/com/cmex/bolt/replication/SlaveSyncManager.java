@@ -47,7 +47,6 @@ public class SlaveSyncManager {
         this.config = config;
         this.assignedNodeId = config.nodeId();
         this.sequencerRingBuffer = sequencerRingBuffer;
-        this.start();
     }
 
     /**

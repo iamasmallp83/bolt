@@ -2,20 +2,13 @@ package com.cmex.bolt.replication;
 
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.replication.ReplicationProto.*;
-import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
-import io.grpc.Server;
-import io.grpc.ServerBuilder;
+import io.grpc.*;
 import io.grpc.stub.StreamObserver;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -37,6 +30,8 @@ public class MasterServer {
 
     // 运行状态
     private final AtomicBoolean running = new AtomicBoolean(false);
+
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     public MasterServer(BoltConfig boltConfig) {
         this.config = boltConfig;
@@ -180,9 +175,6 @@ public class MasterServer {
 
             log.info("Node {} registered successfully: {}", nodeId, host);
             createNodeConnection(slaveInfo);
-            // 创建连接后立即触发journal同步
-            log.info("Triggering journal sync for node {} after connection established", slaveInfo.getNodeId());
-            triggerJournalSync(slaveInfo);
             return true;
         } catch (Exception e) {
             log.error("Failed to register node", e);
@@ -206,20 +198,22 @@ public class MasterServer {
                     .keepAliveTimeout(30, TimeUnit.SECONDS)
                     .keepAliveWithoutCalls(true)
                     .build();
-
+            ConnectivityState state = channel.getState(true); // true 表示尝试连接
+            System.out.println("Current channel state: " + state);
             // 创建异步stub，设置更长的超时时间用于journal同步
             ReplicationSlaveServiceGrpc.ReplicationSlaveServiceStub asyncStub =
-                    ReplicationSlaveServiceGrpc.newStub(channel)
-                            .withDeadlineAfter(300, TimeUnit.SECONDS); // 5分钟超时
+                    ReplicationSlaveServiceGrpc.newStub(channel);
 
             // 保存连接和stub
             slaveInfo.setSlaveChannel(channel);
             slaveInfo.setSlaveAsyncStub(asyncStub);
             slaveInfo.setConnected(true);
 
-            log.info("Successfully created gRPC connection to slave node {} at {}:{}",
-                    slaveInfo.getNodeId(), slaveInfo.getHost(), slaveInfo.getReplicationPort());
-            triggerJournalSync(slaveInfo);
+            executor.execute(() -> {
+                triggerJournalSync(slaveInfo);
+            });
+
+
         } catch (Exception e) {
             log.error("Failed to create connection to node {}: {}", slaveInfo.getNodeId(), e.getMessage());
             slaveInfo.setConnected(false);
@@ -282,7 +276,7 @@ public class MasterServer {
                 }
             };
 
-            StreamObserver<JournalReplayMessage> requestObserver = 
+            StreamObserver<JournalReplayMessage> requestObserver =
                     slaveInfo.getSlaveAsyncStub().sendJournal(responseObserver);
 
             // 发送Journal数据

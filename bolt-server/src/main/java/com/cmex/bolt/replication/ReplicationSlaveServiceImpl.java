@@ -3,9 +3,11 @@ package com.cmex.bolt.replication;
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.handler.JournalReplayer;
+import com.cmex.bolt.recovery.SnapshotRecovery;
 import com.cmex.bolt.replication.ReplicationProto.*;
 import com.lmax.disruptor.RingBuffer;
 import io.grpc.stub.StreamObserver;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
@@ -21,11 +23,14 @@ import java.util.concurrent.atomic.AtomicLong;
 @Slf4j
 public class ReplicationSlaveServiceImpl extends ReplicationSlaveServiceGrpc.ReplicationSlaveServiceImplBase {
 
+    @Getter
     private final SlaveSyncManager slaveSyncManager;
+    private final RingBuffer<NexusWrapper> sequencerRingBuffer;
     private final BoltConfig config;
     private final AtomicLong lastRelaySequence = new AtomicLong(0);
 
     public ReplicationSlaveServiceImpl(BoltConfig config, RingBuffer<NexusWrapper> sequencerRingBuffer) {
+        this.sequencerRingBuffer = sequencerRingBuffer;
         this.slaveSyncManager = new SlaveSyncManager(config, sequencerRingBuffer);
         this.config = config;
     }
@@ -121,6 +126,8 @@ public class ReplicationSlaveServiceImpl extends ReplicationSlaveServiceGrpc.Rep
 
                     // 直接将journal data写入文件
                     writeJournalDataToFile(journalMessage);
+                    JournalReplayer replayer = new JournalReplayer(config, sequencerRingBuffer);
+                    replayer.replayFromJournal();
 
                     log.info("Successfully processed journal chunk: {} bytes",
                             journalMessage.getJournalData().size());
