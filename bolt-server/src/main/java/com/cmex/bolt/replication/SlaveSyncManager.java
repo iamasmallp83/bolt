@@ -2,12 +2,14 @@ package com.cmex.bolt.replication;
 
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
+import com.cmex.bolt.handler.JournalReplayer;
 import com.cmex.bolt.recovery.SnapshotReader;
 import com.cmex.bolt.replication.ReplicationProto.*;
 import com.lmax.disruptor.RingBuffer;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.stub.StreamObserver;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.net.InetAddress;
@@ -23,6 +25,7 @@ public class SlaveSyncManager {
 
     private final BoltConfig config;
     private final RingBuffer<NexusWrapper> sequencerRingBuffer;
+    @Getter
     private volatile int assignedNodeId;
     private volatile ReplicationState currentState = ReplicationState.INITIAL;
     private volatile boolean isConnected = false;
@@ -34,7 +37,6 @@ public class SlaveSyncManager {
 
     // 中继消息缓冲
     private final BlockingQueue<BatchRelayMessage> relayMessageBuffer = new LinkedBlockingQueue<>();
-    private final AtomicLong firstReplicationID = new AtomicLong(-1);
 
     // 心跳和重连
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
@@ -151,15 +153,15 @@ public class SlaveSyncManager {
                 this.assignedNodeId = response.getAssignedNodeId();
                 currentState = ReplicationState.REGISTERED;
                 log.info("Successfully registered to master with assigned node ID: {}", assignedNodeId);
-                
+
                 // 处理快照数据（如果有）
                 if (!response.getSnapshot().isEmpty()) {
                     try {
                         log.info("Received snapshot data from master: {} bytes", response.getSnapshot().size());
-                        
+
                         SnapshotReader snapshotReader = new SnapshotReader(config);
                         java.nio.file.Path extractedPath = snapshotReader.extractSnapshot(response.getSnapshot().toByteArray());
-                        
+
                         if (extractedPath != null) {
                             log.info("Successfully extracted snapshot to: {}", extractedPath);
                         } else {
@@ -206,24 +208,24 @@ public class SlaveSyncManager {
 
         try {
             StreamObserver<HeartbeatMessage> requestObserver = masterAsyncStub.heartbeat(
-                new StreamObserver<HeartbeatResponse>() {
-                    @Override
-                    public void onNext(HeartbeatResponse response) {
-                        lastHeartbeatTime = System.currentTimeMillis();
-                        log.info("Received heartbeat response from master");
-                    }
+                    new StreamObserver<HeartbeatResponse>() {
+                        @Override
+                        public void onNext(HeartbeatResponse response) {
+                            lastHeartbeatTime = System.currentTimeMillis();
+                            log.info("Received heartbeat response from master");
+                        }
 
-                    @Override
-                    public void onError(Throwable t) {
-                        log.error("Heartbeat stream error: {}", t.getMessage());
-                        currentState = ReplicationState.ERROR;
-                    }
+                        @Override
+                        public void onError(Throwable t) {
+                            log.error("Heartbeat stream error: {}", t.getMessage());
+                            currentState = ReplicationState.ERROR;
+                        }
 
-                    @Override
-                    public void onCompleted() {
-                        log.info("Heartbeat stream completed");
+                        @Override
+                        public void onCompleted() {
+                            log.info("Heartbeat stream completed");
+                        }
                     }
-                }
             );
 
             HeartbeatMessage heartbeat = HeartbeatMessage.newBuilder()
@@ -291,19 +293,11 @@ public class SlaveSyncManager {
                 // 缓冲中继消息
                 relayMessageBuffer.offer(relayMessage);
 
-                // 记录第一个缓冲的中继消息ID
-                if (firstReplicationID.get() == -1) {
-                    firstReplicationID.set(relayMessage.getSequence());
-
-                    // 报告缓冲ID给主节点
-                    reportLatestReplication();
-                }
-
                 log.debug("Buffered relay message batch {}", relayMessage.getSequence());
                 return true;
 
             } else if (currentState == ReplicationState.READY) {
-                // 直接处理中继消息
+                publishBufferedRelayMessages();
                 return processRelayMessageDirectly(relayMessage);
 
             } else {
@@ -323,7 +317,7 @@ public class SlaveSyncManager {
     private boolean processRelayMessageDirectly(BatchRelayMessage relayMessage) {
         try {
             log.debug("Processing relay message directly: {}", relayMessage.getSequence());
-            
+
             // 处理每个消息数据
             for (RelayMessageData messageData : relayMessage.getMessagesList()) {
                 // 创建NexusWrapper并设置元数据
@@ -332,16 +326,16 @@ public class SlaveSyncManager {
                     wrapper.setId(messageData.getId());
                     wrapper.setPartition(messageData.getPartition());
                     wrapper.setEventType(NexusWrapper.EventType.fromValue(messageData.getEventType()));
-                    
+
                     // 写入数据
                     wrapper.getBuffer().writeBytes(messageData.getData().toByteArray());
-                    
-                    log.debug("Processed relay message: id={}, partition={}, eventType={}, dataSize={}", 
-                            messageData.getId(), messageData.getPartition(), 
+
+                    log.debug("Processed relay message: id={}, partition={}, eventType={}, dataSize={}",
+                            messageData.getId(), messageData.getPartition(),
                             messageData.getEventType(), messageData.getData().size());
                 });
             }
-            
+
             return true;
         } catch (Exception e) {
             log.error("Failed to process relay message directly", e);
@@ -349,9 +343,6 @@ public class SlaveSyncManager {
         }
     }
 
-    /**
-     * 发布缓冲的中继消息
-     */
     public void publishBufferedRelayMessages() {
         log.info("Publishing {} buffered relay messages", relayMessageBuffer.size());
 
@@ -361,66 +352,12 @@ public class SlaveSyncManager {
                 processRelayMessageDirectly(message);
             }
         }
-
-        // 确认中继消息发布
-        confirmRelayPublish();
-
-        // 更新状态为就绪
-        currentState = ReplicationState.READY;
     }
 
-    /**
-     * 报告最新复制ID
-     */
-    private void reportLatestReplication() {
-        try {
-            LatestReplicationMessage reportMessage = LatestReplicationMessage.newBuilder()
-                    .setNodeId(assignedNodeId)
-                    .setReplicationId(firstReplicationID.get())
-                    .build();
-
-            ConfirmationMessage response = masterStub.reportLatestReplication(reportMessage);
-
-            if (response.getSuccess()) {
-                log.info("Successfully reported latest replication ID: {}", firstReplicationID.get());
-            } else {
-                log.error("Failed to report latest replication ID: {}", response.getErrorMessage());
-            }
-
-        } catch (Exception e) {
-            log.error("Failed to report latest replication ID", e);
-        }
-    }
-
-    /**
-     * 确认中继消息发布
-     * 注意：由于移除了ConfirmRelayPublish服务，此方法暂时禁用
-     */
-    private void confirmRelayPublish() {
-        // 由于移除了ConfirmRelayPublish服务，暂时注释掉确认逻辑
-        log.info("Relay publish confirmation disabled - service removed");
-        
-        /*
-        try {
-            RelayPublishConfirmMessage confirmMessage = RelayPublishConfirmMessage.newBuilder()
-                    .setNodeId(assignedNodeId)
-                    .setPublishedSequence(firstReplicationID.get())
-                    .setTimestamp(System.currentTimeMillis())
-                    .setSuccess(true)
-                    .build();
-
-            ConfirmationMessage response = masterStub.confirmRelayPublish(confirmMessage);
-
-            if (response.getSuccess()) {
-                log.info("Successfully confirmed relay publish");
-            } else {
-                log.error("Failed to confirm relay publish: {}", response.getErrorMessage());
-            }
-
-        } catch (Exception e) {
-            log.error("Failed to confirm relay publish", e);
-        }
-        */
+    public void replayJournal() {
+        JournalReplayer journalReplayer = new JournalReplayer(config, sequencerRingBuffer);
+        journalReplayer.replayFromJournal();
+        updateState(ReplicationState.READY);
     }
 
     /**
@@ -431,28 +368,4 @@ public class SlaveSyncManager {
         log.info("State updated to: {}", newState);
     }
 
-    // Getters
-    public int getAssignedNodeId() {
-        return assignedNodeId;
-    }
-
-    public ReplicationState getCurrentState() {
-        return currentState;
-    }
-
-    public boolean isConnected() {
-        return isConnected;
-    }
-
-    public boolean isRunning() {
-        return running.get();
-    }
-
-    public ReplicationMasterServiceGrpc.ReplicationMasterServiceBlockingStub getMasterStub() {
-        return masterStub;
-    }
-
-    public ReplicationMasterServiceGrpc.ReplicationMasterServiceStub getMasterAsyncStub() {
-        return masterAsyncStub;
-    }
 }

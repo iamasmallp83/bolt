@@ -27,13 +27,7 @@ public class JournalReader {
         this.config = config;
     }
 
-    /**
-     * 读取journal文件从第一条记录到指定的replication ID
-     *
-     * @param firstReplicationID 第一个replication ID
-     * @return 打包的journal数据
-     */
-    public byte[] readJournalToReplicationId(long firstReplicationID) {
+    public byte[] readJournalToReplicationId(long maxRequestId) {
         try {
             // 查找合适的journal文件
             Path journalPath = findJournalPath();
@@ -42,16 +36,16 @@ public class JournalReader {
                 return new byte[0];
             }
 
-            log.info("Reading journal from {} to replication ID {}", journalPath, firstReplicationID);
+            log.info("Reading journal from {} to max request id {}", journalPath, maxRequestId);
 
             if (config.isBinary()) {
-                return readBinaryJournalToReplicationId(journalPath, firstReplicationID);
+                return readBinaryJournalToReplicationId(journalPath, maxRequestId);
             } else {
-                return readJsonJournalToReplicationId(journalPath, firstReplicationID);
+                return readJsonJournalToReplicationId(journalPath, maxRequestId);
             }
 
         } catch (Exception e) {
-            log.error("Failed to read journal to replication ID {}", firstReplicationID, e);
+            log.error("Failed to read journal to max request id {}", maxRequestId, e);
             return new byte[0];
         }
     }
@@ -168,9 +162,9 @@ public class JournalReader {
     }
 
     /**
-     * 读取JSON格式的journal文件到指定的replication ID
+     * 读取JSON格式的journal文件到指定的maxRequestId
      */
-    private byte[] readJsonJournalToReplicationId(Path journalPath, long firstReplicationID) throws IOException {
+    private byte[] readJsonJournalToReplicationId(Path journalPath, long maxRequestId) throws IOException {
         List<byte[]> journalRecords = new ArrayList<>();
 
         try (var reader = Files.newBufferedReader(journalPath, StandardCharsets.UTF_8)) {
@@ -193,9 +187,9 @@ public class JournalReader {
                             String idStr = trimmedLine.substring(idStart, idEnd).trim();
                             long id = Long.parseLong(idStr);
 
-                            // 检查是否到达目标replication ID
-                            if (id >= firstReplicationID) {
-                                log.debug("Reached target replication ID {}, stopping read", firstReplicationID);
+                            // 检查是否到达目标maxRequestId
+                            if (maxRequestId != -1 && id >= maxRequestId) {
+                                log.debug("Reached target replication ID {}, stopping read", maxRequestId);
                                 break;
                             }
 

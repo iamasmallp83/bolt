@@ -147,13 +147,14 @@ public class BinaryToJsonConverter {
      * 将二进制消息转换为JSON格式
      */
     private String convertBinaryMessageToJson(long timestamp, long id, int partition, ByteBuffer messageBuffer) {
+        // 确保ByteBuffer位置正确 - 重置到开始位置
+        messageBuffer.rewind();
+        
+        // 将ByteBuffer转换为ByteBuf进行反序列化
+        io.grpc.netty.shaded.io.netty.buffer.ByteBuf buffer =
+                io.grpc.netty.shaded.io.netty.buffer.PooledByteBufAllocator.DEFAULT.buffer(messageBuffer.remaining());
+        
         try {
-            // 确保ByteBuffer位置正确 - 重置到开始位置
-            messageBuffer.rewind();
-            
-            // 将ByteBuffer转换为ByteBuf进行反序列化
-            io.grpc.netty.shaded.io.netty.buffer.ByteBuf buffer =
-                    io.grpc.netty.shaded.io.netty.buffer.PooledByteBufAllocator.DEFAULT.buffer(messageBuffer.remaining());
             buffer.writeBytes(messageBuffer);
 
             // 反序列化Cap'n Proto数据
@@ -171,7 +172,6 @@ public class BinaryToJsonConverter {
             json.append(convertNexusEventToJson(nexusEvent));
             json.append("}");
 
-            // 注意：不要释放buffer，它是NexusWrapper中的池化ByteBuf
             return json.toString();
 
         } catch (Exception e) {
@@ -179,6 +179,11 @@ public class BinaryToJsonConverter {
                              ", Partition: " + partition + ", Error: " + e.getMessage());
             e.printStackTrace();
             return null;
+        } finally {
+            // 确保释放ByteBuf以避免内存泄漏
+            if (buffer.refCnt() > 0) {
+                buffer.release();
+            }
         }
     }
 

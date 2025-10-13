@@ -52,8 +52,7 @@ public class SlaveServer {
                 .addService(new ReplicationSlaveServiceImpl(config, sequencerRingBuffer))
                 .maxInboundMessageSize(16 * 1024 * 1024) // 16MB
                 .permitKeepAliveWithoutCalls(true)
-                .permitKeepAliveTime(30, java.util.concurrent.TimeUnit.SECONDS)
-                .executor(MoreExecutors.directExecutor());
+                .permitKeepAliveTime(60, java.util.concurrent.TimeUnit.SECONDS); // 增加到60秒
 
         server = builder.build();
         server.start();

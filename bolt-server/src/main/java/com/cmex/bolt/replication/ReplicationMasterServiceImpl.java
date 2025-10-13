@@ -145,42 +145,6 @@ public class ReplicationMasterServiceImpl extends ReplicationMasterServiceGrpc.R
     }
 
 
-    @Override
-    public void reportLatestReplication(LatestReplicationMessage request, StreamObserver<ConfirmationMessage> responseObserver) {
-        try {
-            log.info("Received latest replication report from node {}: replication_id={}",
-                    request.getNodeId(), request.getReplicationId());
-
-            // 处理最新复制ID报告
-            masterServer.handleLatestReplicationReport(request);
-
-            ConfirmationMessage response = ConfirmationMessage.newBuilder()
-                    .setNodeId(request.getNodeId())
-                    .setSequence(request.getReplicationId())
-                    .setTimestamp(System.currentTimeMillis())
-                    .setSuccess(true)
-                    .build();
-
-            responseObserver.onNext(response);
-            responseObserver.onCompleted();
-
-        } catch (Exception e) {
-            log.error("Failed to process latest replication report from node {}", request.getNodeId(), e);
-
-            ConfirmationMessage response = ConfirmationMessage.newBuilder()
-                    .setNodeId(request.getNodeId())
-                    .setSequence(request.getReplicationId())
-                    .setTimestamp(System.currentTimeMillis())
-                    .setSuccess(false)
-                    .setErrorMessage(e.getMessage())
-                    .build();
-
-            responseObserver.onNext(response);
-            responseObserver.onCompleted();
-        }
-    }
-
-
     /**
      * 获取心跳观察者
      */

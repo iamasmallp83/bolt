@@ -19,7 +19,7 @@ import com.cmex.bolt.util.OrderIdGenerator;
 import com.cmex.bolt.util.PerformanceExporter;
 import com.cmex.bolt.util.SystemBusyResponseFactory;
 import com.cmex.bolt.util.SystemBusyResponses;
-import com.cmex.bolt.recovery.DataRecovery;
+import com.cmex.bolt.recovery.SnapshotRecovery;
 import com.lmax.disruptor.*;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
@@ -90,10 +90,10 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
 
         // 首先尝试从snapshot恢复数据
-        DataRecovery dataRecovery = new DataRecovery(config);
+        SnapshotRecovery snapshotRecovery = new SnapshotRecovery(config);
         SnapshotData snapshotData;
         try {
-            snapshotData = dataRecovery.recoverFromSnapshot();
+            snapshotData = snapshotRecovery.recoverFromSnapshot();
         } catch (IOException e) {
             log.error("Failed to recover from snapshot, starting with fresh data", e);
             throw new RuntimeException(e);
@@ -145,7 +145,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         }
 
         // 然后进行journal重放，如果有snapshot则从snapshot之后开始
-        JournalReplayer replayer = new JournalReplayer(sequencerRingBuffer, config);
+        JournalReplayer replayer = new JournalReplayer(config, sequencerRingBuffer);
         log.info("starting journal replay from beginning");
         long maxId = replayer.replayFromJournal();
         requestId.set(maxId);
