@@ -1,15 +1,15 @@
 package com.cmex.bolt;
 
 import com.cmex.bolt.core.BoltConfig;
+import com.cmex.bolt.replication.ReplicationContext;
 import com.cmex.bolt.replication.SlaveServer;
-import com.cmex.bolt.replication.SlaveSyncManager;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 
 /**
- * Bolt从节点 - 使用组合模式
+ * Bolt从节点 - 使用组合模式和依赖注入解耦
  * 负责启动从节点特有的服务：SlaveServer + SlaveSyncManager
  */
 @Getter
@@ -18,8 +18,8 @@ public class BoltSlave {
     // Getters
     private final BoltConfig config;
     private BoltCore core;
+    private final ReplicationContext replicationContext;
     private SlaveServer slaveServer;
-    private SlaveSyncManager slaveSyncManager;
 
     public BoltSlave(BoltConfig config) {
         // 验证从节点配置
@@ -27,7 +27,8 @@ public class BoltSlave {
             throw new IllegalArgumentException("BoltSlave requires slave configuration");
         }
         this.config = config;
-        log.info("BoltSlave initialized");
+        this.replicationContext = new ReplicationContext();
+        log.info("BoltSlave initialized with ReplicationContext");
     }
 
     /**
@@ -36,17 +37,15 @@ public class BoltSlave {
     public void start() throws IOException, InterruptedException {
         log.info("Starting BoltSlave");
 
-        // 1. 启动从节点特有服务
+        // 1. 启动从节点特有服务（需要RingBuffer）
         startSlaveSpecificServices();
-        // 启动从节点复制服务（SlaveServer）
-        this.slaveServer = new SlaveServer(
-                core.getConfig(),
-                core.getEnvoyServer().getSequencerRingBuffer()
-        );
+        // 2. 先启动基础组件（EnvoyServer + gRPC + 监控）
 
-        // 2. 启动基础组件（EnvoyServer + gRPC + 监控）
         this.core = new BoltCore(config);
+        // 将RingBuffer注入到ReplicationContext
+        replicationContext.setSequencerRingBuffer(core.getEnvoyServer().getSequencerRingBuffer());
         core.start();
+
 
         log.info("BoltSlave started successfully");
 
@@ -57,10 +56,12 @@ public class BoltSlave {
     /**
      * 启动从节点特有服务
      */
-    private void startSlaveSpecificServices() {
+    private void startSlaveSpecificServices() throws IOException {
         log.info("Starting slave-specific services");
 
-
+        // 启动从节点复制服务（SlaveServer）
+        this.slaveServer = new SlaveServer(config, replicationContext);
+        this.slaveServer.start();
 
         log.info("Slave-specific services started successfully");
     }
@@ -85,11 +86,6 @@ public class BoltSlave {
      */
     private void stopSlaveSpecificServices() {
         log.info("Stopping slave-specific services");
-
-        // 停止从节点同步管理器
-        if (slaveSyncManager != null) {
-            slaveSyncManager.stop();
-        }
 
         // 停止从节点复制服务
         if (slaveServer != null) {

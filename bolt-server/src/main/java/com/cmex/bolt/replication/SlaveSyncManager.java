@@ -4,7 +4,6 @@ import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.recovery.SnapshotReader;
 import com.cmex.bolt.replication.ReplicationProto.*;
-import com.lmax.disruptor.RingBuffer;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.stub.StreamObserver;
@@ -22,7 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class SlaveSyncManager {
 
     private final BoltConfig config;
-    private final RingBuffer<NexusWrapper> sequencerRingBuffer;
+    private final ReplicationContext replicationContext;
     @Getter
     private volatile int assignedNodeId;
     private volatile ReplicationState currentState = ReplicationState.INITIAL;
@@ -41,10 +40,10 @@ public class SlaveSyncManager {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile long lastHeartbeatTime = 0;
 
-    public SlaveSyncManager(BoltConfig config, RingBuffer<NexusWrapper> sequencerRingBuffer) {
+    public SlaveSyncManager(BoltConfig config, ReplicationContext replicationContext) {
         this.config = config;
         this.assignedNodeId = config.nodeId();
-        this.sequencerRingBuffer = sequencerRingBuffer;
+        this.replicationContext = replicationContext;
     }
 
     /**
@@ -318,7 +317,7 @@ public class SlaveSyncManager {
             // 处理每个消息数据
             for (RelayMessageData messageData : relayMessage.getMessagesList()) {
                 // 创建NexusWrapper并设置元数据
-                sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
+                replicationContext.getSequencerRingBuffer().publishEvent((wrapper, sequence) -> {
                     // 设置元数据
                     wrapper.setId(messageData.getId());
                     wrapper.setPartition(messageData.getPartition());

@@ -1,11 +1,11 @@
 package com.cmex.bolt.replication;
 
 import com.cmex.bolt.core.BoltConfig;
-import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.handler.JournalReplayer;
-import com.cmex.bolt.recovery.SnapshotRecovery;
-import com.cmex.bolt.replication.ReplicationProto.*;
-import com.lmax.disruptor.RingBuffer;
+import com.cmex.bolt.replication.ReplicationProto.BatchRelayMessage;
+import com.cmex.bolt.replication.ReplicationProto.ConfirmationMessage;
+import com.cmex.bolt.replication.ReplicationProto.JournalReplayMessage;
+import com.cmex.bolt.replication.ReplicationProto.ReplicationState;
 import io.grpc.stub.StreamObserver;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -25,13 +25,13 @@ public class ReplicationSlaveServiceImpl extends ReplicationSlaveServiceGrpc.Rep
 
     @Getter
     private final SlaveSyncManager slaveSyncManager;
-    private final RingBuffer<NexusWrapper> sequencerRingBuffer;
+    private final ReplicationContext replicationContext;
     private final BoltConfig config;
     private final AtomicLong lastRelaySequence = new AtomicLong(0);
 
-    public ReplicationSlaveServiceImpl(BoltConfig config, RingBuffer<NexusWrapper> sequencerRingBuffer) {
-        this.sequencerRingBuffer = sequencerRingBuffer;
-        this.slaveSyncManager = new SlaveSyncManager(config, sequencerRingBuffer);
+    public ReplicationSlaveServiceImpl(BoltConfig config, ReplicationContext replicationContext) {
+        this.replicationContext = replicationContext;
+        this.slaveSyncManager = new SlaveSyncManager(config, replicationContext);
         this.config = config;
     }
 
@@ -126,7 +126,7 @@ public class ReplicationSlaveServiceImpl extends ReplicationSlaveServiceGrpc.Rep
 
                     // 直接将journal data写入文件
                     writeJournalDataToFile(journalMessage);
-                    JournalReplayer replayer = new JournalReplayer(config, sequencerRingBuffer);
+                    JournalReplayer replayer = new JournalReplayer(config, replicationContext.getSequencerRingBuffer());
                     replayer.replayFromJournal();
                     slaveSyncManager.updateState(ReplicationState.READY);
 

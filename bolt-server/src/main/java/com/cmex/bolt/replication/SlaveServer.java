@@ -25,17 +25,12 @@ import java.util.concurrent.TimeUnit;
 public class SlaveServer {
 
     private final BoltConfig config;
-    private RingBuffer<NexusWrapper> sequencerRingBuffer;
+    private final ReplicationContext replicationContext;
     private Server server;
 
-    public SlaveServer(BoltConfig config, RingBuffer<NexusWrapper> sequencerRingBuffer) {
+    public SlaveServer(BoltConfig config, ReplicationContext replicationContext) {
         this.config = config;
-        this.sequencerRingBuffer = sequencerRingBuffer;
-        try {
-            start();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+        this.replicationContext = replicationContext;
     }
 
     /**
@@ -44,7 +39,7 @@ public class SlaveServer {
     public void start() throws IOException {
         final EventLoopGroup boss = new NioEventLoopGroup(1, new DefaultThreadFactory("SlaveServer-boss", true));
         final EventLoopGroup worker = new NioEventLoopGroup(0, new DefaultThreadFactory("SlaveServer-worker", true));
-        ReplicationSlaveServiceImpl replicationSlaveService = new ReplicationSlaveServiceImpl(config, sequencerRingBuffer);
+        ReplicationSlaveServiceImpl replicationSlaveService = new ReplicationSlaveServiceImpl(config, replicationContext);
         NettyServerBuilder builder = NettyServerBuilder
                 .forPort(config.slaveReplicationPort())
                 .bossEventLoopGroup(boss)
@@ -53,7 +48,7 @@ public class SlaveServer {
                 .addService(replicationSlaveService)
                 .maxInboundMessageSize(16 * 1024 * 1024) // 16MB
                 .permitKeepAliveWithoutCalls(true)
-                .permitKeepAliveTime(60, java.util.concurrent.TimeUnit.SECONDS); // 增加到60秒
+                .permitKeepAliveTime(60, TimeUnit.SECONDS); // 增加到60秒
 
         server = builder.build();
         server.start();
