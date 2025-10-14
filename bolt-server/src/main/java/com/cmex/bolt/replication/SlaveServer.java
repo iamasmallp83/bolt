@@ -12,6 +12,7 @@ import io.grpc.netty.shaded.io.netty.channel.EventLoopGroup;
 import io.grpc.netty.shaded.io.netty.channel.nio.NioEventLoopGroup;
 import io.grpc.netty.shaded.io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.grpc.netty.shaded.io.netty.util.concurrent.DefaultThreadFactory;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
@@ -24,11 +25,10 @@ import java.util.concurrent.TimeUnit;
 public class SlaveServer {
 
     private final BoltConfig config;
-    private final RingBuffer<NexusWrapper> sequencerRingBuffer;
+    private RingBuffer<NexusWrapper> sequencerRingBuffer;
     private Server server;
 
-    public SlaveServer(BoltConfig config,
-                       RingBuffer<NexusWrapper> sequencerRingBuffer) {
+    public SlaveServer(BoltConfig config, RingBuffer<NexusWrapper> sequencerRingBuffer) {
         this.config = config;
         this.sequencerRingBuffer = sequencerRingBuffer;
         try {
@@ -58,7 +58,6 @@ public class SlaveServer {
         server = builder.build();
         server.start();
         replicationSlaveService.getSlaveSyncManager().start();
-
         log.info("Slave server started, listening on port {}", config.slaveReplicationPort());
 
         // 添加关闭钩子

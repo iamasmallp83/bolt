@@ -2,7 +2,6 @@ package com.cmex.bolt.replication;
 
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
-import com.cmex.bolt.handler.JournalReplayer;
 import com.cmex.bolt.recovery.SnapshotReader;
 import com.cmex.bolt.replication.ReplicationProto.*;
 import com.lmax.disruptor.RingBuffer;
@@ -15,7 +14,6 @@ import lombok.extern.slf4j.Slf4j;
 import java.net.InetAddress;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 从节点复制管理器
@@ -150,7 +148,7 @@ public class SlaveSyncManager {
             if (response.getSuccess()) {
                 // 更新分配的节点ID（主节点可能重新分配）
                 this.assignedNodeId = response.getAssignedNodeId();
-                currentState = ReplicationState.REGISTERED;
+                this.currentState = ReplicationState.REGISTERED;
                 log.info("Successfully registered to master with assigned node ID: {}", assignedNodeId);
 
                 // 处理快照数据（如果有）
@@ -353,18 +351,8 @@ public class SlaveSyncManager {
         }
     }
 
-    public void replayJournal() {
-        JournalReplayer journalReplayer = new JournalReplayer(config, sequencerRingBuffer);
-        journalReplayer.replayFromJournal();
-        updateState(ReplicationState.READY);
-    }
-
-    /**
-     * 更新状态
-     */
-    public void updateState(ReplicationState newState) {
-        this.currentState = newState;
-        log.info("State updated to: {}", newState);
+    public void updateState(ReplicationState state) {
+        this.currentState = state;
     }
 
 }

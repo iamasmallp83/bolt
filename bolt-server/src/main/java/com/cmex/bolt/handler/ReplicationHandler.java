@@ -9,7 +9,6 @@ import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.IOException;
 
 /**
  * 复制处理器 - 负责将事件复制到从节点
@@ -24,11 +23,6 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
     public ReplicationHandler(BoltConfig config) {
         this.config = config;
         this.masterServer = new MasterServer(config);
-        try {
-            this.masterServer.start();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
     }
     
     @Override
