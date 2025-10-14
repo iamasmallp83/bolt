@@ -128,6 +128,7 @@ public class ReplicationSlaveServiceImpl extends ReplicationSlaveServiceGrpc.Rep
                     writeJournalDataToFile(journalMessage);
                     JournalReplayer replayer = new JournalReplayer(config, sequencerRingBuffer);
                     replayer.replayFromJournal();
+                    slaveSyncManager.updateState(ReplicationState.READY);
 
                     log.info("Successfully processed journal chunk: {} bytes",
                             journalMessage.getJournalData().size());

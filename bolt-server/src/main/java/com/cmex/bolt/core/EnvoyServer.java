@@ -10,6 +10,9 @@ import com.cmex.bolt.domain.Transfer;
 import com.cmex.bolt.dto.DepthDto;
 import com.cmex.bolt.handler.*;
 import com.cmex.bolt.recovery.SnapshotData;
+import com.cmex.bolt.replay.DataReplayStrategy;
+import com.cmex.bolt.replay.DataReplayStrategyFactory;
+import com.cmex.bolt.replay.MasterNodeReplayStrategy;
 import com.cmex.bolt.repository.impl.AccountRepository;
 import com.cmex.bolt.repository.impl.CurrencyRepository;
 import com.cmex.bolt.repository.impl.SymbolRepository;
@@ -19,16 +22,15 @@ import com.cmex.bolt.util.OrderIdGenerator;
 import com.cmex.bolt.util.PerformanceExporter;
 import com.cmex.bolt.util.SystemBusyResponseFactory;
 import com.cmex.bolt.util.SystemBusyResponses;
-import com.cmex.bolt.recovery.SnapshotRecovery;
 import com.lmax.disruptor.*;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
 import com.lmax.disruptor.util.DaemonThreadFactory;
 import io.grpc.stub.StreamObserver;
 import lombok.Getter;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -37,135 +39,154 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
-@Slf4j
 public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
+    private static final Logger log = LoggerFactory.getLogger(EnvoyServer.class);
 
     private final BoltConfig config;
+    private final DataReplayStrategy replayStrategy;
 
-    @Getter
     private final RingBuffer<NexusWrapper> sequencerRingBuffer;
-    @Getter
     private final RingBuffer<NexusWrapper> matchingRingBuffer;
+    private final RingBuffer<NexusWrapper> responseRingBuffer;
+
+    // Disruptor实例，用于关闭
+    private final Disruptor<NexusWrapper> sequencerDisruptor;
+    private final Disruptor<NexusWrapper> matchingDisruptor;
+    private final Disruptor<NexusWrapper> responseDisruptor;
+
     private final AtomicLong requestId = new AtomicLong();
     private final ConcurrentHashMap<Long, StreamObserver<?>> observers;
 
-    private final List<AccountService> accountServices;
-    private final List<MatchService> matchServices;
+    private List<AccountService> accountServices;
+    private List<MatchService> matchServices;
 
     // 性能导出器
     @Getter
-    private final PerformanceExporter performanceExporter;
+    private PerformanceExporter performanceExporter;
 
     private final Transfer transfer;
 
-    // Snapshot触发器（仅主节点使用）
-    private final SnapshotTrigger snapshotTrigger;
-
-    // 复制相关组件
+    // 复制相关组件（仅主节点使用）
     @Getter
-    private final ReplicationHandler replicationHandler;
+    private ReplicationHandler replicationHandler;
 
     // 公共构造函数
     public EnvoyServer(BoltConfig config) {
         this.config = config;
-        transfer = new Transfer();
+        this.transfer = new Transfer();
         log.info("EnvoyServer constructor called with config: {}", config);
 
+        // 1. 创建重放策略
+        this.replayStrategy = DataReplayStrategyFactory.createStrategy(config);
+        log.info("Created replay strategy: {}", replayStrategy.getClass().getSimpleName());
+
+        // 2. 重放Snapshot数据
+        SnapshotData snapshotData = replayStrategy.replaySnapshot();
+        if (snapshotData == null) {
+            throw new RuntimeException("Failed to replay snapshot data");
+        }
+
+        // 3. 创建Disruptor RingBuffers
         observers = new ConcurrentHashMap<>();
-        WaitStrategy waitStrategy;
-        if (config.isProd()) {
-            waitStrategy = new BusySpinWaitStrategy();
-        } else {
-            waitStrategy = new BlockingWaitStrategy();
-        }
-        Disruptor<NexusWrapper> sequencerDisruptor =
-                new Disruptor<>(new NexusWrapper.Factory(256), config.sequencerSize(), DaemonThreadFactory.INSTANCE,
-                        ProducerType.MULTI, waitStrategy);
-        Disruptor<NexusWrapper> matchingDisruptor =
-                new Disruptor<>(new NexusWrapper.Factory(256), config.matchingSize(), DaemonThreadFactory.INSTANCE,
-                        ProducerType.MULTI, waitStrategy);
-        Disruptor<NexusWrapper> responseDisruptor =
-                new Disruptor<>(new NexusWrapper.Factory(256), config.responseSize(), DaemonThreadFactory.INSTANCE,
-                        ProducerType.MULTI, waitStrategy);// Response通常是单生产者
+        WaitStrategy waitStrategy = config.isProd() ? new BusySpinWaitStrategy() : new BlockingWaitStrategy();
 
+        this.sequencerDisruptor = new Disruptor<>(
+                new NexusWrapper.Factory(256), config.sequencerSize(), DaemonThreadFactory.INSTANCE,
+                ProducerType.MULTI, waitStrategy);
+        this.matchingDisruptor = new Disruptor<>(
+                new NexusWrapper.Factory(256), config.matchingSize(), DaemonThreadFactory.INSTANCE,
+                ProducerType.MULTI, waitStrategy);
+        this.responseDisruptor = new Disruptor<>(
+                new NexusWrapper.Factory(256), config.responseSize(), DaemonThreadFactory.INSTANCE,
+                ProducerType.MULTI, waitStrategy);
 
-        // 首先尝试从snapshot恢复数据
-        SnapshotRecovery snapshotRecovery = new SnapshotRecovery(config);
-        SnapshotData snapshotData;
-        try {
-            snapshotData = snapshotRecovery.recoverFromSnapshot();
-        } catch (IOException e) {
-            log.error("Failed to recover from snapshot, starting with fresh data", e);
-            throw new RuntimeException(e);
-        }
+        // 4. 创建Dispatchers
+        List<AccountDispatcher> accountDispatchers = createAccountDispatchers(snapshotData);
+        List<MatchDispatcher> matchDispatchers = createMatchDispatchers(snapshotData);
 
-        // 为每个 partition 创建对应的 repository 并重新创建 dispatcher
-        List<AccountDispatcher> accountDispatchers = createSequencerDispatchersWithRecovery(snapshotData);
-        List<MatchDispatcher> matchDispatchers = createMatchingDispatchersWithRecovery(snapshotData);
+        // 5. 配置处理链
+        configureProcessingChains(sequencerDisruptor, matchingDisruptor, responseDisruptor,
+                accountDispatchers, matchDispatchers);
 
-        // 根据节点类型选择JournalHandler
-        EventHandler<NexusWrapper> journalHandler = new JournalHandler(config);
-
-        // 根据节点类型初始化不同的处理器
-        if (config.isMaster()) {
-            // 主节点：JournalHandler -> ReplicationHandler -> SequencerDispatcher
-            this.replicationHandler = new ReplicationHandler(config);
-
-            // 配置主节点的处理链
-            sequencerDisruptor.handleEventsWith(journalHandler)
-                    .then(replicationHandler)
-                    .then(accountDispatchers.toArray(new AccountDispatcher[0]));
-        } else {
-            // 从节点：JournalHandler -> SequencerDispatcher
-            this.replicationHandler = null; // 从节点不需要ReplicationHandler
-
-            // 配置从节点的处理链
-            sequencerDisruptor.handleEventsWith(accountDispatchers.toArray(new AccountDispatcher[0]));
-        }
-        matchingDisruptor.handleEventsWith(matchDispatchers.toArray(new MatchDispatcher[0]));
-        responseDisruptor.handleEventsWith(new ResponseEventHandler());
-
+        // 6. 启动RingBuffers
         sequencerRingBuffer = sequencerDisruptor.start();
         matchingRingBuffer = matchingDisruptor.start();
-        RingBuffer<NexusWrapper> responseRingBuffer = responseDisruptor.start();
+        responseRingBuffer = responseDisruptor.start();
 
-        matchServices = new ArrayList<>(config.group());
-        for (MatchDispatcher dispatcher : matchDispatchers) {
-            dispatcher.getMatchService().setSequencerRingBuffer(sequencerRingBuffer);
-            dispatcher.getMatchService().setResponseRingBuffer(responseRingBuffer);
-            matchServices.add(dispatcher.getMatchService());
-        }
-        accountServices = new ArrayList<>(config.group());
-        for (AccountDispatcher dispatcher : accountDispatchers) {
-            dispatcher.getAccountService().setMatchingRingBuffer(matchingRingBuffer);
-            dispatcher.getAccountService().setResponseRingBuffer(responseRingBuffer);
-            // 设置matching ring buffer给SequencerDispatcher用于转发Snapshot事件
-            dispatcher.setMatchingRingBuffer(matchingRingBuffer);
-            accountServices.add(dispatcher.getAccountService());
-        }
-
-        // 然后进行journal重放，如果有snapshot则从snapshot之后开始
-        JournalReplayer replayer = new JournalReplayer(config, sequencerRingBuffer);
-        log.info("starting journal replay from beginning");
-        long maxId = replayer.replayFromJournal();
+        // 7. 重放Journal数据
+        long maxId = replayJournal();
         requestId.set(maxId);
 
-        // 初始化性能导出器
+        // 8. 初始化服务
+        initializeServices(accountDispatchers, matchDispatchers);
+
+        // 9. 初始化性能导出器
         performanceExporter = new PerformanceExporter(sequencerRingBuffer);
 
-        // 初始化Snapshot触发器（仅主节点）
+        log.info("EnvoyServer initialized successfully");
+    }
+
+    /**
+     * 关闭EnvoyServer
+     */
+    public void shutdown() {
+        log.info("Shutting down EnvoyServer");
+
+        // 关闭Disruptor实例
+        if (sequencerDisruptor != null) {
+            sequencerDisruptor.shutdown();
+        }
+        if (matchingDisruptor != null) {
+            matchingDisruptor.shutdown();
+        }
+        if (responseDisruptor != null) {
+            responseDisruptor.shutdown();
+        }
+
+        // 关闭性能导出器
+        if (performanceExporter != null) {
+            performanceExporter.shutdown();
+        }
+
+        log.info("EnvoyServer shutdown completed");
+    }
+
+    // Getter方法
+    public RingBuffer<NexusWrapper> getSequencerRingBuffer() {
+        return sequencerRingBuffer;
+    }
+
+    public RingBuffer<NexusWrapper> getMatchingRingBuffer() {
+        return matchingRingBuffer;
+    }
+
+    public RingBuffer<NexusWrapper> getResponseRingBuffer() {
+        return responseRingBuffer;
+    }
+
+    /**
+     * 重放Journal数据
+     */
+    private long replayJournal() {
         if (config.isMaster()) {
-            this.snapshotTrigger = new SnapshotTrigger(config, sequencerRingBuffer);
+            // 主节点：从本地journal重放
+            log.info("Master node: replaying from local journal");
+            JournalReplayer replayer = new JournalReplayer(config, sequencerRingBuffer);
+            return replayer.replayFromJournal();
         } else {
-            this.snapshotTrigger = null;
+            // 从节点：不需要本地journal重放
+            log.info("Slave node: no local journal replay, will receive from master");
+            return 0;
         }
     }
 
-    private List<AccountDispatcher> createSequencerDispatchersWithRecovery(SnapshotData snapshotData) {
+    /**
+     * 创建AccountDispatchers
+     */
+    private List<AccountDispatcher> createAccountDispatchers(SnapshotData snapshotData) {
         List<AccountDispatcher> dispatchers = new ArrayList<>();
         for (int i = 0; i < config.group(); i++) {
             try {
-                // 为每个 partition 创建对应的 repository
                 AccountRepository accountRepository = snapshotData.accountRepositories().get(i);
                 CurrencyRepository currencyRepository = snapshotData.currencyRepositories().get(i);
                 SymbolRepository symbolRepository = snapshotData.symbolRepositories().get(i);
@@ -173,23 +194,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
                 dispatchers.add(new AccountDispatcher(config, config.group(), i,
                         accountRepository, currencyRepository, symbolRepository));
             } catch (Exception e) {
-                log.error("Failed to create SequencerDispatcher for partition {}", i, e);
-                throw new RuntimeException(e);
-            }
-        }
-        return dispatchers;
-    }
-
-    private List<MatchDispatcher> createMatchingDispatchersWithRecovery(SnapshotData snapshotData) {
-        List<MatchDispatcher> dispatchers = new ArrayList<>();
-        for (int i = 0; i < config.group(); i++) {
-            try {
-                // 为每个 partition 创建对应的 SymbolRepository
-                SymbolRepository symbolRepository = snapshotData.symbolRepositories().get(i);
-
-                dispatchers.add(new MatchDispatcher(config, config.group(), i, symbolRepository));
-            } catch (Exception e) {
-                log.error("Failed to create MatchDispatcher for partition {}", i, e);
+                log.error("Failed to create AccountDispatcher for partition {}", i, e);
                 throw new RuntimeException(e);
             }
         }
@@ -197,11 +202,72 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     }
 
     /**
-     * 关闭EnvoyServer，断开TCP客户端连接
+     * 创建MatchDispatchers
      */
-    public void shutdown() {
-        if (snapshotTrigger != null) {
-            snapshotTrigger.shutdown();
+    private List<MatchDispatcher> createMatchDispatchers(SnapshotData snapshotData) {
+        List<MatchDispatcher> dispatchers = new ArrayList<>();
+
+        for (int i = 0; i < config.group(); i++) {
+            try {
+                SymbolRepository symbolRepository = snapshotData.symbolRepositories().get(i);
+                dispatchers.add(new MatchDispatcher(config, config.group(), i, symbolRepository));
+            } catch (Exception e) {
+                log.error("Failed to create MatchDispatcher for partition {}", i, e);
+                throw new RuntimeException(e);
+            }
+        }
+
+        return dispatchers;
+    }
+
+    /**
+     * 配置处理链
+     */
+    private void configureProcessingChains(Disruptor<NexusWrapper> sequencerDisruptor,
+                                           Disruptor<NexusWrapper> matchingDisruptor,
+                                           Disruptor<NexusWrapper> responseDisruptor,
+                                           List<AccountDispatcher> accountDispatchers,
+                                           List<MatchDispatcher> matchDispatchers) {
+
+        if (config.isMaster()) {
+            // 主节点：JournalHandler -> ReplicationHandler -> AccountDispatchers
+            JournalHandler journalHandler = new JournalHandler(config);
+            this.replicationHandler = new ReplicationHandler(config);
+
+            sequencerDisruptor.handleEventsWith(journalHandler)
+                    .then(replicationHandler)
+                    .then(accountDispatchers.toArray(new AccountDispatcher[0]));
+        } else {
+            // 从节点：直接到AccountDispatchers（无需Journal和Replication）
+            this.replicationHandler = null;
+            sequencerDisruptor.handleEventsWith(accountDispatchers.toArray(new AccountDispatcher[0]));
+        }
+
+        // Matching处理链（主从节点相同）
+        matchingDisruptor.handleEventsWith(matchDispatchers.toArray(new MatchDispatcher[0]));
+
+        // Response处理链（主从节点相同）
+        responseDisruptor.handleEventsWith(new ResponseEventHandler());
+    }
+
+    /**
+     * 初始化服务
+     */
+    private void initializeServices(List<AccountDispatcher> accountDispatchers,
+                                    List<MatchDispatcher> matchDispatchers) {
+        matchServices = new ArrayList<>(config.group());
+        for (MatchDispatcher dispatcher : matchDispatchers) {
+            dispatcher.getMatchService().setSequencerRingBuffer(sequencerRingBuffer);
+            dispatcher.getMatchService().setResponseRingBuffer(responseRingBuffer);
+            matchServices.add(dispatcher.getMatchService());
+        }
+
+        accountServices = new ArrayList<>(config.group());
+        for (AccountDispatcher dispatcher : accountDispatchers) {
+            dispatcher.getAccountService().setMatchingRingBuffer(matchingRingBuffer);
+            dispatcher.getAccountService().setResponseRingBuffer(responseRingBuffer);
+            dispatcher.setMatchingRingBuffer(matchingRingBuffer);
+            accountServices.add(dispatcher.getAccountService());
         }
     }
 
