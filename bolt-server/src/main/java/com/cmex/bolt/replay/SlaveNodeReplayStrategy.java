@@ -3,9 +3,6 @@ package com.cmex.bolt.replay;
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.recovery.SnapshotData;
 import com.cmex.bolt.recovery.SnapshotRecovery;
-import com.cmex.bolt.replication.SlaveSyncManager;
-import lombok.Getter;
-import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,7 +17,6 @@ public class SlaveNodeReplayStrategy implements DataReplayStrategy {
 
     private final BoltConfig config;
 
-    private SlaveSyncManager slaveSyncManager;
 
     public SlaveNodeReplayStrategy(BoltConfig config) {
         this.config = config;

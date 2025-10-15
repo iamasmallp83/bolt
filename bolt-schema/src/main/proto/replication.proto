@@ -6,10 +6,8 @@ option java_outer_classname = "ReplicationProto";
 enum MessageType {
   REGISTER = 0;      // 注册消息
   HEARTBEAT = 1;     // 心跳消息
-  STATE_SYNC = 2;    // 状态同步消息
+  JOURNAL_REPLAY = 2; // Journal重放消息
   BATCH_RELAY = 3; // 批处理中继消息
-  JOURNAL_REPLAY = 4; // Journal重放消息
-  REPLICATION_FIRST_ID = 5; // 缓冲第一条数据ID报告
 }
 
 // 复制状态枚举
@@ -25,9 +23,8 @@ message ProtocolHeader {
   int32 magic_number = 1;     // Magic Number: 0x424F4C54 ("BOLT")
   int32 version = 2;          // 协议版本
   MessageType message_type = 3; // 消息类型
-  int64 sequence = 4;         // 序列号
+  int64 timestamp = 4;        // 时间戳
   int32 data_length = 5;      // 数据长度
-  int64 timestamp = 6;        // 时间戳
 }
 
 // 注册消息
@@ -41,9 +38,8 @@ message RegisterMessage {
 message RegisterResponse {
   bool success = 1;           // 是否成功
   string message = 2;        // 响应消息
-  int32 assigned_node_id = 3; // 分配的节点ID
-  int64 server_time = 4;     // 服务器时间
-  bytes snapshot = 5; // 快照信息
+  int64 server_time = 3;     // 服务器时间
+  bytes snapshot = 4; // 快照信息
 }
 
 
@@ -51,89 +47,57 @@ message RegisterResponse {
 message HeartbeatMessage {
   int32 node_id = 1;        // 节点ID
   int64 timestamp = 2;      // 心跳时间戳
-  int32 sequence = 3;       // 心跳序列号
-  map<string, string> status = 4; // 状态信息
+  map<string, string> status = 3; // 状态信息
 }
 
 // 心跳响应
 message HeartbeatResponse {
   bool success = 1;          // 是否成功
   int64 server_time = 2;     // 服务器时间
-  int32 next_heartbeat_interval = 3; // 下次心跳间隔(秒)
-}
-
-// 批处理中继消息
-message BatchRelayMessage {
-    int64 sequence = 1;
-    int32 size = 2;
-    int64 timestamp = 3;
-    repeated RelayMessageData messages = 4;
 }
 
 // 中继消息数据
 message RelayMessageData {
     int64 id = 1;                    // 消息ID
     int32 partition = 2;              // 分区ID
-    int32 event_type = 3;             // 事件类型 (0=BUSINESS, 1=JOURNAL, 2=SNAPSHOT, 3=INTERNAL)
-    bytes data = 4;                   // 消息数据
+    bytes data = 3;                   // 消息数据
 }
 
-// 确认消息
-message ConfirmationMessage {
-  int32 node_id = 1;       // 节点ID
-  int64 sequence = 2;       // 确认的序列号
-  int64 timestamp = 3;      // 确认时间戳
-  bool success = 4;         // 是否成功处理
-  string error_message = 5; // 错误消息(如果有)
+// 批处理中继消息
+message BatchRelayMessage {
+    int64 sequence = 1;
+    int32 size = 2;
+    repeated RelayMessageData messages = 3;
 }
 
 
 // Journal重放消息
 message JournalReplayMessage {
-  bytes journal_data = 1;       // Journal数据
-  bool is_last_chunk = 2;       // 是否为最后一块
+  bool is_last_chunk = 1;       // 是否为最后一块
+  bytes journal_data = 2;       // Journal数据
 }
 
-// 状态同步消息
-message StateSyncMessage {
-  int32 node_id = 1;           // 节点ID
-  ReplicationState current_state = 2; // 当前状态
-  int64 last_sequence = 3;     // 最后处理的序列号
-  int64 timestamp = 4;         // 时间戳
-  string error_message = 5;    // 错误消息(如果有)
-  map<string, string> metadata = 6; // 额外元数据
+// 统一的复制请求消息
+message ReplicationRequest {
+  oneof message {
+    RegisterMessage register = 1;             // 注册消息（必须第一个发送）
+    HeartbeatMessage heartbeat = 2;           // 心跳消息
+    JournalReplayMessage journal = 3;         // Journal重放消息
+    BatchRelayMessage relay = 4;              // 中继消息
+  }
 }
 
-// 中继消息发布确认
-message RelayPublishConfirmMessage {
-  int32 node_id = 1;           // 节点ID
-  int64 published_sequence = 2; // 已发布的序列号
-  int64 timestamp = 3;         // 确认时间戳
-  bool success = 4;            // 是否成功发布
-  string error_message = 5;    // 错误消息(如果有)
+// 统一的复制响应消息
+message ReplicationResponse {
+  oneof message {
+    RegisterResponse register = 1;            // 注册响应
+    HeartbeatResponse heartbeat = 2;          // 心跳响应
+  }
 }
 
-// 缓冲第一条数据ID报告
-message LatestReplicationMessage {
-  int32 node_id = 1;           // 节点ID
-  int64 replication_id = 2;    // 缓冲的第一条数据ID
-}
+// 统一的复制服务定义（支持双向通信）
+service ReplicationService {
 
-// 主节点服务定义（从节点调用主节点）
-service ReplicationMasterService {
-  // 从节点注册到主节点（从 -> 主）
-  rpc RegisterSlave(RegisterMessage) returns (RegisterResponse);
-
-  // 心跳服务（从 -> 主，双向流）
-  rpc Heartbeat(stream HeartbeatMessage) returns (stream HeartbeatResponse);
-
-}
-
-// 从节点服务定义（主节点调用从节点）
-service ReplicationSlaveService {
-  // 发送中继消息（主 -> 从，单向流）
-  rpc SendRelay(stream BatchRelayMessage) returns (ConfirmationMessage);
-
-  // 发送Journal重放（主 -> 从，单向流）
-  rpc SendJournal(stream JournalReplayMessage) returns (ConfirmationMessage);
+  rpc ReplicationStream(stream ReplicationRequest) returns (stream ReplicationResponse);
+  
 }

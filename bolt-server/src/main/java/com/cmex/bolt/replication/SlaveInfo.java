@@ -35,9 +35,6 @@ public class SlaveInfo {
     private volatile boolean isConnected = false;
     private volatile String errorMessage = null;
 
-    // gRPC 连接和 stub
-    private volatile ManagedChannel slaveChannel;
-    private volatile ReplicationSlaveServiceGrpc.ReplicationSlaveServiceStub slaveAsyncStub;
 
     @Builder
     public SlaveInfo(int nodeId, String host, int replicationPort) {

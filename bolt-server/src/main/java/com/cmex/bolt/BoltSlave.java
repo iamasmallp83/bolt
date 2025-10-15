@@ -2,7 +2,6 @@ package com.cmex.bolt;
 
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.replication.ReplicationContext;
-import com.cmex.bolt.replication.SlaveServer;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
@@ -19,7 +18,6 @@ public class BoltSlave {
     private final BoltConfig config;
     private BoltCore core;
     private final ReplicationContext replicationContext;
-    private SlaveServer slaveServer;
 
     public BoltSlave(BoltConfig config) {
         // 验证从节点配置
@@ -39,8 +37,8 @@ public class BoltSlave {
 
         // 1. 启动从节点特有服务（需要RingBuffer）
         startSlaveSpecificServices();
-        // 2. 先启动基础组件（EnvoyServer + gRPC + 监控）
 
+        // 2. 先启动基础组件（EnvoyServer + gRPC + 监控）
         this.core = new BoltCore(config);
         // 将RingBuffer注入到ReplicationContext
         replicationContext.setSequencerRingBuffer(core.getEnvoyServer().getSequencerRingBuffer());
@@ -60,8 +58,8 @@ public class BoltSlave {
         log.info("Starting slave-specific services");
 
         // 启动从节点复制服务（SlaveServer）
-        this.slaveServer = new SlaveServer(config, replicationContext);
-        this.slaveServer.start();
+//        this.slaveServer = new SlaveServer(config, replicationContext);
+//        this.slaveServer.start();
 
         log.info("Slave-specific services started successfully");
     }
@@ -88,14 +86,14 @@ public class BoltSlave {
         log.info("Stopping slave-specific services");
 
         // 停止从节点复制服务
-        if (slaveServer != null) {
-            try {
-                slaveServer.stop();
-            } catch (InterruptedException e) {
-                log.error("Error stopping slave server", e);
-                Thread.currentThread().interrupt();
-            }
-        }
+//        if (slaveServer != null) {
+//            try {
+//                slaveServer.stop();
+//            } catch (InterruptedException e) {
+//                log.error("Error stopping slave server", e);
+//                Thread.currentThread().interrupt();
+//            }
+//        }
 
         log.info("Slave-specific services stopped");
     }

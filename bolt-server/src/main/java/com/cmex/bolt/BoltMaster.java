@@ -18,7 +18,6 @@ public class BoltMaster {
 
     // Getters
     private final BoltCore core;
-    private MasterServer masterServer;
     private SnapshotTrigger snapshotTrigger;
     
     public BoltMaster(BoltConfig config) {
@@ -90,19 +89,8 @@ public class BoltMaster {
             snapshotTrigger.shutdown();
         }
         
-        // 停止复制服务
-        if (masterServer != null) {
-            try {
-                masterServer.stop();
-            } catch (InterruptedException e) {
-                log.error("Error stopping master server", e);
-                Thread.currentThread().interrupt();
-            }
-        }
-        
-        log.info("Master-specific services stopped");
     }
-    
+
     /**
      * 等待关闭
      */
