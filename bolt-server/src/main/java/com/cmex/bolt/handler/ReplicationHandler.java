@@ -33,20 +33,19 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
         }
 
         // 检查是否有就绪的节点需要同步
-        int readyNodeCount = masterServer.getReadyNodeCount();
-        if (readyNodeCount == 0) {
-            return;
-        }
+//        int readyNodeCount = masterServer.getReadyNodeCount();
+//        if (readyNodeCount == 0) {
+//            return;
+//        }
 
         try {
             // 创建中继消息
             BatchRelayMessage relayMessage = createRelayMessage(wrapper, sequence);
             
             // 通过MasterServer发送到所有就绪的节点
-            masterServer.sendRelayMessage(relayMessage);
+//            masterServer.sendRelayMessage(relayMessage);
             
-            log.debug("Replicated relay message sequence {} to {} nodes", sequence, readyNodeCount);
-            
+
         } catch (Exception e) {
             log.error("Failed to replicate relay message sequence {}: {}", sequence, e.getMessage());
         }
@@ -58,19 +57,20 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
      */
     private BatchRelayMessage createRelayMessage(NexusWrapper wrapper, long sequence) {
         // 创建包含完整元数据的消息数据
-        RelayMessageData messageData = RelayMessageData.newBuilder()
-                .setId(wrapper.getId())
-                .setPartition(wrapper.getPartition())
-                .setEventType(wrapper.getEventType().getValue())
-                .setData(ByteString.copyFrom(wrapper.cloneBuffer()))
-                .build();
+//        RelayMessageData messageData = RelayMessageData.newBuilder()
+//                .setId(wrapper.getId())
+//                .setPartition(wrapper.getPartition())
+//                .setEventType(wrapper.getEventType().getValue())
+//                .setData(ByteString.copyFrom(wrapper.cloneBuffer()))
+//                .build();
 
-        return BatchRelayMessage.newBuilder()
-                .setSequence(sequence)
-                .setSize(1)
-                .setTimestamp(System.currentTimeMillis())
-                .addMessages(messageData)
-                .build();
+//        return BatchRelayMessage.newBuilder()
+//                .setSequence(sequence)
+//                .setSize(1)
+//                .setTimestamp(System.currentTimeMillis())
+//                .addMessages(messageData)
+//                .build();
+        return null;
     }
 
     @Override
@@ -78,7 +78,7 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
         log.info("ReplicationHandler started");
         // 启动MasterServer
         try {
-            masterServer.start();
+//            masterServer.start();
         } catch (Exception e) {
             log.error("Failed to start MasterServer", e);
         }
@@ -89,7 +89,7 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
         log.info("ReplicationHandler shutdown");
         // 停止MasterServer
         try {
-            masterServer.stop();
+//            masterServer.stop();
         } catch (Exception e) {
             log.error("Failed to stop MasterServer", e);
         }
