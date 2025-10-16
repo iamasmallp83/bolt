@@ -81,7 +81,6 @@ message ReplicationRequest {
     RegisterMessage register = 1;             // 注册消息（必须第一个发送）
     HeartbeatMessage heartbeat = 2;           // 心跳消息
     JournalReplayMessage journal = 3;         // Journal重放消息
-    BatchRelayMessage relay = 4;              // 中继消息
   }
 }
 
@@ -91,6 +90,7 @@ message ReplicationResponse {
     RegisterResponse register = 1;            // 注册响应
     HeartbeatResponse heartbeat = 2;          // 心跳响应
     JournalReplayMessage journal = 3;         // Journal重放响应
+    BatchRelayMessage relay = 4;              // 中继消息
   }
 }
 

@@ -16,8 +16,6 @@ import java.util.concurrent.Executors;
  */
 public class MinimalReplicationTest {
 
-    private static final int PORT = 9091;
-
     private static ExecutorService executor = Executors.newCachedThreadPool();
 
     public static void main(String[] args) throws Exception {
@@ -25,7 +23,7 @@ public class MinimalReplicationTest {
 
         BoltConfig masterConfig = new BoltConfig(
                 1,     // nodeId
-                "/Users/stam/Source/Java/bolt/master", // boltHome
+                "/Users/ly/Source/Java/bolt/master", // boltHome
                 9090,  // port
                 false, // isProd
                 4,     // group
@@ -51,15 +49,15 @@ public class MinimalReplicationTest {
 //                .build();
 //                .start();
 
-        System.out.println("Server started on port " + PORT);
+//        System.out.println("Server started on port " + PORT);
 
         // 等待服务器启动
         Thread.sleep(1000);
 
         // 启动客户端
         BoltConfig slaveConfig = new BoltConfig(
-                1,     // nodeId
-                "/Users/stam/Source/Java/bolt/slave", // boltHome
+                7,     // nodeId
+                "/Users/ly/Source/Java/bolt/slave", // boltHome
                 19090,  // port
                 false, // isProd
                 4,     // group
@@ -68,7 +66,7 @@ public class MinimalReplicationTest {
                 512,   // responseSize
                 false, // enablePrometheus
                 9092,  // prometheusPort
-                true,  // isMaster
+                false,  // isMaster
                 "localhost", // masterHost
                 9091,  // masterReplicationPort
                 9092,  // slaveReplicationPort
@@ -80,7 +78,7 @@ public class MinimalReplicationTest {
                 3000    // snapshotInterval
         );
 
-        ReplicationClient client = new ReplicationClient(7, "localhost", PORT, slaveConfig);
+        ReplicationClient client = new ReplicationClient(slaveConfig);
         client.start();
         Thread.sleep(60000);
     }

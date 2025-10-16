@@ -45,7 +45,7 @@ public class AccountDispatcher implements EventHandler<NexusWrapper>, LifecycleA
         if (partition != wrapper.getPartition() && !wrapper.isSnapshotEvent()) {
             return;
         }
-        Nexus.NexusEvent.Reader reader = transfer.from(wrapper.getBuffer().copy());
+        Nexus.NexusEvent.Reader reader = transfer.from(wrapper.getBuffer());
         Nexus.Payload.Reader payload = reader.getPayload();
         switch (payload.which()) {
             case SNAPSHOT:

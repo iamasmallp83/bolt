@@ -147,13 +147,11 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
      * 重放Journal数据
      */
     public void replayJournal() {
-        if (config.isMaster()) {
-            // 主节点：从本地journal重放
-            log.info("Master node: replaying from local journal");
-            JournalReplayer replayer = new JournalReplayer(config, getSequencerRingBuffer());
-            long maxId = replayer.replayFromJournal();
-            requestId.set(maxId);
-        }
+        // 主节点：从本地journal重放
+        log.info("Master node: replaying from local journal");
+        JournalReplayer replayer = new JournalReplayer(config, getSequencerRingBuffer());
+        long maxId = replayer.replayFromJournal();
+        requestId.set(maxId);
     }
 
     /**
@@ -335,6 +333,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
                 getSequencerRingBuffer().publishEvent((wrapper, sequence) -> {
                     wrapper.setId(id);
                     wrapper.setPartition(partition);
+                    wrapper.setEventType(NexusWrapper.EventType.BUSINESS);
                     transfer.writeIncreaseRequest(request, currency, wrapper.getBuffer());
                 });
                 timer.recordSuccess();
@@ -377,6 +376,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
                         sequencerDisruptor.getRingBuffer().publishEvent((wrapper, sequence) -> {
                             wrapper.setId(id);
                             wrapper.setPartition(partition);
+                            wrapper.setEventType(NexusWrapper.EventType.BUSINESS);
                             transfer.writeDecreaseRequest(request, currency, wrapper.getBuffer());
                         });
                         timer.recordSuccess();
@@ -420,6 +420,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
                 sequencerDisruptor.getRingBuffer().publishEvent((wrapper, sequence) -> {
                     wrapper.setId(id);
                     wrapper.setPartition(partition);
+                    wrapper.setEventType(NexusWrapper.EventType.BUSINESS);
                     transfer.writePlaceOrderRequest(request, symbol, wrapper.getBuffer());
                 });
                 timer.recordSuccess();
@@ -458,6 +459,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
             sequencerDisruptor.getRingBuffer().publishEvent((wrapper, sequence) -> {
                 wrapper.setId(id);
                 wrapper.setPartition(OrderIdGenerator.getSymbolId(request.getOrderId()) % config.group());
+                wrapper.setEventType(NexusWrapper.EventType.BUSINESS);
                 transfer.writeCancelOrderRequest(request, wrapper.getBuffer());
             });
             timer.recordSuccess();

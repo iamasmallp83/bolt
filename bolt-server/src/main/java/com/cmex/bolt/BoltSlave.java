@@ -55,7 +55,7 @@ public class BoltSlave {
         log.info("Starting slave-specific services");
 
         // 启动从节点复制服务（SlaveServer）
-        ReplicationClient replicationClient = new ReplicationClient(config.nodeId(), config.masterHost(), config.masterReplicationPort(), config);
+        ReplicationClient replicationClient = new ReplicationClient(config);
         replicationClient.start();
 
 

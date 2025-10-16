@@ -1,8 +1,13 @@
 package com.cmex.bolt.replication;
 
+import com.cmex.bolt.BoltCore;
 import com.cmex.bolt.core.BoltConfig;
+import com.cmex.bolt.core.EnvoyServer;
+import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.recovery.SnapshotReader;
 import com.cmex.bolt.replication.ReplicationProto.*;
+import com.google.protobuf.ByteString;
+import com.lmax.disruptor.RingBuffer;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.stub.StreamObserver;
@@ -11,6 +16,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -24,33 +30,31 @@ public class ReplicationClient {
     private final ManagedChannel channel;
     private final ReplicationServiceGrpc.ReplicationServiceStub stub;
     private final int slaveId;
-    private final String masterHost;
-    private final int masterReplicationPort;
     private final BoltConfig config;
 
     private StreamObserver<ReplicationRequest> requestObserver;
     private final AtomicBoolean isRegistered = new AtomicBoolean(false);
     private final AtomicLong lastHeartbeatTime = new AtomicLong(0);
     private final CountDownLatch connectionLatch = new CountDownLatch(1);
-    
+
     // Journal文件处理相关
     private Path currentJournalFile;
     private boolean isJournalReplayInProgress = false;
 
-    public ReplicationClient(int slaveId, String masterHost, int masterReplicationPort, BoltConfig config) {
-        this.slaveId = slaveId;
-        this.masterHost = masterHost;
-        this.masterReplicationPort = masterReplicationPort;
+    private RingBuffer<NexusWrapper> sequencerRingBuffer;
+
+    public ReplicationClient(BoltConfig config) {
+        this.slaveId = config.nodeId();
         this.config = config;
 
         // 创建gRPC通道
-        this.channel = ManagedChannelBuilder.forAddress(masterHost, masterReplicationPort)
+        this.channel = ManagedChannelBuilder.forAddress(config.masterHost(), config.masterReplicationPort())
                 .usePlaintext()
                 .build();
 
         this.stub = ReplicationServiceGrpc.newStub(channel);
 
-        System.out.println("Created ReplicationClient for slave " + slaveId + " connecting to " + masterHost + ":" + masterReplicationPort);
+        System.out.println("Created ReplicationClient for slave " + slaveId + " connecting to " + config.masterHost() + ":" + config.masterReplicationPort());
     }
 
     /**
@@ -161,6 +165,7 @@ public class ReplicationClient {
             case REGISTER -> handleRegisterResponse(response.getRegister());
             case HEARTBEAT -> handleHeartbeatResponse(response.getHeartbeat());
             case JOURNAL -> handleJournalReplayResponse(response.getJournal());
+            case RELAY -> handleRelayResponse(response.getRelay());
             default -> System.out.println("Unknown response type: " + response.getMessageCase());
         }
     }
@@ -206,28 +211,32 @@ public class ReplicationClient {
      */
     private void handleJournalReplayResponse(JournalReplayMessage journal) {
         try {
-            System.out.println("Received journal data: " + journal.getJournalData().size() + 
+            System.out.println("Received journal data: " + journal.getJournalData().size() +
                     " bytes, isLast=" + journal.getIsLastChunk());
-            
+
             // 如果是第一块数据，创建新的journal文件
             if (!isJournalReplayInProgress) {
                 initializeJournalFile();
                 isJournalReplayInProgress = true;
             }
-            
+
             // 将数据追加到journal文件
             if (currentJournalFile != null) {
-                Files.write(currentJournalFile, journal.getJournalData().toByteArray(), 
+                Files.write(currentJournalFile, journal.getJournalData().toByteArray(),
                         StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-                
+
                 System.out.println("Appended journal data to file: " + currentJournalFile);
             }
-            
+
             // 如果是最后一块，完成journal重放
             if (journal.getIsLastChunk()) {
                 completeJournalReplay();
             }
-            
+
+            BoltCore boltCore = new BoltCore(config);
+            this.sequencerRingBuffer = boltCore.getEnvoyServer().getSequencerRingBuffer();
+            boltCore.start();
+
         } catch (IOException e) {
             System.err.println("Failed to write journal data: " + e.getMessage());
             e.printStackTrace();
@@ -236,7 +245,7 @@ public class ReplicationClient {
             e.printStackTrace();
         }
     }
-    
+
     /**
      * 初始化Journal文件
      */
@@ -246,28 +255,28 @@ public class ReplicationClient {
                 System.err.println("BoltConfig is null, cannot initialize journal file");
                 return;
             }
-            
+
             // 创建journal目录
             Path journalDir = Path.of(config.boltHome(), "journal");
             Files.createDirectories(journalDir);
-            
+
             // 生成journal文件名
             String journalFileName = "journal.json";
             currentJournalFile = journalDir.resolve(journalFileName);
-            
+
             // 创建空文件
             Files.deleteIfExists(currentJournalFile);
             Files.createFile(currentJournalFile);
-            
+
             System.out.println("Initialized journal file: " + currentJournalFile);
-            
+
         } catch (IOException e) {
             System.err.println("Failed to initialize journal file: " + e.getMessage());
             e.printStackTrace();
             currentJournalFile = null;
         }
     }
-    
+
     /**
      * 完成Journal重放
      */
@@ -275,16 +284,16 @@ public class ReplicationClient {
         try {
             if (currentJournalFile != null) {
                 System.out.println("Journal replay completed. File saved: " + currentJournalFile);
-                
+
                 // 可以在这里添加额外的处理逻辑，比如：
                 // 1. 验证文件完整性
                 // 2. 更新配置
                 // 3. 触发后续处理
-                
+
                 // 重置状态
                 currentJournalFile = null;
                 isJournalReplayInProgress = false;
-                
+
                 System.out.println("Journal replay process completed for slave " + slaveId);
             }
         } catch (Exception e) {
@@ -293,16 +302,14 @@ public class ReplicationClient {
         }
     }
 
-    /**
-     * 等待连接建立
-     */
-    public boolean waitForConnection(long timeout, TimeUnit unit) {
-        try {
-            return connectionLatch.await(timeout, unit);
-        } catch (InterruptedException e) {
-            System.err.println("Interrupted while waiting for connection: " + e.getMessage());
-            Thread.currentThread().interrupt();
-            return false;
+    private void handleRelayResponse(BatchRelayMessage relay) {
+        for (RelayMessageData relayMessageData : relay.getMessagesList()) {
+            sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
+                wrapper.setId(relayMessageData.getId());
+                wrapper.setPartition(relayMessageData.getPartition());
+                wrapper.setEventType(NexusWrapper.EventType.BUSINESS);
+                wrapper.getBuffer().writeBytes(relayMessageData.toByteArray());
+            });
         }
     }
 

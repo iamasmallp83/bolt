@@ -3,13 +3,11 @@ package com.cmex.bolt.handler;
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.replication.ReplicationServer;
-import com.cmex.bolt.replication.ReplicationProto.*;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
 import com.lmax.disruptor.RingBuffer;
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -39,24 +37,8 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
             return;
         }
 
-        // 检查是否有就绪的节点需要同步
-//        int readyNodeCount = masterServer.getReadyNodeCount();
-//        if (readyNodeCount == 0) {
-//            return;
-//        }
+        replicationServer.relay(wrapper);
 
-
-//        try {
-        // 创建中继消息
-//            BatchRelayMessage relayMessage = createRelayMessage(wrapper, sequence);
-
-        // 通过MasterServer发送到所有就绪的节点
-//            masterServer.sendRelayMessage(relayMessage);
-
-
-//        } catch (Exception e) {
-//            log.error("Failed to replicate relay message sequence {}: {}", sequence, e.getMessage());
-//        }
         wrapper.getBuffer().resetReaderIndex();
     }
 
@@ -77,45 +59,13 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
         replicationServer.sendJournalFileToSlave(slaveId, replicationJournalPath);
     }
 
-    /**
-     * 创建中继消息
-     */
-//    private BatchRelayMessage createRelayMessage(NexusWrapper wrapper, long sequence) {
-    // 创建包含完整元数据的消息数据
-//        RelayMessageData messageData = RelayMessageData.newBuilder()
-//                .setId(wrapper.getId())
-//                .setPartition(wrapper.getPartition())
-//                .setEventType(wrapper.getEventType().getValue())
-//                .setData(ByteString.copyFrom(wrapper.cloneBuffer()))
-//                .build();
-
-//        return BatchRelayMessage.newBuilder()
-//                .setSequence(sequence)
-//                .setSize(1)
-//                .setTimestamp(System.currentTimeMillis())
-//                .addMessages(messageData)
-//                .build();
-//        return null;
-//    }
     @Override
     public void onStart() {
-        log.info("ReplicationHandler started");
-        // 启动MasterServer
-        try {
-//            masterServer.start();
-        } catch (Exception e) {
-            log.error("Failed to start MasterServer", e);
-        }
+
     }
 
     @Override
     public void onShutdown() {
-        log.info("ReplicationHandler shutdown");
-        // 停止MasterServer
-        try {
-//            masterServer.stop();
-        } catch (Exception e) {
-            log.error("Failed to stop MasterServer", e);
-        }
+
     }
 }

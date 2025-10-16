@@ -4,6 +4,7 @@ import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.recovery.SnapshotReader;
 import com.cmex.bolt.replication.ReplicationProto.*;
+import com.google.protobuf.ByteString;
 import com.lmax.disruptor.RingBuffer;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
@@ -85,7 +86,7 @@ public class ReplicationServer extends ReplicationServiceGrpc.ReplicationService
             // 检查是否已经注册
             if (registeredSlaves.containsKey(slaveId)) {
                 System.out.println("Slave " + slaveId + " is already registered");
-                sendRegisterResponse(responseObserver, false, "Slave already registered", 0, null);
+                sendRegisterResponse(responseObserver, false, "Slave already registered", null);
                 return -1;
             }
             // 尝试获取快照数据
@@ -105,7 +106,7 @@ public class ReplicationServer extends ReplicationServiceGrpc.ReplicationService
             // 标记为已注册
             registeredSlaves.put(slaveId, responseObserver);
 
-            sendRegisterResponse(responseObserver, true, "Registration successful", slaveId, snapshotData);
+            sendRegisterResponse(responseObserver, true, "Registration successful", snapshotData);
             System.out.println("Slave " + slaveId + " registered successfully");
             sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
                 wrapper.setId(-1);
@@ -116,7 +117,7 @@ public class ReplicationServer extends ReplicationServiceGrpc.ReplicationService
             return slaveId;
         } catch (Exception e) {
             System.err.println("Failed to handle registration for slave " + slaveId + ": " + e.getMessage());
-            sendRegisterResponse(responseObserver, false, "Registration failed: " + e.getMessage(), 0, null);
+            sendRegisterResponse(responseObserver, false, "Registration failed: " + e.getMessage(), null);
             return -1;
         }
     }
@@ -150,7 +151,7 @@ public class ReplicationServer extends ReplicationServiceGrpc.ReplicationService
      * 发送注册响应
      */
     private void sendRegisterResponse(StreamObserver<ReplicationResponse> responseObserver,
-                                      boolean success, String message, int nodeId, byte[] snapshot) {
+                                      boolean success, String message, byte[] snapshot) {
         RegisterResponse.Builder builder = RegisterResponse.newBuilder()
                 .setSuccess(success)
                 .setMessage(message)
@@ -210,26 +211,26 @@ public class ReplicationServer extends ReplicationServiceGrpc.ReplicationService
             System.err.println("Slave " + slaveId + " is not registered or disconnected");
             return;
         }
-        
+
         try {
             JournalReplayMessage journalMessage = JournalReplayMessage.newBuilder()
                     .setIsLastChunk(isLastChunk)
-                    .setJournalData(com.google.protobuf.ByteString.copyFrom(journalData))
+                    .setJournalData(ByteString.copyFrom(journalData))
                     .build();
-            
+
             ReplicationResponse response = ReplicationResponse.newBuilder()
                     .setJournal(journalMessage)
                     .build();
-            
+
             slaveObserver.onNext(response);
             System.out.println("Sent journal data to slave " + slaveId + ": " + journalData.length + " bytes, isLast=" + isLastChunk);
-            
+
         } catch (Exception e) {
             System.err.println("Failed to send journal data to slave " + slaveId + ": " + e.getMessage());
             e.printStackTrace();
         }
     }
-    
+
     /**
      * 发送Journal文件到指定的slave
      */
@@ -239,30 +240,51 @@ public class ReplicationServer extends ReplicationServiceGrpc.ReplicationService
                 System.err.println("Journal file does not exist: " + journalPath);
                 return;
             }
-            
+
             byte[] journalData = java.nio.file.Files.readAllBytes(journalPath);
             sendJournalToSlave(slaveId, journalData, true); // 文件传输完成，标记为最后一块
-            
+
         } catch (Exception e) {
             System.err.println("Failed to read journal file " + journalPath + ": " + e.getMessage());
             e.printStackTrace();
         }
     }
-    
+
+    public void relay(NexusWrapper wrapper) {
+        // 创建包含完整元数据的消息数据
+        RelayMessageData messageData = RelayMessageData.newBuilder()
+                .setId(wrapper.getId())
+                .setPartition(wrapper.getPartition())
+                .setData(ByteString.copyFrom(wrapper.cloneBuffer()))
+                .build();
+//
+        BatchRelayMessage replay = BatchRelayMessage.newBuilder()
+                .setSequence(wrapper.getId())
+                .setSize(1)
+                .addMessages(messageData)
+                .build();
+        ReplicationResponse response = ReplicationResponse.newBuilder()
+                .setRelay(replay)
+                .build();
+        registeredSlaves.forEach((key, responseObserver) -> {
+            responseObserver.onNext(response);
+        });
+    }
+
     /**
      * 获取活跃节点数量
      */
     public StreamObserver<ReplicationResponse> getSlave(int salveId) {
         return registeredSlaves.get(salveId);
     }
-    
+
     /**
      * 获取已注册的slave数量
      */
     public int getRegisteredSlaveCount() {
         return registeredSlaves.size();
     }
-    
+
     /**
      * 检查slave是否已注册
      */
