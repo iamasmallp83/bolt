@@ -2,12 +2,16 @@ package com.cmex.bolt.handler;
 
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
-import com.cmex.bolt.replication.MasterServer;
+import com.cmex.bolt.replication.ReplicationServer;
 import com.cmex.bolt.replication.ReplicationProto.*;
-import com.google.protobuf.ByteString;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
+import com.lmax.disruptor.RingBuffer;
 import lombok.extern.slf4j.Slf4j;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 
 /**
@@ -18,16 +22,19 @@ import lombok.extern.slf4j.Slf4j;
 public class ReplicationHandler implements EventHandler<NexusWrapper>, LifecycleAware {
 
     private final BoltConfig config;
-    private final MasterServer masterServer;
+    private final ReplicationServer replicationServer;
 
-    public ReplicationHandler(BoltConfig config) {
+    public ReplicationHandler(BoltConfig config, RingBuffer<NexusWrapper> sequencerRingBuffer) {
         this.config = config;
-        this.masterServer = new MasterServer(config);
+        this.replicationServer = new ReplicationServer(config, sequencerRingBuffer);
     }
-    
+
     @Override
     public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) throws Exception {
-        // 早期返回检查 - 只处理中继事件
+        if (wrapper.isSlaveJoined()) {
+            handleSlaveJoined(wrapper);
+            return;
+        }
         if (!wrapper.isBusinessEvent()) {
             return;
         }
@@ -38,25 +45,43 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
 //            return;
 //        }
 
-        try {
-            // 创建中继消息
-            BatchRelayMessage relayMessage = createRelayMessage(wrapper, sequence);
-            
-            // 通过MasterServer发送到所有就绪的节点
-//            masterServer.sendRelayMessage(relayMessage);
-            
 
-        } catch (Exception e) {
-            log.error("Failed to replicate relay message sequence {}: {}", sequence, e.getMessage());
-        }
+//        try {
+        // 创建中继消息
+//            BatchRelayMessage relayMessage = createRelayMessage(wrapper, sequence);
+
+        // 通过MasterServer发送到所有就绪的节点
+//            masterServer.sendRelayMessage(relayMessage);
+
+
+//        } catch (Exception e) {
+//            log.error("Failed to replicate relay message sequence {}: {}", sequence, e.getMessage());
+//        }
         wrapper.getBuffer().resetReaderIndex();
+    }
+
+    private void handleSlaveJoined(NexusWrapper wrapper) {
+        Path currentJournalPath = Path.of(config.journalFilePath());
+
+        if (!Files.exists(currentJournalPath)) {
+            log.warn("Current journal file does not exist: {}", currentJournalPath);
+            return;
+        }
+
+        // 生成带 replication 前缀的文件名
+        int slaveId = wrapper.getBuffer().readInt();
+        String replicationFilename = "replication_" + slaveId + "_" + currentJournalPath.getFileName().toString();
+        Path journalDir = currentJournalPath.getParent();
+        Path replicationJournalPath = journalDir.resolve(replicationFilename);
+        // 发送到slave
+        replicationServer.sendJournalFileToSlave(slaveId, replicationJournalPath);
     }
 
     /**
      * 创建中继消息
      */
-    private BatchRelayMessage createRelayMessage(NexusWrapper wrapper, long sequence) {
-        // 创建包含完整元数据的消息数据
+//    private BatchRelayMessage createRelayMessage(NexusWrapper wrapper, long sequence) {
+    // 创建包含完整元数据的消息数据
 //        RelayMessageData messageData = RelayMessageData.newBuilder()
 //                .setId(wrapper.getId())
 //                .setPartition(wrapper.getPartition())
@@ -70,9 +95,8 @@ public class ReplicationHandler implements EventHandler<NexusWrapper>, Lifecycle
 //                .setTimestamp(System.currentTimeMillis())
 //                .addMessages(messageData)
 //                .build();
-        return null;
-    }
-
+//        return null;
+//    }
     @Override
     public void onStart() {
         log.info("ReplicationHandler started");

@@ -37,7 +37,7 @@ public record BoltConfig(
 
 
     public String journalDir() {
-        return boltHome + "/journal";
+        return boltHome + "/" + journalFilePath;
     }
 
     public static BoltConfig parseConfig(String[] args) {

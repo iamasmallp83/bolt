@@ -10,9 +10,6 @@ import com.cmex.bolt.domain.Transfer;
 import com.cmex.bolt.dto.DepthDto;
 import com.cmex.bolt.handler.*;
 import com.cmex.bolt.recovery.SnapshotData;
-import com.cmex.bolt.replay.DataReplayStrategy;
-import com.cmex.bolt.replay.DataReplayStrategyFactory;
-import com.cmex.bolt.replay.MasterNodeReplayStrategy;
 import com.cmex.bolt.repository.impl.AccountRepository;
 import com.cmex.bolt.repository.impl.CurrencyRepository;
 import com.cmex.bolt.repository.impl.SymbolRepository;
@@ -43,11 +40,6 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     private static final Logger log = LoggerFactory.getLogger(EnvoyServer.class);
 
     private final BoltConfig config;
-    private final DataReplayStrategy replayStrategy;
-
-    private final RingBuffer<NexusWrapper> sequencerRingBuffer;
-    private final RingBuffer<NexusWrapper> matchingRingBuffer;
-    private final RingBuffer<NexusWrapper> responseRingBuffer;
 
     // Disruptor实例，用于关闭
     private final Disruptor<NexusWrapper> sequencerDisruptor;
@@ -71,20 +63,10 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
     private ReplicationHandler replicationHandler;
 
     // 公共构造函数
-    public EnvoyServer(BoltConfig config) {
+    public EnvoyServer(BoltConfig config, SnapshotData snapshotData) {
         this.config = config;
         this.transfer = new Transfer();
         log.info("EnvoyServer constructor called with config: {}", config);
-
-        // 1. 创建重放策略
-        this.replayStrategy = DataReplayStrategyFactory.createStrategy(config);
-        log.info("Created replay strategy: {}", replayStrategy.getClass().getSimpleName());
-
-        // 2. 重放Snapshot数据
-        SnapshotData snapshotData = replayStrategy.replaySnapshot();
-        if (snapshotData == null) {
-            throw new RuntimeException("Failed to replay snapshot data");
-        }
 
         // 3. 创建Disruptor RingBuffers
         observers = new ConcurrentHashMap<>();
@@ -109,19 +91,16 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
                 accountDispatchers, matchDispatchers);
 
         // 6. 启动RingBuffers
-        sequencerRingBuffer = sequencerDisruptor.start();
-        matchingRingBuffer = matchingDisruptor.start();
-        responseRingBuffer = responseDisruptor.start();
+        sequencerDisruptor.start();
+        matchingDisruptor.start();
+        responseDisruptor.start();
 
-        // 7. 重放Journal数据
-        long maxId = replayJournal();
-        requestId.set(maxId);
 
         // 8. 初始化服务
         initializeServices(accountDispatchers, matchDispatchers);
 
         // 9. 初始化性能导出器
-        performanceExporter = new PerformanceExporter(sequencerRingBuffer);
+        performanceExporter = new PerformanceExporter(sequencerDisruptor.getRingBuffer());
 
         log.info("EnvoyServer initialized successfully");
     }
@@ -153,30 +132,27 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
 
     // Getter方法
     public RingBuffer<NexusWrapper> getSequencerRingBuffer() {
-        return sequencerRingBuffer;
+        return sequencerDisruptor.getRingBuffer();
     }
 
     public RingBuffer<NexusWrapper> getMatchingRingBuffer() {
-        return matchingRingBuffer;
+        return matchingDisruptor.getRingBuffer();
     }
 
     public RingBuffer<NexusWrapper> getResponseRingBuffer() {
-        return responseRingBuffer;
+        return responseDisruptor.getRingBuffer();
     }
 
     /**
      * 重放Journal数据
      */
-    private long replayJournal() {
+    public void replayJournal() {
         if (config.isMaster()) {
             // 主节点：从本地journal重放
             log.info("Master node: replaying from local journal");
-            JournalReplayer replayer = new JournalReplayer(config, sequencerRingBuffer);
-            return replayer.replayFromJournal();
-        } else {
-            // 从节点：不需要本地journal重放
-            log.info("Slave node: no local journal replay, will receive from master");
-            return 0;
+            JournalReplayer replayer = new JournalReplayer(config, getSequencerRingBuffer());
+            long maxId = replayer.replayFromJournal();
+            requestId.set(maxId);
         }
     }
 
@@ -232,7 +208,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
         if (config.isMaster()) {
             // 主节点：JournalHandler -> ReplicationHandler -> AccountDispatchers
             JournalHandler journalHandler = new JournalHandler(config);
-            this.replicationHandler = new ReplicationHandler(config);
+            this.replicationHandler = new ReplicationHandler(config, getSequencerRingBuffer());
 
             sequencerDisruptor.handleEventsWith(journalHandler)
                     .then(replicationHandler)
@@ -257,16 +233,16 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
                                     List<MatchDispatcher> matchDispatchers) {
         matchServices = new ArrayList<>(config.group());
         for (MatchDispatcher dispatcher : matchDispatchers) {
-            dispatcher.getMatchService().setSequencerRingBuffer(sequencerRingBuffer);
-            dispatcher.getMatchService().setResponseRingBuffer(responseRingBuffer);
+            dispatcher.getMatchService().setSequencerRingBuffer(sequencerDisruptor.getRingBuffer());
+            dispatcher.getMatchService().setResponseRingBuffer(responseDisruptor.getRingBuffer());
             matchServices.add(dispatcher.getMatchService());
         }
 
         accountServices = new ArrayList<>(config.group());
         for (AccountDispatcher dispatcher : accountDispatchers) {
-            dispatcher.getAccountService().setMatchingRingBuffer(matchingRingBuffer);
-            dispatcher.getAccountService().setResponseRingBuffer(responseRingBuffer);
-            dispatcher.setMatchingRingBuffer(matchingRingBuffer);
+            dispatcher.getAccountService().setMatchingRingBuffer(sequencerDisruptor.getRingBuffer());
+            dispatcher.getAccountService().setResponseRingBuffer(responseDisruptor.getRingBuffer());
+            dispatcher.setMatchingRingBuffer(matchingDisruptor.getRingBuffer());
             accountServices.add(dispatcher.getAccountService());
         }
     }
@@ -356,7 +332,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
                 long id = requestId.incrementAndGet();
                 int partition = getPartition(request.getAccountId());
                 observers.put(id, responseObserver);
-                sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
+                getSequencerRingBuffer().publishEvent((wrapper, sequence) -> {
                     wrapper.setId(id);
                     wrapper.setPartition(partition);
                     transfer.writeIncreaseRequest(request, currency, wrapper.getBuffer());
@@ -398,7 +374,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
                         long id = requestId.incrementAndGet();
                         int partition = getPartition(request.getAccountId());
                         observers.put(id, responseObserver);
-                        sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
+                        sequencerDisruptor.getRingBuffer().publishEvent((wrapper, sequence) -> {
                             wrapper.setId(id);
                             wrapper.setPartition(partition);
                             transfer.writeDecreaseRequest(request, currency, wrapper.getBuffer());
@@ -441,7 +417,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
                 long id = requestId.incrementAndGet();
                 int partition = getPartition(request.getAccountId());
                 observers.put(id, responseObserver);
-                sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
+                sequencerDisruptor.getRingBuffer().publishEvent((wrapper, sequence) -> {
                     wrapper.setId(id);
                     wrapper.setPartition(partition);
                     transfer.writePlaceOrderRequest(request, symbol, wrapper.getBuffer());
@@ -479,7 +455,7 @@ public class EnvoyServer extends EnvoyServerGrpc.EnvoyServerImplBase {
             }
             long id = requestId.incrementAndGet();
             observers.put(id, responseObserver);
-            sequencerRingBuffer.publishEvent((wrapper, sequence) -> {
+            sequencerDisruptor.getRingBuffer().publishEvent((wrapper, sequence) -> {
                 wrapper.setId(id);
                 wrapper.setPartition(OrderIdGenerator.getSymbolId(request.getOrderId()) % config.group());
                 transfer.writeCancelOrderRequest(request, wrapper.getBuffer());

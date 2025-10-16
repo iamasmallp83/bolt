@@ -1,7 +1,7 @@
 package com.cmex.bolt;
 
 import com.cmex.bolt.core.BoltConfig;
-import com.cmex.bolt.replication.ReplicationContext;
+import com.cmex.bolt.replication.ReplicationClient;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
@@ -17,7 +17,6 @@ public class BoltSlave {
     // Getters
     private final BoltConfig config;
     private BoltCore core;
-    private final ReplicationContext replicationContext;
 
     public BoltSlave(BoltConfig config) {
         // 验证从节点配置
@@ -25,7 +24,6 @@ public class BoltSlave {
             throw new IllegalArgumentException("BoltSlave requires slave configuration");
         }
         this.config = config;
-        this.replicationContext = new ReplicationContext();
         log.info("BoltSlave initialized with ReplicationContext");
     }
 
@@ -41,7 +39,6 @@ public class BoltSlave {
         // 2. 先启动基础组件（EnvoyServer + gRPC + 监控）
         this.core = new BoltCore(config);
         // 将RingBuffer注入到ReplicationContext
-        replicationContext.setSequencerRingBuffer(core.getEnvoyServer().getSequencerRingBuffer());
         core.start();
 
 
@@ -58,8 +55,9 @@ public class BoltSlave {
         log.info("Starting slave-specific services");
 
         // 启动从节点复制服务（SlaveServer）
-//        this.slaveServer = new SlaveServer(config, replicationContext);
-//        this.slaveServer.start();
+        ReplicationClient replicationClient = new ReplicationClient(config.nodeId(), config.masterHost(), config.masterReplicationPort(), config);
+        replicationClient.start();
+
 
         log.info("Slave-specific services started successfully");
     }

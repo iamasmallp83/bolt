@@ -1,5 +1,6 @@
 package com.cmex.bolt.handler;
 
+import com.cmex.bolt.Nexus;
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.NexusWrapper;
 import com.cmex.bolt.domain.Transfer;
@@ -36,25 +37,28 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
             return;
         }
 
-        try {
-            // 根据isBinary标志添加相应的文件后缀
-            Path journalPath = Path.of(config.journalFilePath());
+        if (config.isMaster()) {
 
-            // 确保父目录存在
-            Path parentDir = journalPath.getParent();
-            if (parentDir != null && !Files.exists(parentDir)) {
-                Files.createDirectories(parentDir);
-                log.info("Created journal directory: {}", parentDir);
+            try {
+                // 根据isBinary标志添加相应的文件后缀
+                Path journalPath = Path.of(config.journalFilePath());
+
+                // 确保父目录存在
+                Path parentDir = journalPath.getParent();
+                if (parentDir != null && !Files.exists(parentDir)) {
+                    Files.createDirectories(parentDir);
+                    log.info("Created journal directory: {}", parentDir);
+                }
+
+                this.journalChannel = FileChannel.open(journalPath,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.WRITE,
+                        StandardOpenOption.APPEND);
+                log.info("JournalHandler initialized with file: {}, isBinary: {}", config.journalFilePath(), config.isBinary());
+            } catch (IOException e) {
+                log.error("Failed to initialize journal file: {}", config.journalFilePath(), e);
+                throw new RuntimeException("Failed to initialize journal file: " + config.journalFilePath(), e);
             }
-
-            this.journalChannel = FileChannel.open(journalPath,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.WRITE,
-                    StandardOpenOption.APPEND);
-            log.info("JournalHandler initialized with file: {}, isBinary: {}", config.journalFilePath(), config.isBinary());
-        } catch (IOException e) {
-            log.error("Failed to initialize journal file: {}", config.journalFilePath(), e);
-            throw new RuntimeException("Failed to initialize journal file: " + config.journalFilePath(), e);
         }
     }
 
@@ -69,6 +73,12 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
             // 处理 snapshot 事件 - 创建新的 journal 文件
             if (wrapper.isSnapshotEvent()) {
                 handleSnapshotEvent(wrapper);
+                wrapper.getBuffer().resetReaderIndex();
+                return;
+            }
+
+            if (wrapper.isSlaveJoined()) {
+                copyJournal(wrapper);
                 wrapper.getBuffer().resetReaderIndex();
                 return;
             }
@@ -96,17 +106,46 @@ public class JournalHandler implements EventHandler<NexusWrapper>, LifecycleAwar
         }
     }
 
+    private void copyJournal(NexusWrapper wrapper) {
+        try {
+            // 如果禁用日志，跳过复制操作
+            if (!config.enableJournal()) {
+                return;
+            }
+
+            Path currentJournalPath = Path.of(config.journalFilePath());
+
+            if (!Files.exists(currentJournalPath)) {
+                log.warn("Current journal file does not exist: {}", currentJournalPath);
+                return;
+            }
+
+            // 生成带 replication 前缀的文件名
+            String replicationFilename = "replication_" + wrapper.getBuffer().readInt() + "_" + currentJournalPath.getFileName().toString();
+            Path journalDir = currentJournalPath.getParent();
+            Path replicationJournalPath = journalDir.resolve(replicationFilename);
+            // 复制文件
+            Files.deleteIfExists(replicationJournalPath);
+            Files.copy(currentJournalPath, replicationJournalPath);
+            log.info("Copied journal file from {} to {}", currentJournalPath, replicationJournalPath);
+
+        } catch (IOException e) {
+            log.error("Failed to copy journal file", e);
+            throw new RuntimeException("Failed to copy journal file", e);
+        }
+    }
+
     /**
      * 处理 snapshot 事件 - 重命名当前 journal 文件并创建新的 journal 文件
      */
     private void handleSnapshotEvent(NexusWrapper wrapper) throws IOException {
         try {
             // 反序列化获取 snapshot 时间戳
-            com.cmex.bolt.domain.Transfer transfer = new com.cmex.bolt.domain.Transfer();
-            com.cmex.bolt.Nexus.NexusEvent.Reader nexusEvent = transfer.from(wrapper.getBuffer());
+            Transfer transfer = new Transfer();
+            Nexus.NexusEvent.Reader nexusEvent = transfer.from(wrapper.getBuffer());
 
-            if (nexusEvent.getPayload().which() == com.cmex.bolt.Nexus.Payload.Which.SNAPSHOT) {
-                com.cmex.bolt.Nexus.Snapshot.Reader snapshot = nexusEvent.getPayload().getSnapshot();
+            if (nexusEvent.getPayload().which() == Nexus.Payload.Which.SNAPSHOT) {
+                Nexus.Snapshot.Reader snapshot = nexusEvent.getPayload().getSnapshot();
                 long timestamp = snapshot.getTimestamp();
 
                 // 关闭当前 journal 文件

@@ -15,14 +15,14 @@ import com.cmex.bolt.util.FakeStreamObserver;
 
 public class TestSHIBUSDT {
 
-    public static EnvoyServer service = new EnvoyServer(BoltConfig.DEFAULT);
+    public static EnvoyServer service = new EnvoyServer(BoltConfig.DEFAULT, null);
 
     @BeforeAll
     public static void before() {
-        EnvoyUtil.increase(service, 3, 1,"86");
-        EnvoyUtil.increase(service, 4, 3,"10000000");
-        EnvoyUtil.increase(service, 5, 1,"10000000");
-        EnvoyUtil.increase(service, 6, 3,"200000000000");
+        EnvoyUtil.increase(service, 3, 1, "86");
+        EnvoyUtil.increase(service, 4, 3, "10000000");
+        EnvoyUtil.increase(service, 5, 1, "10000000");
+        EnvoyUtil.increase(service, 6, 3, "200000000000");
     }
 
     @Test

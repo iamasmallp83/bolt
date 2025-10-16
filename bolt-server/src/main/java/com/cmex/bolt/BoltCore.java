@@ -2,6 +2,9 @@ package com.cmex.bolt;
 
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.core.EnvoyServer;
+import com.cmex.bolt.recovery.SnapshotData;
+import com.cmex.bolt.replay.DataReplayStrategy;
+import com.cmex.bolt.replay.DataReplayStrategyFactory;
 import com.cmex.bolt.util.NettyMetricsServer;
 import com.google.common.util.concurrent.MoreExecutors;
 import io.grpc.Server;
@@ -25,65 +28,75 @@ import java.util.concurrent.TimeUnit;
 @Getter
 public class BoltCore {
     private static final Logger log = LoggerFactory.getLogger(BoltCore.class);
-    
+
     private final BoltConfig config;
     private final EnvoyServer envoyServer;
     private Server nettyServer;
     private NettyMetricsServer metricsServer;
-    
+
     public BoltCore(BoltConfig config) {
         this.config = config;
-        log.info("Creating BoltCore with config: port={}, group={}", 
+        log.info("Creating BoltCore with config: port={}, group={}",
                 config.port(), config.group());
-        this.envoyServer = new EnvoyServer(config);
+        // 1. 创建重放策略
+        DataReplayStrategy replayStrategy = DataReplayStrategyFactory.createStrategy(config);
+        log.info("Created replay strategy: {}", replayStrategy.getClass().getSimpleName());
+
+        // 2. 重放Snapshot数据
+        SnapshotData snapshotData = replayStrategy.replaySnapshot();
+        if (snapshotData == null) {
+            throw new RuntimeException("Failed to replay snapshot data");
+        }
+        this.envoyServer = new EnvoyServer(config, snapshotData);
+        envoyServer.replayJournal();
         log.info("BoltCore initialized with EnvoyServer");
     }
-    
+
     /**
      * 启动基础组件
      */
     public void start() throws IOException, InterruptedException {
         log.info("Starting BoltCore with config: {}", config);
-        
+
         // 启动gRPC服务器
         this.nettyServer = createNettyServer();
-        
+
         // 启动Prometheus监控（如果启用）
         if (config.enablePrometheus()) {
             this.metricsServer = new NettyMetricsServer(config.prometheusPort());
             this.metricsServer.start();
             log.info("Prometheus metrics server started on port {}", config.prometheusPort());
         }
-        
+
         // 启动gRPC服务器
         nettyServer.start();
         log.info("BoltCore started successfully");
     }
-    
+
     /**
      * 停止基础组件
      */
     public void stop() {
         log.info("Stopping BoltCore");
-        
+
         // 停止gRPC服务器
         if (nettyServer != null) {
             nettyServer.shutdown();
         }
-        
+
         // 停止监控服务器
         if (metricsServer != null) {
             metricsServer.shutdown();
         }
-        
+
         // 停止Envoy服务器
         if (envoyServer != null) {
             envoyServer.shutdown();
         }
-        
+
         log.info("BoltCore stopped");
     }
-    
+
     /**
      * 等待关闭
      */
@@ -92,14 +105,14 @@ public class BoltCore {
             nettyServer.awaitTermination();
         }
     }
-    
+
     /**
      * 创建Netty gRPC服务器
      */
     private Server createNettyServer() {
         final EventLoopGroup boss = new NioEventLoopGroup(1, new DefaultThreadFactory("boss", true));
         final EventLoopGroup worker = new NioEventLoopGroup(0, new DefaultThreadFactory("worker", true));
-        
+
         NettyServerBuilder builder = NettyServerBuilder
                 .forPort(config.port())
                 .bossEventLoopGroup(boss)
@@ -110,10 +123,10 @@ public class BoltCore {
                 .maxInboundMessageSize(16 * 1024 * 1024) // 16MB
                 .permitKeepAliveWithoutCalls(true)
                 .permitKeepAliveTime(30, TimeUnit.SECONDS);
-        
+
         // 使用worker执行操作
         builder.executor(MoreExecutors.directExecutor());
-        
+
         return builder.build();
     }
 }

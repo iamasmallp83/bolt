@@ -15,7 +15,7 @@ import com.cmex.bolt.util.EnvoyUtil;
 import com.cmex.bolt.util.FakeStreamObserver;
 
 public class TestBTCUSDT {
-    public static EnvoyServer service = new EnvoyServer(BoltConfig.DEFAULT);
+    public static EnvoyServer service = new EnvoyServer(BoltConfig.DEFAULT, null);
 
     @BeforeAll
     public static void before() {

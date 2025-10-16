@@ -29,9 +29,7 @@ message ProtocolHeader {
 
 // 注册消息
 message RegisterMessage {
-  int32 node_id = 1;         // 节点ID
-  string host = 2;           // 主机地址
-  int32 replication_port = 3; // 复制端口
+  int32 slave_id = 1;         // 节点ID
 }
 
 // 注册响应
@@ -45,7 +43,7 @@ message RegisterResponse {
 
 // 心跳消息
 message HeartbeatMessage {
-  int32 node_id = 1;        // 节点ID
+  int32 slave_id = 1;        // 节点ID
   int64 timestamp = 2;      // 心跳时间戳
   map<string, string> status = 3; // 状态信息
 }
@@ -92,6 +90,7 @@ message ReplicationResponse {
   oneof message {
     RegisterResponse register = 1;            // 注册响应
     HeartbeatResponse heartbeat = 2;          // 心跳响应
+    JournalReplayMessage journal = 3;         // Journal重放响应
   }
 }
 
