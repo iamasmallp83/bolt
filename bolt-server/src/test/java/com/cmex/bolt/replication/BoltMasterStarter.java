@@ -25,7 +25,7 @@ public class BoltMasterStarter {
                 100,   // batchSize
                 5000,  // batchTimeoutMs
                 true,  // enableJournal
-                "master-journal", // journalFilePath
+                "journal", // journalFilePath
                 false, // isBinary
                 3000    // snapshotInterval
         );

@@ -2,7 +2,6 @@ package com.cmex.bolt;
 
 import com.cmex.bolt.core.BoltConfig;
 import com.cmex.bolt.handler.SnapshotTrigger;
-import com.cmex.bolt.replication.MasterServer;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 

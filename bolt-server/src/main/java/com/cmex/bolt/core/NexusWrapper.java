@@ -18,8 +18,8 @@ public class NexusWrapper {
     private int partition;
 
     @Setter
-    private EventType eventType = EventType.BUSINESS;
-    
+    private EventType eventType;
+
     /**
      * 获取合并的partition和eventType字段
      * eventType占据高3位，partition占据低7位
@@ -46,7 +46,8 @@ public class NexusWrapper {
         BUSINESS(0),        // 业务产生的事件
         JOURNAL(1),         // 日志回放的事件
         SNAPSHOT(2),       // 快照事件
-        INTERNAL(3);       // 内部产生的事件（如撮合产生的Clear事件）
+        INTERNAL(3),       // 内部产生的事件（如撮合产生的Clear事件）
+        SLAVE_JOINED(4);   // 从节点加入
 
         private final int value;
 
@@ -108,16 +109,11 @@ public class NexusWrapper {
     public boolean isInternalEvent() {
         return eventType == EventType.INTERNAL;
     }
-    
-    /**
-     * 检查是否为replication事件（从主节点复制的业务事件）
-     *
-     * @return true 如果是replication事件，false 如果不是
-     */
-    public boolean isReplicationEvent() {
-        return eventType == EventType.BUSINESS; // replication事件也是业务事件
+
+    public boolean isSlaveJoined() {
+        return eventType == EventType.SLAVE_JOINED;
     }
-    
+
     /**
      * 获取buffer的副本
      *

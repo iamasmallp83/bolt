@@ -41,6 +41,7 @@ public class AccountDispatcher implements EventHandler<NexusWrapper>, LifecycleA
     @Override
     public void onEvent(NexusWrapper wrapper, long sequence, boolean endOfBatch) {
         // Snapshot事件没有分区，所有分区都需要处理
+        // 不会处理slave joined事件，slave joined的partition是-1
         if (partition != wrapper.getPartition() && !wrapper.isSnapshotEvent()) {
             return;
         }

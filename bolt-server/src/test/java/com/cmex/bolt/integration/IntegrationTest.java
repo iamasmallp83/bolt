@@ -43,7 +43,7 @@ public class IntegrationTest {
         );
 
         // 创建EnvoyServer实例
-        envoyServer = new EnvoyServer(config);
+//        envoyServer = new EnvoyServer(config);
         System.out.println("EnvoyServer实例已创建");
     }
 

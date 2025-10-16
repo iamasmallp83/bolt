@@ -19,11 +19,11 @@ import java.util.zip.ZipOutputStream;
 @Slf4j
 public class SnapshotReader {
 
-    private final BoltConfig config;
+    private final String boltHome;
     private final ObjectMapper objectMapper;
 
-    public SnapshotReader(BoltConfig config) {
-        this.config = config;
+    public SnapshotReader(String boltHome) {
+        this.boltHome = boltHome;
         this.objectMapper = new ObjectMapper();
     }
 
@@ -31,7 +31,7 @@ public class SnapshotReader {
      * 查找最新的snapshot文件
      */
     public SnapshotInfo findLatestSnapshot() throws IOException {
-        Path snapshotDir = Paths.get(config.boltHome(), "snapshots");
+        Path snapshotDir = Paths.get(boltHome, "snapshots");
         
         // 确保目录存在
         Files.createDirectories(snapshotDir);
@@ -154,7 +154,7 @@ public class SnapshotReader {
         
         try {
             // 创建快照目录
-            Path snapshotDir = Paths.get(config.boltHome(), "snapshots");
+            Path snapshotDir = Paths.get(boltHome, "snapshots");
             Files.createDirectories(snapshotDir);
             
             // 创建临时目录用于解压缩

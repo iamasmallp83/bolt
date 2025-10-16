@@ -26,7 +26,7 @@ public class SnapshotRecovery {
 
     public SnapshotRecovery(BoltConfig config) {
         this.config = config;
-        this.snapshotReader = new SnapshotReader(config);
+        this.snapshotReader = new SnapshotReader(config.boltHome());
         this.objectMapper = new ObjectMapper();
     }
 
