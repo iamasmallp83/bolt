@@ -11,6 +11,7 @@ import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -234,7 +235,7 @@ public class ReplicationServer extends ReplicationServiceGrpc.ReplicationService
     /**
      * 发送Journal文件到指定的slave
      */
-    public void sendJournalFileToSlave(int slaveId, java.nio.file.Path journalPath) {
+    public void sendJournalFileToSlave(int slaveId, Path journalPath) {
         try {
             if (!java.nio.file.Files.exists(journalPath)) {
                 System.err.println("Journal file does not exist: " + journalPath);
@@ -257,7 +258,7 @@ public class ReplicationServer extends ReplicationServiceGrpc.ReplicationService
                 .setPartition(wrapper.getPartition())
                 .setData(ByteString.copyFrom(wrapper.cloneBuffer()))
                 .build();
-//
+        
         BatchRelayMessage replay = BatchRelayMessage.newBuilder()
                 .setSequence(wrapper.getId())
                 .setSize(1)

@@ -31,6 +31,5 @@ public class BoltSlaveStarter {
         
         BoltSlave slave = new BoltSlave(slaveConfig);
         
-        slave.start();
     }
 }

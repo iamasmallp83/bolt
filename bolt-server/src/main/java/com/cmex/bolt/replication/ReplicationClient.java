@@ -308,7 +308,7 @@ public class ReplicationClient {
                 wrapper.setId(relayMessageData.getId());
                 wrapper.setPartition(relayMessageData.getPartition());
                 wrapper.setEventType(NexusWrapper.EventType.BUSINESS);
-                wrapper.getBuffer().writeBytes(relayMessageData.toByteArray());
+                wrapper.getBuffer().writeBytes(relayMessageData.getData().toByteArray());
             });
         }
     }
