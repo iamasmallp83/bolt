@@ -16,34 +16,30 @@ public record BoltConfig(
         boolean isMaster,
         String masterHost,
         int masterReplicationPort,
-        int slaveReplicationPort,
-        int batchSize,
-        int batchTimeout,
         // 日志配置
         boolean enableJournal,
-        String journalFilePath,
         boolean isBinary,
         // Snapshot配置
         int snapshotInterval
 ) {
     public static final BoltConfig DEFAULT = new BoltConfig(1, ".", 9090, false, 4, 1024,
             512, 512, true, 9093, true,
-            "localhost", 9091, 9092, 100, 5000,
-            false, "journal", false, 60);
+            "localhost", 9091,
+            false, false, 60);
 
     public String journalFilePath() {
-        return boltHome + "/journal/" + journalFilePath + (isBinary ? ".data" : ".json");
+        return boltHome + "/journal/journal" + (isBinary ? ".data" : ".json");
     }
 
 
     public String journalDir() {
-        return boltHome + "/" + journalFilePath;
+        return boltHome + "/journal";
     }
 
     public static BoltConfig parseConfig(String[] args) {
         if (args.length == 0) {
             return BoltConfig.DEFAULT;
-        } else if (args.length == 21) {
+        } else if (args.length == 17) {
             try {
                 int nodeId = Integer.parseInt(args[0]);
                 String boltHome = args[1];
@@ -58,17 +54,13 @@ public record BoltConfig(
                 boolean isMaster = Boolean.parseBoolean(args[10]);
                 String masterHost = args[11];
                 int masterReplicationPort = Integer.parseInt(args[12]);
-                int slaveReplicationPort = Integer.parseInt(args[13]);
-                int batchSize = Integer.parseInt(args[14]);
-                int batchTimeout = Integer.parseInt(args[15]);
-                boolean enableJournal = Boolean.parseBoolean(args[16]);
-                String journalFilePath = args[17];
-                boolean isBinary = Boolean.parseBoolean(args[18]);
-                int snapshotInterval = Integer.parseInt(args[19]);
+                boolean enableJournal = Boolean.parseBoolean(args[13]);
+                boolean isBinary = Boolean.parseBoolean(args[14]);
+                int snapshotInterval = Integer.parseInt(args[15]);
 
                 return new BoltConfig(nodeId, boltHome, port, isProd, group, sequencerSize, matchingSize, responseSize,
-                        enablePrometheus, prometheusPort, isMaster, masterHost, masterReplicationPort, slaveReplicationPort,
-                        batchSize, batchTimeout, enableJournal, journalFilePath, isBinary, snapshotInterval);
+                        enablePrometheus, prometheusPort, isMaster, masterHost, masterReplicationPort,
+                        enableJournal, isBinary, snapshotInterval);
             } catch (NumberFormatException e) {
                 printUsage();
                 throw new IllegalArgumentException("Invalid command line arguments", e);
@@ -89,13 +81,13 @@ public record BoltConfig(
     public static void printUsage() {
         System.out.println("Usage:");
         System.out.println("  java -jar bolt.jar  # 使用默认配置");
-        System.out.println("  java -jar bolt.jar {nodeId} {boltHome} {port} {isProduction} {group} {sequencerSize} {matchingSize} {responseSize} {enablePrometheus} {prometheusPort} {isMaster} {masterHost} {masterReplicationPort} {slaveReplicationPort} {batchSize} {batchTimeoutMs} {enableJournal} {journalFilePath} {isBinary} {snapshotIntervalSeconds}");
+        System.out.println("  java -jar bolt.jar {nodeId} {boltHome} {port} {isProduction} {group} {sequencerSize} {matchingSize} {responseSize} {enablePrometheus} {prometheusPort} {isMaster} {masterHost} {masterReplicationPort} {enableJournal} {isBinary} {snapshotIntervalSeconds}");
         System.out.println("Logback Configuration:");
         System.out.println("  - Master mode: uses master-logback.xml (creates bolt-master.log)");
         System.out.println("  - Slave mode: uses slave-logback.xml (creates bolt-slave.log)");
         System.out.println("  - Override logs directory: -DLOGS_DIR=/path/to/logs");
         System.out.println("Examples:");
-        System.out.println("  java -jar bolt.jar 1 /path/to/bolt 9090 true 4 1024 512 512 true 9091 true localhost 9090 9092 100 5000 false journal false 300");
-        System.out.println("  java -DLOGS_DIR=/var/log/bolt -jar bolt.jar 1 /path/to/bolt 9090 true 4 1024 512 512 true 9091 false localhost 9090 9092 100 5000 true journal.data true 600");
+        System.out.println("  java -jar bolt.jar 1 /path/to/bolt 9090 true 4 1024 512 512 true 9091 true localhost 9090 false false 300");
+        System.out.println("  java -DLOGS_DIR=/var/log/bolt -jar bolt.jar 1 /path/to/bolt 9090 true 4 1024 512 512 true 9091 false localhost 9090 true true 600");
     }
 }

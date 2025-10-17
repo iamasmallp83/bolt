@@ -21,11 +21,7 @@ public class BoltMasterStarter {
                 true,  // isMaster
                 "localhost", // masterHost
                 9091,  // masterReplicationPort
-                9092,  // slaveReplicationPort
-                100,   // batchSize
-                5000,  // batchTimeoutMs
                 true,  // enableJournal
-                "journal", // journalFilePath
                 false, // isBinary
                 3000    // snapshotInterval
         );

@@ -33,11 +33,7 @@ public class IntegrationTest {
                 true,                       // isMaster
                 "localhost",                // masterHost
                 9090,                       // masterReplicationPort
-                9092,                       // slaveReplicationPort
-                100,                        // batchSize
-                5000,                       // batchTimeoutMs
                 true,                       // enableJournal
-                "simple-grpc-test-journal", // journalFilePath
                 false,                      // isBinary
                 300                         // snapshotInterval
         );
